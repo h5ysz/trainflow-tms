@@ -1,0 +1,50 @@
+"use client";
+
+import { useI18n } from "@/lib/i18n/context";
+import { useAppStore } from "@/lib/store/app-store";
+import { Sidebar } from "./sidebar";
+import { Topbar } from "./topbar";
+import { CommandPalette } from "./command-palette";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { useEffect } from "react";
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const { dir } = useI18n();
+  const { sidebarOpen, setSidebarOpen, theme } = useAppStore();
+
+  // Apply theme + direction to <html>
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("dark", theme === "dark");
+    root.setAttribute("dir", dir);
+    root.setAttribute("lang", dir === "rtl" ? "ar" : "en");
+  }, [theme, dir]);
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-background text-foreground">
+      {/* Desktop sidebar */}
+      <div className="hidden lg:block w-64 shrink-0 border-e border-sidebar-border">
+        <Sidebar />
+      </div>
+
+      {/* Mobile sidebar (Sheet) */}
+      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        <SheetContent side={dir === "rtl" ? "right" : "left"} className="p-0 w-72">
+          <Sidebar />
+        </SheetContent>
+      </Sheet>
+
+      {/* Main */}
+      <div className="flex flex-1 flex-col min-w-0">
+        <Topbar />
+        <main className="flex-1 overflow-y-auto tf-scroll">
+          <div className="mx-auto max-w-[1600px] p-4 sm:p-6 lg:p-8">
+            {children}
+          </div>
+        </main>
+      </div>
+
+      <CommandPalette />
+    </div>
+  );
+}

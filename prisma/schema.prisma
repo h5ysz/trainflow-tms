@@ -1,0 +1,446 @@
+// TrainFlow TMS — Training Management System
+// Enterprise-grade schema for corporate safety training lifecycle.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTH & RBAC
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  COORDINATOR
+  TRAINER
+  CONTRACTOR
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  fullName      String
+  phone         String?
+  role          UserRole @default(CONTRACTOR)
+  isActive      Boolean  @default(true)
+  language      String   @default("en") // "en" | "ar"
+  avatarUrl     String?
+  lastLoginAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // A contractor user belongs to one company
+  companyId     String?
+  company       Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  // A trainer user is linked to a trainer profile
+  trainerId     String?  @unique
+  trainer       Trainer? @relation(fields: [trainerId], references: [id], onDelete: SetNull)
+
+  auditLogs     AuditLog[]
+  notifications Notification[]
+
+  @@index([role])
+  @@index([companyId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPANIES (Contractor Companies)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Company {
+  id              String   @id @default(cuid())
+  name            String
+  nameAr          String?
+  legalName       String?
+  crNumber        String?  // Commercial Registration
+  vatNumber       String?
+  industry        String?
+  country         String?
+  city            String?
+  address         String?
+  postalCode      String?
+  phone           String?
+  email           String?
+  website         String?
+  contactPerson   String?
+  contactPhone    String?
+  contactEmail    String?
+  status          String   @default("ACTIVE") // ACTIVE | INACTIVE | SUSPENDED
+  logoUrl         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  contacts        CompanyContact[]
+  users           User[]
+  trainingRequests TrainingRequest[]
+  certificates    Certificate[]
+
+  @@index([status])
+}
+
+model CompanyContact {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fullName    String
+  jobTitle    String?
+  email       String?
+  phone       String?
+  mobile      String?
+  isPrimary   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TRAINERS & QUALIFICATIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Trainer {
+  id              String   @id @default(cuid())
+  fullName        String
+  fullNameAr      String?
+  nationalId      String?  @unique
+  email           String?  @unique
+  phone           String?
+  mobile          String?
+  gender          String?  // MALE | FEMALE
+  nationality     String?
+  country         String?
+  city            String?
+  address         String?
+  bio             String?
+  photoUrl        String?
+  status          String   @default("ACTIVE") // ACTIVE | INACTIVE | SUSPENDED
+  hireDate        DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  qualifications  TrainerQualification[]
+  user            User?
+  sessions        TrainingSession[]
+  evaluations     CourseEvaluation[]
+
+  @@index([status])
+}
+
+model TrainerQualification {
+  id              String   @id @default(cuid())
+  trainerId       String
+  trainer         Trainer  @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+  title           String
+  issuer          String?
+  credentialNumber String?
+  issueDate       DateTime?
+  expiryDate      DateTime?
+  documentUrl     String?
+  status          String   @default("VALID") // VALID | EXPIRED | EXPIRING_SOON
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([trainerId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COURSES
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Course {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  title           String
+  titleAr         String?
+  description     String?
+  category        String?
+  durationHours   Int      @default(8)
+  language        String   @default("en") // en | ar | bilingual
+  validityMonths  Int      @default(12)    // certificate validity period
+  passScore       Int      @default(70)    // passing score for tests (%)
+  maxTrainees     Int      @default(20)
+  hasPreTest      Boolean  @default(true)
+  hasFinalTest    Boolean  @default(true)
+  hasEvaluation   Boolean  @default(true)
+  status          String   @default("ACTIVE") // ACTIVE | INACTIVE | DRAFT
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  requests        TrainingRequest[]
+  sessions        TrainingSession[]
+  questions       Question[]
+  certificates    Certificate[]
+
+  @@index([status])
+  @@index([category])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TRAINING REQUESTS (from Contractors)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model TrainingRequest {
+  id              String   @id @default(cuid())
+  requestNumber   String   @unique
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id])
+  courseId        String
+  course          Course   @relation(fields: [courseId], references: [id])
+  requestedBy     String?  // user id
+  traineeCount    Int      @default(1)
+  preferredDateFrom DateTime?
+  preferredDateTo DateTime?
+  preferredLocation String?
+  preferredLanguage String?
+  notes           String?
+  status          String   @default("PENDING") // PENDING | APPROVED | REJECTED | SCHEDULED | COMPLETED | CANCELLED
+  priority        String   @default("NORMAL")  // LOW | NORMAL | HIGH | URGENT
+  rejectionReason String?
+  approvedAt      DateTime?
+  approvedBy      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  session         TrainingSession?
+
+  @@index([status])
+  @@index([companyId])
+  @@index([courseId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TRAINING SESSIONS (scheduled instances of a course)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model TrainingSession {
+  id              String   @id @default(cuid())
+  sessionCode     String   @unique
+  courseId        String
+  course          Course   @relation(fields: [courseId], references: [id])
+  requestId       String?  @unique
+  request         TrainingRequest? @relation(fields: [requestId], references: [id])
+  trainerId       String?
+  trainer         Trainer? @relation(fields: [trainerId], references: [id])
+  title           String
+  location        String?
+  venue           String?
+  language        String   @default("en")
+  startDate       DateTime
+  endDate         DateTime
+  expectedTrainees Int    @default(0)
+  actualTrainees  Int     @default(0)
+  status          String   @default("SCHEDULED") // SCHEDULED | IN_PROGRESS | COMPLETED | CANCELLED | NO_SHOW
+  qrCodeToken     String?  @unique
+  qrCodeUrl       String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  attendance      Attendance[]
+  testResults     TestResult[]
+  evaluations     CourseEvaluation[]
+  certificates    Certificate[]
+
+  @@index([status])
+  @@index([trainerId])
+  @@index([startDate])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ATTENDANCE
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Attendance {
+  id              String   @id @default(cuid())
+  sessionId       String
+  session         TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  traineeName     String
+  traineeIdNational String?
+  traineeEmail    String?
+  traineePhone    String?
+  company         String?
+  checkInAt       DateTime?
+  checkOutAt      DateTime?
+  status          String   @default("REGISTERED") // REGISTERED | PRESENT | ABSENT | LATE | EXCUSED
+  checkInMethod   String?  // QR | MANUAL
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([sessionId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TESTS — QUESTIONS & RESULTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum QuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  SHORT_ANSWER
+}
+
+enum TestType {
+  PRE_TEST
+  FINAL_TEST
+}
+
+model Question {
+  id              String   @id @default(cuid())
+  courseId        String
+  course          Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  type            QuestionType @default(SINGLE_CHOICE)
+  testType        TestType @default(PRE_TEST)
+  text            String
+  textAr          String?
+  options         String   // JSON array of strings
+  correctAnswers  String   // JSON array of indices
+  points          Int      @default(1)
+  order           Int      @default(0)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([courseId, testType])
+}
+
+model TestResult {
+  id              String   @id @default(cuid())
+  sessionId       String
+  session         TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  testType        TestType
+  traineeName     String
+  traineeEmail    String?
+  scorePercent    Int
+  passed          Boolean
+  answers         String?  // JSON of { questionId, selected }
+  attemptedAt     DateTime @default(now())
+  durationSec     Int?
+
+  @@index([sessionId, testType])
+  @@index([traineeEmail])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COURSE EVALUATION
+// ─────────────────────────────────────────────────────────────────────────────
+
+model CourseEvaluation {
+  id              String   @id @default(cuid())
+  sessionId       String
+  session         TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  trainerId       String?
+  trainer         Trainer? @relation(fields: [trainerId], references: [id])
+  traineeName     String
+  traineeEmail    String?
+  // Rating scores 1-5
+  trainerRating   Int
+  contentRating   Int
+  venueRating     Int
+  materialsRating Int
+  overallRating   Int
+  comments        String?
+  wouldRecommend  Boolean?
+  submittedAt     DateTime @default(now())
+
+  @@index([sessionId])
+  @@index([trainerId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CERTIFICATES
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Certificate {
+  id              String   @id @default(cuid())
+  certificateNumber String @unique
+  sessionId       String
+  session         TrainingSession @relation(fields: [sessionId], references: [id])
+  courseId        String
+  course          Course   @relation(fields: [courseId], references: [id])
+  companyId       String?
+  company         Company? @relation(fields: [companyId], references: [id])
+  traineeName     String
+  traineeIdNational String?
+  traineeEmail    String?
+  finalScore      Int
+  issuedAt        DateTime @default(now())
+  validUntil      DateTime
+  status          String   @default("VALID") // VALID | EXPIRED | REVOKED
+  pdfUrl          String?
+  qrCodeUrl       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([sessionId])
+  @@index([companyId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTIFICATIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Notification {
+  id              String   @id @default(cuid())
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  title           String
+  message         String
+  type            String   @default("INFO") // INFO | SUCCESS | WARNING | ERROR | REQUEST
+  category        String   @default("SYSTEM") // SYSTEM | REQUEST | SESSION | CERTIFICATE | TEST
+  link            String?
+  isRead          Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIT LOG
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action          String   // CREATE | UPDATE | DELETE | LOGIN | LOGOUT | APPROVE | REJECT | ISSUE
+  entity          String   // COMPANY | TRAINER | COURSE | REQUEST | SESSION | CERTIFICATE | USER | SETTING
+  entityId        String?
+  description     String
+  ipAddress       String?
+  userAgent       String?
+  metadata        String?  // JSON
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+  @@index([entity])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SETTINGS (system-wide, key/value)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Setting {
+  id              String   @id @default(cuid())
+  key             String   @unique
+  value           String
+  category        String   @default("GENERAL") // GENERAL | BRANDING | NOTIFICATION | SECURITY | EMAIL
+  description     String?
+  updatedAt       DateTime @updatedAt
+  updatedBy       String?
+}
