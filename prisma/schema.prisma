@@ -30,6 +30,7 @@ enum UserRole {
   COORDINATOR
   TRAINER
   CONTRACTOR
+  VIEWER
 }
 
 enum TrainingRequestStatus {
@@ -144,16 +145,24 @@ model User {
   passwordHash  String
   fullName      String
   phone         String?
+  jobTitle      String?
   role          UserRole @default(CONTRACTOR)
-  roleId        String?  // link to Role table for future fine-grained RBAC
+  roleId        String?  // link to Role table for dynamic RBAC
   language      String   @default("en")
+  timezone      String?  @default("Asia/Riyadh")
   isActive      Boolean  @default(true)
+  accountStatus String   @default("ACTIVE") // ACTIVE | PENDING_APPROVAL | SUSPENDED | REJECTED | LOCKED
   avatarUrl     String?
   lastLoginAt   DateTime?
+  forcePasswordChange Boolean @default(false)
+  failedLoginAttempts Int  @default(0)
+  lockedUntil   DateTime?
   tenantId      String?
   // Relations for contractor/trainer users
   companyId     String?
   trainerId     String?  @unique
+  // Registration info (for contractor self-registration)
+  registrationData String? // JSON: { companyName, crNumber, contactPerson, nationalId, mobile }
   // Audit
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -168,10 +177,29 @@ model User {
 
   auditLogs     AuditLog[]
   notifications Notification[]
+  loginHistory  LoginHistory[]
 
   @@index([role])
   @@index([companyId])
   @@index([tenantId])
+  @@index([accountStatus])
+}
+
+// Tracks every login attempt (success + failure)
+model LoginHistory {
+  id              String   @id @default(uuid())
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  email           String   // email attempted
+  success         Boolean
+  failureReason   String?
+  ipAddress       String?
+  userAgent       String?
+  attemptedAt     DateTime @default(now())
+
+  @@index([userId])
+  @@index([email])
+  @@index([attemptedAt])
 }
 
 model Setting {

@@ -27,6 +27,7 @@ export const dict = {
     "role.COORDINATOR": "Coordinator",
     "role.TRAINER": "Trainer",
     "role.CONTRACTOR": "Contractor",
+    "role.VIEWER": "Viewer",
     "role.SUPER_ADMIN.desc": "Full system access including settings",
     "role.COORDINATOR.desc": "Manage training operations (no settings)",
     "role.TRAINER.desc": "Deliver sessions and grade assessments",
@@ -60,6 +61,9 @@ export const dict = {
     "nav.notifications": "Notifications",
     "nav.auditLog": "Audit Log",
     "nav.settings": "Settings",
+    "nav.userApprovals": "User Approvals",
+    "nav.userManagement": "User Management",
+    "nav.roles": "Roles & Permissions",
 
     // Common actions
     "action.create": "Create",
@@ -690,6 +694,7 @@ export const dict = {
     "role.COORDINATOR": "منسق التدريب",
     "role.TRAINER": "المدرب",
     "role.CONTRACTOR": "المقاول (الشركة)",
+    "role.VIEWER": "مشاهد",
     "role.SUPER_ADMIN.desc": "صلاحية كاملة على النظام بما في ذلك الإعدادات",
     "role.COORDINATOR.desc": "إدارة العمليات التدريبية (دون الإعدادات)",
     "role.TRAINER.desc": "تقديم الجلسات وتقييم الاختبارات",
@@ -723,6 +728,9 @@ export const dict = {
     "nav.notifications": "الإشعارات",
     "nav.auditLog": "سجل التدقيق",
     "nav.settings": "الإعدادات",
+    "nav.userApprovals": "اعتماد المستخدمين",
+    "nav.userManagement": "إدارة المستخدمين",
+    "nav.roles": "الأدوار والصلاحيات",
 
     // Common actions
     "action.create": "إنشاء",

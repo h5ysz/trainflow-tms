@@ -5,7 +5,7 @@
 // TRAINER: limited to delivery / assessment modules
 // CONTRACTOR: limited to their own requests / certificates / notifications
 
-export type UserRole = "SUPER_ADMIN" | "COORDINATOR" | "TRAINER" | "CONTRACTOR";
+export type UserRole = "SUPER_ADMIN" | "COORDINATOR" | "TRAINER" | "CONTRACTOR" | "VIEWER";
 
 export type RouteKey =
   | "dashboard"
@@ -27,7 +27,10 @@ export type RouteKey =
   | "reports"
   | "notifications"
   | "audit-log"
-  | "settings";
+  | "settings"
+  | "user-approvals"
+  | "user-management"
+  | "roles";
 
 export type Action = "view" | "create" | "edit" | "delete";
 
@@ -62,6 +65,9 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "notifications",
     "audit-log",
     "settings",
+    "user-approvals",
+    "user-management",
+    "roles",
   ],
   // Coordinator and Trainer share the SAME operational modules
   COORDINATOR: [
@@ -84,8 +90,31 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "reports",
     "notifications",
     "audit-log",
+    "user-approvals",
   ],
   TRAINER: [
+    "dashboard",
+    "companies",
+    "company-contacts",
+    "trainers",
+    "trainer-qualifications",
+    "trainees",
+    "courses",
+    "requests",
+    "sessions",
+    "scheduling",
+    "attendance",
+    "qr-code",
+    "pre-test",
+    "final-test",
+    "evaluation",
+    "certificates",
+    "reports",
+    "notifications",
+    "audit-log",
+    "user-approvals",
+  ],
+  VIEWER: [
     "dashboard",
     "companies",
     "company-contacts",
@@ -149,9 +178,31 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
   },
   COORDINATOR: {
     ...OPERATIONAL_PERMISSIONS,
+    "user-approvals": ["view", "create", "edit"],
   },
   TRAINER: {
     ...OPERATIONAL_PERMISSIONS,
+    "user-approvals": ["view", "create", "edit"],
+  },
+  VIEWER: {
+    companies: ["view"],
+    "company-contacts": ["view"],
+    trainers: ["view"],
+    "trainer-qualifications": ["view"],
+    trainees: ["view"],
+    courses: ["view"],
+    requests: ["view"],
+    sessions: ["view"],
+    scheduling: ["view"],
+    attendance: ["view"],
+    "qr-code": ["view"],
+    "pre-test": ["view"],
+    "final-test": ["view"],
+    evaluation: ["view"],
+    certificates: ["view"],
+    reports: ["view"],
+    notifications: ["view"],
+    "audit-log": ["view"],
   },
   CONTRACTOR: {
     trainees: ["view", "create", "edit"],
@@ -212,6 +263,9 @@ export const navItems: NavItem[] = [
   // System
   { key: "audit-log", labelKey: "nav.auditLog", icon: "ScrollText", group: "system" },
   { key: "notifications", labelKey: "nav.notifications", icon: "Bell", group: "system" },
+  { key: "user-approvals", labelKey: "nav.userApprovals", icon: "UserPlus", group: "system" },
+  { key: "user-management", labelKey: "nav.userManagement", icon: "ShieldCheck", group: "system" },
+  { key: "roles", labelKey: "nav.roles", icon: "ShieldCheck", group: "system" },
   { key: "settings", labelKey: "nav.settings", icon: "Settings", group: "system" },
 ];
 

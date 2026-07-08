@@ -195,6 +195,28 @@ export function LoginForm() {
                 </>
               )}
             </Button>
+
+            {/* Create account link */}
+            <div className="text-center pt-2">
+              <span className="text-sm text-muted-foreground">
+                {locale === "en" ? "Don't have an account? " : "ليس لديك حساب؟ "}
+              </span>
+              <a
+                href="/register"
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                {locale === "en" ? "Create New Account" : "إنشاء حساب جديد"}
+              </a>
+            </div>
+
+            {/* Support contact */}
+            <div className="text-center pt-3 border-t">
+              <p className="text-xs text-muted-foreground">
+                {locale === "en"
+                  ? "Need help? Contact support@gcclab.com"
+                  : "تحتاج مساعدة؟ اتصل بـ support@gcclab.com"}
+              </p>
+            </div>
           </div>
         </div>
       </div>
