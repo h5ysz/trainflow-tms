@@ -41,10 +41,7 @@ export const GET = withModuleAction("sessions", "view", async ({ req, user }) =>
     if (q.filters.to) (where.startDate as any).lte = new Date(q.filters.to);
   }
 
-  // Trainers see only their own sessions
-  if (user.role === "TRAINER" && user.trainerId) {
-    where.trainerId = user.trainerId;
-  }
+  // Coordinator and Trainer have equivalent operational permissions — no trainer scoping
 
   const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS);
 

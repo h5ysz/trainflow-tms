@@ -32,6 +32,14 @@ export type RouteKey =
 export type Action = "view" | "create" | "edit" | "delete";
 
 // Module visibility per role
+// =====================================================================
+// Coordinator and Trainer have EQUIVALENT operational permissions.
+// Super Admin's exclusive privileges are limited to:
+//   - Settings (system configuration, branding, integrations)
+//   - Users & Roles management
+//   - Audit Log (administration)
+// Contractor is scoped to their own company's data only.
+// =====================================================================
 export const moduleAccess: Record<UserRole, RouteKey[]> = {
   SUPER_ADMIN: [
     "dashboard",
@@ -55,6 +63,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "audit-log",
     "settings",
   ],
+  // Coordinator and Trainer share the SAME operational modules
   COORDINATOR: [
     "dashboard",
     "companies",
@@ -78,7 +87,13 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
   ],
   TRAINER: [
     "dashboard",
+    "companies",
+    "company-contacts",
+    "trainers",
+    "trainer-qualifications",
+    "trainees",
     "courses",
+    "requests",
     "sessions",
     "scheduling",
     "attendance",
@@ -87,7 +102,9 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "final-test",
     "evaluation",
     "certificates",
+    "reports",
     "notifications",
+    "audit-log",
   ],
   CONTRACTOR: [
     "dashboard",
@@ -99,41 +116,42 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
 };
 
 // Module-level action permissions per role
+// =====================================================================
+// Coordinator and Trainer have EQUIVALENT operational permissions.
+// The ONLY difference: Super Admin exclusively controls Settings.
+// =====================================================================
+
+// Shared operational permissions — used by both COORDINATOR and TRAINER
+const OPERATIONAL_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
+  companies: ["view", "create", "edit", "delete"],
+  "company-contacts": ["view", "create", "edit", "delete"],
+  trainers: ["view", "create", "edit", "delete"],
+  "trainer-qualifications": ["view", "create", "edit", "delete"],
+  trainees: ["view", "create", "edit", "delete"],
+  courses: ["view", "create", "edit", "delete"],
+  requests: ["view", "create", "edit", "delete"],
+  sessions: ["view", "create", "edit", "delete"],
+  scheduling: ["view", "create", "edit", "delete"],
+  attendance: ["view", "create", "edit", "delete"],
+  "qr-code": ["view", "create", "edit", "delete"],
+  "pre-test": ["view", "create", "edit", "delete"],
+  "final-test": ["view", "create", "edit", "delete"],
+  evaluation: ["view"],
+  certificates: ["view", "create", "edit", "delete"],
+  reports: ["view"],
+  notifications: ["view"],
+  "audit-log": ["view"],
+};
+
 export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action[]>>> = {
   SUPER_ADMIN: {
-    // Super admin can do everything
+    // Super admin can do everything — including Settings (exclusive)
   },
   COORDINATOR: {
-    companies: ["view", "create", "edit", "delete"],
-    "company-contacts": ["view", "create", "edit", "delete"],
-    trainers: ["view", "create", "edit", "delete"],
-    "trainer-qualifications": ["view", "create", "edit", "delete"],
-    trainees: ["view", "create", "edit", "delete"],
-    courses: ["view", "create", "edit", "delete"],
-    requests: ["view", "create", "edit", "delete"],
-    sessions: ["view", "create", "edit", "delete"],
-    scheduling: ["view", "create", "edit", "delete"],
-    attendance: ["view", "create", "edit", "delete"],
-    "qr-code": ["view", "create", "edit", "delete"],
-    "pre-test": ["view", "create", "edit", "delete"],
-    "final-test": ["view", "create", "edit", "delete"],
-    evaluation: ["view"],
-    certificates: ["view", "create", "edit", "delete"],
-    reports: ["view"],
-    notifications: ["view"],
-    "audit-log": ["view"],
+    ...OPERATIONAL_PERMISSIONS,
   },
   TRAINER: {
-    courses: ["view"],
-    sessions: ["view"],
-    scheduling: ["view"],
-    attendance: ["view", "create", "edit"],
-    "qr-code": ["view", "create"],
-    "pre-test": ["view", "create", "edit"],
-    "final-test": ["view", "create", "edit"],
-    evaluation: ["view"],
-    certificates: ["view"],
-    notifications: ["view"],
+    ...OPERATIONAL_PERMISSIONS,
   },
   CONTRACTOR: {
     trainees: ["view", "create", "edit"],

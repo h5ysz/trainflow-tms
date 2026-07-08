@@ -20,9 +20,7 @@ export const GET = withModuleAction("attendance", "view", async ({ req, user }) 
   if (q.filters.status) where.status = q.filters.status;
   if (q.filters.sessionId) where.sessionId = q.filters.sessionId;
 
-  if (user.role === "TRAINER" && user.trainerId) {
-    where.session = { trainerId: user.trainerId };
-  }
+  // Coordinator and Trainer have equivalent operational permissions — no trainer scoping
 
   const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS);
 

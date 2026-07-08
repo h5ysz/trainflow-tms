@@ -19,9 +19,7 @@ export const GET = withModuleAction("sessions", "view", async ({ params, user })
   });
   if (!session || session.deletedAt) return notFound("Session not found");
 
-  if (user.role === "TRAINER" && user.trainerId && session.trainerId !== user.trainerId) {
-    return fail("Forbidden", 403);
-  }
+  // Coordinator and Trainer have equivalent operational permissions — no trainer scoping
 
   return ok(session);
 });
@@ -32,9 +30,7 @@ export const PUT = withModuleAction("sessions", "edit", async ({ req, params, us
   const existing = await db.trainingSession.findUnique({ where: { id } });
   if (!existing || existing.deletedAt) return notFound("Session not found");
 
-  if (user.role === "TRAINER" && user.trainerId && existing.trainerId !== user.trainerId) {
-    return fail("Forbidden", 403);
-  }
+  // Coordinator and Trainer have equivalent operational permissions — no trainer scoping
 
   const {
     trainerId, title, location, city, region, venue, shift, durationHours, capacity, language,

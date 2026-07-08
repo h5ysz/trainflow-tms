@@ -27,7 +27,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ type: string }>
   const to = toStr ? new Date(toStr) : new Date();
 
   const companyScope = user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {};
-  const trainerScope = user.role === "TRAINER" && user.trainerId ? { trainerId: user.trainerId } : {};
+  // Coordinator and Trainer have equivalent operational permissions — no trainer scoping
+  const trainerScope = {};
   const dateFilter = { startDate: { gte: from, lte: to } };
 
   switch (type) {

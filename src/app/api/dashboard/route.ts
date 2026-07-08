@@ -12,9 +12,8 @@ export async function GET() {
   const companyFilter = user.role === "CONTRACTOR" && user.companyId
     ? { companyId: user.companyId }
     : {};
-  const trainerFilter = user.role === "TRAINER" && user.trainerId
-    ? { trainerId: user.trainerId }
-    : {};
+  // Coordinator and Trainer have equivalent operational permissions — no trainer scoping
+  const trainerFilter = {};
 
   // ─── KPI counts (parallel for performance) ───────────────────────────
   const [
