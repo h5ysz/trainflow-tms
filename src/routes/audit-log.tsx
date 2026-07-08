@@ -24,8 +24,8 @@ interface AuditRow {
   createdAt: string;
 }
 
-const ACTIONS = ["CREATE", "UPDATE", "DELETE", "LOGIN", "LOGOUT", "APPROVE", "REJECT", "ISSUE", "REVOKE"];
-const ENTITIES = ["COMPANY", "TRAINER", "COURSE", "REQUEST", "SESSION", "CERTIFICATE", "USER", "SETTING"];
+const ACTIONS = ["CREATE", "UPDATE", "DELETE", "LOGIN", "LOGOUT", "APPROVE", "REJECT", "ISSUE", "REVOKE", "STATUS_CHANGE", "EXAM_SUBMIT", "CERTIFICATE_GENERATE", "QR_REGENERATE"];
+const ENTITIES = ["COMPANY", "TRAINER", "TRAINEE", "COURSE", "REQUEST", "SESSION", "CERTIFICATE", "USER", "SETTING", "EXAM", "ATTENDANCE"];
 
 const ACTION_STYLES: Record<string, string> = {
   CREATE: "bg-success/10 text-success border-success/20",
@@ -37,6 +37,10 @@ const ACTION_STYLES: Record<string, string> = {
   REJECT: "bg-destructive/10 text-destructive border-destructive/20",
   ISSUE: "bg-warning/10 text-warning border-warning/20",
   REVOKE: "bg-destructive/10 text-destructive border-destructive/20",
+  STATUS_CHANGE: "bg-info/10 text-info border-info/20",
+  EXAM_SUBMIT: "bg-warning/10 text-warning border-warning/20",
+  CERTIFICATE_GENERATE: "bg-primary/10 text-primary border-primary/20",
+  QR_REGENERATE: "bg-info/10 text-info border-info/20",
 };
 
 export function AuditLogRoute() {

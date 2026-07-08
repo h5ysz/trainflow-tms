@@ -33,6 +33,7 @@ export type AuditAction =
 export type AuditEntity =
   | "COMPANY"
   | "TRAINER"
+  | "TRAINEE"
   | "COURSE"
   | "REQUEST"
   | "SESSION"
