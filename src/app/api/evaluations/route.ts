@@ -64,7 +64,7 @@ export const POST = withModuleAction("evaluation", "create", async ({ req, user 
   const body = await req.json().catch(() => ({}));
   const {
     sessionId, trainerId, traineeName, traineeEmail, traineeIdNational, attendanceId,
-    trainerRating, contentRating, venueRating, materialsRating,
+    companyId, trainerRating, contentRating, venueRating, materialsRating,
     overallRating, comments, suggestions, wouldRecommend,
   } = body;
 
@@ -96,6 +96,7 @@ export const POST = withModuleAction("evaluation", "create", async ({ req, user 
       traineeName,
       traineeEmail: traineeEmail ?? null,
       traineeIdNational: traineeIdNational ?? null,
+      companyId: companyId ?? null, // trainee's original company — preserved
       attendanceId: attendanceId ?? null,
       trainerRating,
       contentRating,

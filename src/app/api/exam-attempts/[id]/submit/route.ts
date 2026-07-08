@@ -59,6 +59,7 @@ export const POST = withModuleAction("pre-test", "view", async ({ req, params, u
       traineeName: attempt.traineeName,
       traineeEmail: attempt.traineeEmail ?? null,
       traineeIdNational: attempt.traineeIdNational ?? null,
+      companyId: attempt.companyId ?? null, // trainee's original company — preserved
       scorePercent: grading.scorePercent,
       passed: grading.passed,
       answers: JSON.stringify(grading.answers),

@@ -3,11 +3,23 @@
 > **Document ID:** ACR-001  
 > **Date:** 2026-07-08  
 > **Trigger:** Multi-Company Training Session Architecture  
-> **Status:** COMPLETED  
+> **Status:** COMPLETED (v2 — includes companyId on ExamAttempt, TestResult, CourseEvaluation + per-company reports)  
 
 ---
 
 ## 1. Executive Summary
+
+This report documents the architecture change required to support **multi-company Training Sessions** — where a single Training Session can contain trainees from multiple companies, while preserving each trainee's original company throughout the entire training execution pipeline (enrollment, attendance, exams, evaluation, certificates, reports, dashboard statistics).
+
+### v2 Update (Architecture Validation Fix)
+After the initial multi-company architecture was implemented, a validation check revealed 5 critical gaps:
+1. `ExamAttempt` had no `companyId` — exam results couldn't be attributed to a company
+2. `TestResult` had no `companyId` — same issue for backwards-compatible exam reporting
+3. `CourseEvaluation` had no `companyId` — evaluation ratings couldn't be attributed to a company
+4. `byCompany` report only counted Training Requests, not actual session participation
+5. No per-company report types for training execution metrics (attendance, scores, certificates)
+
+**All 5 gaps have been fixed.** The `companyId` field is now present on every artifact in the training execution pipeline, and 4 new report types have been added for per-company analytics.
 
 This report documents the architecture change required to support **multi-company Training Sessions** — where a single Training Session can contain trainees from multiple companies, while preserving each trainee's original company throughout the training execution pipeline (attendance, exams, evaluation, certificate).
 

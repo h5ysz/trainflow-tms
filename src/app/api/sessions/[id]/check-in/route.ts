@@ -192,6 +192,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         traineeName: body.traineeName,
         traineeEmail: body.traineeEmail,
         traineeIdNational: body.traineeIdNational,
+        companyId: traineeCompanyId ?? undefined, // trainee's original company
         createdBy: user.id,
       });
 

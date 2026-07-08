@@ -8,6 +8,8 @@ const REPORT_TYPES = [
   "compliance", "attendance", "scores",
   // Sprint 2 new:
   "trainees", "conflicts", "todaySessions",
+  // Sprint 3 multi-company:
+  "attendanceByCompany", "scoresByCompany", "certificatesByCompany", "sessionParticipation",
 ];
 const NOT_DELETED = { deletedAt: null };
 
@@ -211,21 +213,244 @@ export async function GET(req: Request, ctx: { params: Promise<{ type: string }>
     }
 
     case "byCompany": {
-      const rows = await db.trainingRequest.groupBy({
+      // Count training requests per company
+      const requestRows = await db.trainingRequest.groupBy({
         by: ["companyId"],
         where: { deletedAt: null, createdAt: { gte: from, lte: to }, ...companyScope },
         _count: { id: true },
       });
-      const companies = await db.company.findMany({
-        where: { id: { in: rows.map((r) => r.companyId).filter(Boolean) as string[] }, ...NOT_DELETED },
+
+      // Also count session enrollments per company (multi-company sessions)
+      const enrollmentRows = await db.sessionEnrollment.groupBy({
+        by: ["companyId"],
+        where: {
+          deletedAt: null,
+          enrolledAt: { gte: from, lte: to },
+          ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+        },
+        _count: { id: true },
       });
+
+      // Count certificates per company
+      const certRows = await db.certificate.groupBy({
+        by: ["companyId"],
+        where: {
+          deletedAt: null,
+          issuedAt: { gte: from, lte: to },
+          ...companyScope,
+        },
+        _count: { id: true },
+      });
+
+      // Merge all company IDs
+      const allCompanyIds = new Set<string>();
+      requestRows.forEach((r) => allCompanyIds.add(r.companyId));
+      enrollmentRows.forEach((r) => allCompanyIds.add(r.companyId));
+      certRows.forEach((r) => { if (r.companyId) allCompanyIds.add(r.companyId); });
+
+      const companies = await db.company.findMany({
+        where: { id: { in: Array.from(allCompanyIds) }, ...NOT_DELETED },
+      });
+
       return ok({
         type, from, to,
-        rows: rows.map((r) => ({
-          companyName: companies.find((c) => c.id === r.companyId)?.name ?? "—",
-          companyRef: companies.find((c) => c.id === r.companyId)?.refNumber ?? null,
-          requestCount: r._count.id,
+        rows: companies.map((c) => {
+          const reqRow = requestRows.find((r) => r.companyId === c.id);
+          const enrollRow = enrollmentRows.find((r) => r.companyId === c.id);
+          const certRow = certRows.find((r) => r.companyId === c.id);
+          return {
+            companyName: c.name,
+            companyRef: c.refNumber,
+            requestCount: reqRow?._count.id ?? 0,
+            enrolledTrainees: enrollRow?._count.id ?? 0,
+            certificatesIssued: certRow?._count.id ?? 0,
+          };
+        }),
+      });
+    }
+
+    case "attendanceByCompany": {
+      // Attendance records grouped by trainee's company
+      const rows = await db.attendance.groupBy({
+        by: ["companyId"],
+        where: {
+          deletedAt: null,
+          checkInAt: { gte: from, lte: to },
+          ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+        },
+        _count: { id: true },
+      });
+
+      const allCompanyIds = rows.map((r) => r.companyId).filter(Boolean) as string[];
+      const companies = await db.company.findMany({
+        where: { id: { in: allCompanyIds }, ...NOT_DELETED },
+      });
+
+      // Also get PRESENT count per company
+      const presentRows = await db.attendance.groupBy({
+        by: ["companyId"],
+        where: {
+          deletedAt: null,
+          status: "PRESENT",
+          checkInAt: { gte: from, lte: to },
+          ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+        },
+        _count: { id: true },
+      });
+
+      return ok({
+        type, from, to,
+        rows: companies.map((c) => {
+          const totalRow = rows.find((r) => r.companyId === c.id);
+          const presentRow = presentRows.find((r) => r.companyId === c.id);
+          const total = totalRow?._count.id ?? 0;
+          const present = presentRow?._count.id ?? 0;
+          return {
+            companyName: c.name,
+            companyRef: c.refNumber,
+            totalAttendance: total,
+            presentCount: present,
+            attendanceRate: total > 0 ? Math.round((present / total) * 100) : null,
+          };
+        }),
+      });
+    }
+
+    case "scoresByCompany": {
+      // Exam results grouped by trainee's company (uses companyId on TestResult)
+      const rows = await db.testResult.groupBy({
+        by: ["companyId"],
+        where: {
+          deletedAt: null,
+          testType: "FINAL_TEST",
+          attemptedAt: { gte: from, lte: to },
+          ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+        },
+        _count: { id: true },
+        _avg: { scorePercent: true },
+      });
+
+      const passedRows = await db.testResult.groupBy({
+        by: ["companyId"],
+        where: {
+          deletedAt: null,
+          testType: "FINAL_TEST",
+          passed: true,
+          attemptedAt: { gte: from, lte: to },
+          ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+        },
+        _count: { id: true },
+      });
+
+      const allCompanyIds = rows.map((r) => r.companyId).filter(Boolean) as string[];
+      const companies = await db.company.findMany({
+        where: { id: { in: allCompanyIds }, ...NOT_DELETED },
+      });
+
+      return ok({
+        type, from, to,
+        rows: companies.map((c) => {
+          const totalRow = rows.find((r) => r.companyId === c.id);
+          const passedRow = passedRows.find((r) => r.companyId === c.id);
+          const total = totalRow?._count.id ?? 0;
+          const passed = passedRow?._count.id ?? 0;
+          return {
+            companyName: c.name,
+            companyRef: c.refNumber,
+            totalExams: total,
+            passed: passed,
+            failed: total - passed,
+            avgScore: totalRow?._avg.scorePercent ? Math.round(totalRow._avg.scorePercent) : null,
+            passRate: total > 0 ? Math.round((passed / total) * 100) : null,
+          };
+        }),
+      });
+    }
+
+    case "certificatesByCompany": {
+      // Certificates grouped by trainee's company
+      const rows = await db.certificate.groupBy({
+        by: ["companyId"],
+        where: {
+          deletedAt: null,
+          issuedAt: { gte: from, lte: to },
+          ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+        },
+        _count: { id: true },
+      });
+
+      const validRows = await db.certificate.groupBy({
+        by: ["companyId"],
+        where: {
+          deletedAt: null,
+          status: "VALID",
+          issuedAt: { gte: from, lte: to },
+          ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+        },
+        _count: { id: true },
+      });
+
+      const allCompanyIds = rows.map((r) => r.companyId).filter(Boolean) as string[];
+      const companies = await db.company.findMany({
+        where: { id: { in: allCompanyIds }, ...NOT_DELETED },
+      });
+
+      return ok({
+        type, from, to,
+        rows: companies.map((c) => {
+          const totalRow = rows.find((r) => r.companyId === c.id);
+          const validRow = validRows.find((r) => r.companyId === c.id);
+          return {
+            companyName: c.name,
+            companyRef: c.refNumber,
+            totalCertificates: totalRow?._count.id ?? 0,
+            validCertificates: validRow?._count.id ?? 0,
+          };
+        }),
+      });
+    }
+
+    case "sessionParticipation": {
+      // Shows which companies have trainees in which sessions (multi-company view)
+      const sessions = await db.trainingSession.findMany({
+        where: {
+          ...NOT_DELETED,
+          startDate: { gte: from, lte: to },
+          ...trainerScope,
+        },
+        include: {
+          course: { select: { id: true, title: true, code: true } },
+          sessionCompanies: {
+            include: { company: { select: { id: true, name: true, refNumber: true } } },
+          },
+          _count: { select: { enrollments: true, attendance: true, certificates: true } },
+        },
+        orderBy: { startDate: "desc" },
+        take: 100,
+      });
+
+      return ok({
+        type, from, to,
+        rows: sessions.map((s) => ({
+          sessionRef: s.refNumber,
+          sessionTitle: s.title,
+          courseTitle: s.course?.title ?? null,
+          startDate: s.startDate,
+          companies: s.sessionCompanies.map((sc) => ({
+            companyName: sc.company?.name ?? null,
+            companyRef: sc.company?.refNumber ?? null,
+            traineeCount: sc.traineeCount,
+          })),
+          totalEnrollments: s._count.enrollments,
+          totalAttendance: s._count.attendance,
+          totalCertificates: s._count.certificates,
+          isMultiCompany: s.sessionCompanies.length > 1,
         })),
+        metrics: {
+          totalSessions: sessions.length,
+          multiCompanySessions: sessions.filter((s) => s.sessionCompanies.length > 1).length,
+          totalCompanies: new Set(sessions.flatMap((s) => s.sessionCompanies.map((sc) => sc.companyId))).size,
+        },
       });
     }
     case "byCourse": {

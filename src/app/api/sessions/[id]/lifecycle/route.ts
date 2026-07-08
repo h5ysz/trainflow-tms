@@ -111,6 +111,7 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
             traineeName: trainee.traineeName,
             traineeEmail: trainee.traineeEmail ?? undefined,
             traineeIdNational: trainee.traineeIdNational ?? undefined,
+            companyId: trainee.companyId ?? undefined, // trainee's original company
             createdBy: user.id,
           });
 

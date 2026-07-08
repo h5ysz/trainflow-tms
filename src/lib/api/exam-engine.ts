@@ -108,10 +108,11 @@ export async function createExamAttempt(opts: {
   traineeName: string;
   traineeEmail?: string;
   traineeIdNational?: string;
+  companyId?: string;
   numQuestions?: number;
   createdBy: string;
 }): Promise<{ attemptId: string; refNumber: string; questionSet: QuestionSetItem[]; passScore: number }> {
-  const { sessionId, attendanceId, testType, traineeName, traineeEmail, traineeIdNational, numQuestions, createdBy } = opts;
+  const { sessionId, attendanceId, testType, traineeName, traineeEmail, traineeIdNational, companyId, numQuestions, createdBy } = opts;
 
   // Get session + course
   const session = await db.trainingSession.findUnique({
@@ -166,6 +167,7 @@ export async function createExamAttempt(opts: {
       traineeName,
       traineeEmail: traineeEmail ?? null,
       traineeIdNational: traineeIdNational ?? null,
+      companyId: companyId ?? null, // trainee's original company — preserved
       questionSet: JSON.stringify(questionSet),
       status: "ASSIGNED",
       attemptNumber: existingAttempts + 1,
