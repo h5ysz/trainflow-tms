@@ -1,4 +1,4 @@
-// TrainFlow TMS — Business rules for trainer assignment
+// GCCLAB TMS — Business rules for trainer assignment
 // =====================================================================
 // Validates that:
 //   1. Only Coordinators or Super Admins can assign trainers

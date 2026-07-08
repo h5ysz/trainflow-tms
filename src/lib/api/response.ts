@@ -1,4 +1,4 @@
-// TrainFlow TMS — Standardized API response format
+// GCCLAB TMS — Standardized API response format
 // =====================================================================
 // All API responses follow this envelope:
 //   Success: { success: true, data: T, meta?: {...} }

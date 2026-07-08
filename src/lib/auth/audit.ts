@@ -1,4 +1,4 @@
-// TrainFlow TMS — Audit log service
+// GCCLAB TMS — Audit log service
 // =====================================================================
 // Records every required action:
 //   - LOGIN, LOGOUT

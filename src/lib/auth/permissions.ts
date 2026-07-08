@@ -1,4 +1,4 @@
-// TrainFlow TMS — RBAC permission matrix
+// GCCLAB TMS — RBAC permission matrix
 // Modules + actions per role.
 // SUPER_ADMIN: full access (everything)
 // COORDINATOR: almost everything except system settings
@@ -180,38 +180,37 @@ export function canPerformAction(
 export interface NavItem {
   key: RouteKey;
   labelKey: string;
-  icon: string; // lucide icon name
-  group: "overview" | "training" | "assessments" | "compliance" | "system";
+  icon: string;
+  group: "dashboard" | "training" | "assessment" | "reports" | "system";
 }
 
 export const navItems: NavItem[] = [
-  // Overview
-  { key: "dashboard", labelKey: "nav.dashboard", icon: "LayoutDashboard", group: "overview" },
+  // Dashboard (standalone)
+  { key: "dashboard", labelKey: "nav.dashboard", icon: "LayoutDashboard", group: "dashboard" },
 
   // Training Operations
   { key: "companies", labelKey: "nav.companies", icon: "Building2", group: "training" },
   { key: "company-contacts", labelKey: "nav.companyContacts", icon: "Contact", group: "training" },
+  { key: "trainees", labelKey: "nav.trainees", icon: "UserSquare", group: "training" },
   { key: "trainers", labelKey: "nav.trainers", icon: "Users", group: "training" },
   { key: "trainer-qualifications", labelKey: "nav.trainerQualifications", icon: "Award", group: "training" },
-  { key: "trainees", labelKey: "nav.trainees", icon: "UserSquare", group: "training" },
   { key: "courses", labelKey: "nav.courses", icon: "BookOpen", group: "training" },
   { key: "requests", labelKey: "nav.requests", icon: "ClipboardList", group: "training" },
   { key: "sessions", labelKey: "nav.sessions", icon: "CalendarDays", group: "training" },
-  { key: "scheduling", labelKey: "nav.scheduling", icon: "CalendarRange", group: "training" },
   { key: "attendance", labelKey: "nav.attendance", icon: "UserCheck", group: "training" },
   { key: "qr-code", labelKey: "nav.qrCode", icon: "QrCode", group: "training" },
 
-  // Assessments & Quality
-  { key: "pre-test", labelKey: "nav.preTest", icon: "FilePen", group: "assessments" },
-  { key: "final-test", labelKey: "nav.finalTest", icon: "FileCheck2", group: "assessments" },
-  { key: "evaluation", labelKey: "nav.evaluation", icon: "Star", group: "assessments" },
+  // Assessment
+  { key: "pre-test", labelKey: "nav.preTest", icon: "FilePen", group: "assessment" },
+  { key: "final-test", labelKey: "nav.finalTest", icon: "FileCheck2", group: "assessment" },
+  { key: "evaluation", labelKey: "nav.evaluation", icon: "Star", group: "assessment" },
+  { key: "certificates", labelKey: "nav.certificates", icon: "BadgeCheck", group: "assessment" },
 
-  // Compliance & Records
-  { key: "certificates", labelKey: "nav.certificates", icon: "BadgeCheck", group: "compliance" },
-  { key: "reports", labelKey: "nav.reports", icon: "BarChart3", group: "compliance" },
-  { key: "audit-log", labelKey: "nav.auditLog", icon: "ScrollText", group: "compliance" },
+  // Reports
+  { key: "reports", labelKey: "nav.reports", icon: "BarChart3", group: "reports" },
 
   // System
+  { key: "audit-log", labelKey: "nav.auditLog", icon: "ScrollText", group: "system" },
   { key: "notifications", labelKey: "nav.notifications", icon: "Bell", group: "system" },
   { key: "settings", labelKey: "nav.settings", icon: "Settings", group: "system" },
 ];

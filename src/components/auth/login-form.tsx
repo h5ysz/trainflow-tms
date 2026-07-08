@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card } from "@/components/ui/card";
-import { ShieldCheck, UserCog, GraduationCap, Building2, ArrowRight, Languages, GraduationCap as Logo, AlertCircle, Loader2 } from "lucide-react";
+import { ShieldCheck, UserCog, GraduationCap, Building2, ArrowRight, Languages, AlertCircle, Loader2 } from "lucide-react";
 import { type UserRole } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
 
@@ -64,11 +64,11 @@ export function LoginForm() {
           backgroundSize: "32px 32px",
         }} />
         <div className="relative flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-foreground/15 backdrop-blur">
-            <Logo className="h-6 w-6" />
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-foreground/15 backdrop-blur font-bold text-sm">
+            GC
           </div>
           <div>
-            <div className="text-lg font-bold leading-tight">{t("app.name")}</div>
+            <div className="text-lg font-bold leading-tight tracking-tight">GCCLAB</div>
             <div className="text-xs text-primary-foreground/80">{t("app.tagline")}</div>
           </div>
         </div>
@@ -142,7 +142,7 @@ export function LoginForm() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder={`${selectedRole.toLowerCase()}@trainflow.io`}
+                placeholder={`${selectedRole.toLowerCase()}@gcclab.com`}
                 autoComplete="email"
                 disabled={authLoading}
               />
@@ -154,7 +154,7 @@ export function LoginForm() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="trainflow123"
+                placeholder="gcclab123"
                 autoComplete="current-password"
                 disabled={authLoading}
               />
@@ -195,8 +195,8 @@ export function LoginForm() {
 
           <p className="text-center text-xs text-muted-foreground">
             {locale === "en"
-              ? "Demo: pick a role and click Sign in, or use email + password \"trainflow123\"."
-              : "تجريبي: اختر دوراً واضغط تسجيل الدخول، أو استخدم البريد وكلمة المرور \"trainflow123\"."}
+              ? "Demo: pick a role and click Sign in, or use email + password \"gcclab123\"."
+              : "تجريبي: اختر دوراً واضغط تسجيل الدخول، أو استخدم البريد وكلمة المرور \"gcclab123\"."}
           </p>
         </div>
       </div>

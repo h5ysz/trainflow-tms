@@ -1,12 +1,12 @@
-// TrainFlow TMS — Auth utilities (JWT via jose, password hashing via WebCrypto)
+// GCCLAB TMS — Auth utilities (JWT via jose, password hashing via WebCrypto)
 import { SignJWT, jwtVerify } from "jose";
 import { db } from "@/lib/db";
 import type { UserRole } from "@/lib/auth/permissions";
 
 const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "trainflow-tms-dev-secret-change-in-production-32bytes!"
+  process.env.JWT_SECRET || "gcclab-tms-dev-secret-change-in-production-32bytes!"
 );
-const JWT_ISSUER = "trainflow-tms";
+const JWT_ISSUER = "gcclab-tms";
 const JWT_AUDIENCE = "trainflow-users";
 const TOKEN_TTL = "7d";
 
@@ -112,16 +112,16 @@ function hexToBuf(hex: string): Uint8Array {
 // still works without seeding fake business data.
 export async function getOrCreateDemoUser(role: UserRole): Promise<JwtPayload & { id: string }> {
   const demoConfig: Record<UserRole, { email: string; fullName: string }> = {
-    SUPER_ADMIN: { email: "admin@trainflow.io", fullName: "System Administrator" },
-    COORDINATOR: { email: "coordinator@trainflow.io", fullName: "Sarah Coordinator" },
-    TRAINER: { email: "trainer@trainflow.io", fullName: "Ahmed Trainer" },
-    CONTRACTOR: { email: "contractor@trainflow.io", fullName: "Khalid Contractor" },
+    SUPER_ADMIN: { email: "admin@gcclab.com", fullName: "System Administrator" },
+    COORDINATOR: { email: "coordinator@gcclab.com", fullName: "Sarah Coordinator" },
+    TRAINER: { email: "trainer@gcclab.com", fullName: "Ahmed Trainer" },
+    CONTRACTOR: { email: "contractor@gcclab.com", fullName: "Khalid Contractor" },
   };
   const cfg = demoConfig[role];
 
   let user = await db.user.findUnique({ where: { email: cfg.email } });
   if (!user || user.deletedAt) {
-    const passwordHash = await hashPassword("trainflow123");
+    const passwordHash = await hashPassword("gcclab123");
     user = await db.user.create({
       data: {
         email: cfg.email,

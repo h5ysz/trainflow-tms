@@ -1,4 +1,4 @@
-// TrainFlow TMS — Report Export Service
+// GCCLAB TMS — Report Export Service
 // =====================================================================
 // Exports report data to Excel (.xlsx) or PDF using template-defined
 // column layouts. The service is format-agnostic — it reads the
@@ -49,7 +49,7 @@ export async function exportToExcel(
   filterInfo?: Record<string, string>
 ): Promise<ExportResult> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "TrainFlow TMS";
+  workbook.creator = "GCCLAB TMS";
   workbook.created = new Date();
 
   const sheet = workbook.addWorksheet("Report", {

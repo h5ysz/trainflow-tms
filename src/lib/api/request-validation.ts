@@ -1,4 +1,4 @@
-// TrainFlow TMS — Business rules for training request multi-course validation
+// GCCLAB TMS — Business rules for training request multi-course validation
 // =====================================================================
 // Validates that:
 //   - Each course in a request has between MIN_TRAINEES (10) and MAX_TRAINEES (20) trainees

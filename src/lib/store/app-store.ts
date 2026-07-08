@@ -140,7 +140,7 @@ export const useAppStore = create<AppState>()(
       setCommandOpen: (commandOpen) => set({ commandOpen }),
     }),
     {
-      name: "trainflow-tms-store",
+      name: "gcclab-tms-store",
       partialize: (state) => ({
         user: state.user,
         isAuthenticated: state.isAuthenticated,

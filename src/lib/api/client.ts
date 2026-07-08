@@ -1,4 +1,4 @@
-// TrainFlow TMS — Frontend API client (typed fetch wrapper)
+// GCCLAB TMS — Frontend API client (typed fetch wrapper)
 // All functions return parsed JSON. Throws on non-success responses.
 //
 // Standardized response envelope:

@@ -1,4 +1,4 @@
-// TrainFlow TMS — Reference number service
+// GCCLAB TMS — Reference number service
 // =====================================================================
 // Generates human-readable reference numbers atomically using a counter table.
 //

@@ -166,12 +166,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     .font("Helvetica")
     .text("Authorized Signature", 180, doc.page.height - 90, { align: "left" });
 
-  // TrainFlow seal
+  // GCCLAB seal
   doc
     .moveTo(doc.page.width - 350, doc.page.height - 100)
     .lineTo(doc.page.width - 150, doc.page.height - 100)
     .stroke()
-    .text("TrainFlow TMS", doc.page.width - 320, doc.page.height - 90, { align: "left" });
+    .text("GCCLAB TMS", doc.page.width - 320, doc.page.height - 90, { align: "left" });
 
   doc.end();
 

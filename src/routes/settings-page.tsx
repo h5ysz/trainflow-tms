@@ -255,10 +255,10 @@ export function SettingsRoute() {
                   <Input type="number" value={settings["email.smtpPort"] ?? "587"} onChange={(e) => setSetting("email.smtpPort", e.target.value)} />
                 </Field>
                 <Field label={t("settings.smtpUser")}>
-                  <Input value={settings["email.smtpUser"] ?? ""} onChange={(e) => setSetting("email.smtpUser", e.target.value)} placeholder="noreply@trainflow.io" />
+                  <Input value={settings["email.smtpUser"] ?? ""} onChange={(e) => setSetting("email.smtpUser", e.target.value)} placeholder="noreply@gcclab.com" />
                 </Field>
                 <Field label={t("settings.smtpFrom")}>
-                  <Input type="email" value={settings["email.smtpFrom"] ?? ""} onChange={(e) => setSetting("email.smtpFrom", e.target.value)} placeholder="noreply@trainflow.io" />
+                  <Input type="email" value={settings["email.smtpFrom"] ?? ""} onChange={(e) => setSetting("email.smtpFrom", e.target.value)} placeholder="noreply@gcclab.com" />
                 </Field>
               </FormGrid>
             )}

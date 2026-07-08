@@ -1,11 +1,11 @@
-// TrainFlow TMS — Internationalization dictionary (EN + AR)
+// GCCLAB TMS — Internationalization dictionary (EN + AR)
 
 export type Locale = "en" | "ar";
 
 export const dict = {
   en: {
     // App
-    "app.name": "TrainFlow TMS",
+    "app.name": "GCCLAB",
     "app.tagline": "Training Management System",
     "app.shortcut": "Search or jump to...",
 
@@ -33,10 +33,10 @@ export const dict = {
     "role.CONTRACTOR.desc": "Submit and track training requests",
 
     // Navigation groups
-    "nav.group.overview": "Overview",
+    "nav.group.dashboard": "",
     "nav.group.training": "Training Operations",
-    "nav.group.assessments": "Assessments & Quality",
-    "nav.group.compliance": "Compliance & Records",
+    "nav.group.assessment": "Assessment",
+    "nav.group.reports": "Reports",
     "nav.group.system": "System",
 
     // Modules
@@ -668,7 +668,7 @@ export const dict = {
 
   ar: {
     // App
-    "app.name": "TrainFlow TMS",
+    "app.name": "GCCLAB",
     "app.tagline": "نظام إدارة التدريب",
     "app.shortcut": "ابحث أو انتقل إلى...",
 
@@ -696,10 +696,10 @@ export const dict = {
     "role.CONTRACTOR.desc": "تقديم ومتابعة طلبات التدريب",
 
     // Navigation groups
-    "nav.group.overview": "نظرة عامة",
+    "nav.group.dashboard": "",
     "nav.group.training": "العمليات التدريبية",
-    "nav.group.assessments": "التقييم والجودة",
-    "nav.group.compliance": "الامتثال والسجلات",
+    "nav.group.assessment": "التقييم",
+    "nav.group.reports": "التقارير",
     "nav.group.system": "النظام",
 
     // Modules

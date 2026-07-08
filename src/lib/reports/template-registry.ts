@@ -1,4 +1,4 @@
-// TrainFlow TMS — Report Template Registry
+// GCCLAB TMS — Report Template Registry
 // =====================================================================
 // Template-based reporting architecture. Each template defines:
 //   - metadata (code, name, description, supported formats)

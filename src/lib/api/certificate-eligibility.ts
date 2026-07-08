@@ -1,4 +1,4 @@
-// TrainFlow TMS — Certificate Eligibility Service
+// GCCLAB TMS — Certificate Eligibility Service
 // =====================================================================
 // A certificate can only be generated when ALL of the following are true:
 //   1. Attendance is completed (trainee checked in, status = PRESENT)

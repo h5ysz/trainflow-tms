@@ -1,4 +1,4 @@
-// TrainFlow TMS — Session Enrollment Sync Service
+// GCCLAB TMS — Session Enrollment Sync Service
 // =====================================================================
 // Central service that keeps SessionEnrollment status fields in sync
 // with downstream modules (Attendance, ExamAttempt, CourseEvaluation, Certificate).

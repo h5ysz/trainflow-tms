@@ -200,7 +200,7 @@ export function TrainersRoute() {
           <div className="border-t pt-4">
             <FormGrid>
               <Field label={t("trainers.email")} required>
-                <Input type="email" placeholder="trainer@trainflow.io" value={(formData.email as string) ?? ""} onChange={(e) => setField("email", e.target.value)} />
+                <Input type="email" placeholder="trainer@gcclab.com" value={(formData.email as string) ?? ""} onChange={(e) => setField("email", e.target.value)} />
               </Field>
               <Field label={t("trainers.phone")}>
                 <Input placeholder="+966 11 000 0000" value={(formData.phone as string) ?? ""} onChange={(e) => setField("phone", e.target.value)} />

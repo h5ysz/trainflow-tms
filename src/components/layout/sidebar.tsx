@@ -6,28 +6,28 @@ import { getNavForRole, type NavItem } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, Building2, Contact, Users, Award, UserSquare, BookOpen,
-  ClipboardList, CalendarDays, CalendarRange, UserCheck, QrCode,
+  ClipboardList, CalendarDays, UserCheck, QrCode,
   FilePen, FileCheck2, Star, BadgeCheck, BarChart3, ScrollText,
-  Bell, Settings, GraduationCap,
+  Bell, Settings,
   type LucideIcon,
 } from "lucide-react";
 
 const ICONS: Record<string, LucideIcon> = {
   LayoutDashboard, Building2, Contact, Users, Award, UserSquare, BookOpen,
-  ClipboardList, CalendarDays, CalendarRange, UserCheck, QrCode,
+  ClipboardList, CalendarDays, UserCheck, QrCode,
   FilePen, FileCheck2, Star, BadgeCheck, BarChart3, ScrollText,
   Bell, Settings,
 };
 
+const GROUP_ORDER: NavItem["group"][] = ["dashboard", "training", "assessment", "reports", "system"];
+
 const GROUP_LABELS: Record<NavItem["group"], string> = {
-  overview: "nav.group.overview",
+  dashboard: "nav.group.dashboard",
   training: "nav.group.training",
-  assessments: "nav.group.assessments",
-  compliance: "nav.group.compliance",
+  assessment: "nav.group.assessment",
+  reports: "nav.group.reports",
   system: "nav.group.system",
 };
-
-const GROUP_ORDER: NavItem["group"][] = ["overview", "training", "assessments", "compliance", "system"];
 
 export function Sidebar() {
   const { t } = useI18n();
@@ -36,7 +36,6 @@ export function Sidebar() {
   if (!user) return null;
   const items = getNavForRole(user.role);
 
-  // Group items
   const grouped = GROUP_ORDER.map((group) => ({
     group,
     label: t(GROUP_LABELS[group] as never),
@@ -44,25 +43,27 @@ export function Sidebar() {
   })).filter((g) => g.items.length > 0);
 
   return (
-    <aside className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground">
+    <aside className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
       {/* Brand */}
-      <div className="flex h-14 items-center gap-2.5 px-4 border-b border-sidebar-border shrink-0">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-          <GraduationCap className="h-4.5 w-4.5" />
+      <div className="flex h-16 items-center gap-3 px-5 border-b border-sidebar-border shrink-0">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-sm shadow-sm">
+          GC
         </div>
         <div className="min-w-0">
-          <div className="text-sm font-bold leading-tight truncate">TrainFlow</div>
-          <div className="text-[10px] text-muted-foreground leading-tight">{t("app.tagline")}</div>
+          <div className="text-sm font-bold leading-tight tracking-tight">GCCLAB</div>
+          <div className="text-[10px] text-muted-foreground leading-tight font-medium">Training Management</div>
         </div>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto tf-scroll px-2 py-3">
+      <nav className="flex-1 overflow-y-auto tf-scroll px-3 py-4">
         {grouped.map(({ group, label, items: groupItems }) => (
-          <div key={group} className="mb-4">
-            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              {label}
-            </div>
+          <div key={group} className="mb-5">
+            {label && (
+              <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                {label}
+              </div>
+            )}
             <ul className="space-y-0.5">
               {groupItems.map((item) => {
                 const Icon = ICONS[item.icon] ?? LayoutDashboard;
@@ -72,13 +73,13 @@ export function Sidebar() {
                     <button
                       onClick={() => navigate(item.key)}
                       className={cn(
-                        "relative flex items-center gap-2.5 w-full rounded-md px-3 py-2 text-sm transition-colors",
+                        "relative flex items-center gap-3 w-full rounded-lg px-3 py-2 text-[13px] transition-all",
                         active
                           ? "tf-nav-active"
-                          : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+                          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground font-medium"
                       )}
                     >
-                      <Icon className="h-4 w-4 shrink-0" />
+                      <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={active ? 2.2 : 1.8} />
                       <span className="truncate">{t(item.labelKey as never)}</span>
                     </button>
                   </li>
@@ -90,10 +91,10 @@ export function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-sidebar-border p-3 shrink-0">
-        <div className="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
-          <div className="font-medium text-foreground mb-0.5">TrainFlow TMS</div>
-          <div>v1.0.0 · Enterprise</div>
+      <div className="border-t border-sidebar-border px-4 py-3 shrink-0">
+        <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60">
+          <div className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
+          <span className="font-medium">GCCLAB v1.0 RC1</span>
         </div>
       </div>
     </aside>

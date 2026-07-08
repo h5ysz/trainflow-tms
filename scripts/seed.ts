@@ -1,4 +1,4 @@
-// TrainFlow TMS — Clean seed script
+// GCCLAB TMS — Clean seed script
 // =====================================================================
 // Per architecture requirements, we seed ONLY:
 //   - Super Admin account
@@ -16,7 +16,7 @@ import { hashPassword } from "../src/lib/auth/jwt";
 import type { UserRole } from "../src/lib/auth/permissions";
 
 async function main() {
-  console.log("🌱 Seeding TrainFlow TMS (clean — no fake business data)...\n");
+  console.log("🌱 Seeding GCCLAB TMS (clean — no fake business data)...\n");
 
   // ─────────────────────────────────────────────────────────────────
   // 1) LANGUAGES
@@ -84,7 +84,7 @@ async function main() {
   console.log("→ System settings");
   const defaultSettings = [
     // General
-    { key: "system.name", value: "TrainFlow TMS", category: "GENERAL", description: "System display name", isPublic: true },
+    { key: "system.name", value: "GCCLAB TMS", category: "GENERAL", description: "System display name", isPublic: true },
     { key: "system.defaultLanguage", value: "en", category: "GENERAL", description: "Default UI language", isPublic: true },
     { key: "system.timezone", value: "Asia/Riyadh", category: "GENERAL", description: "Default timezone", isPublic: true },
     { key: "system.dateFormat", value: "YYYY-MM-DD", category: "GENERAL", description: "Date format", isPublic: true },
@@ -102,7 +102,7 @@ async function main() {
     { key: "email.smtpHost", value: "", category: "EMAIL", description: "SMTP host", isPublic: false },
     { key: "email.smtpPort", value: "587", category: "EMAIL", description: "SMTP port", isPublic: false },
     { key: "email.smtpUser", value: "", category: "EMAIL", description: "SMTP username", isPublic: false },
-    { key: "email.smtpFrom", value: "noreply@trainflow.io", category: "EMAIL", description: "From email", isPublic: false },
+    { key: "email.smtpFrom", value: "noreply@gcclab.com", category: "EMAIL", description: "From email", isPublic: false },
     // Schedule — Weekly Report timing (configurable by Super Admin)
     { key: "schedule.weekly.enabled", value: "true", category: "NOTIFICATION", description: "Enable weekly scheduled training report", isPublic: false },
     { key: "schedule.weekly.executionTime", value: "09:00", category: "NOTIFICATION", description: "Weekly report execution time (HH:mm, 24h)", isPublic: false },
@@ -130,7 +130,7 @@ async function main() {
   // 5) SUPER ADMIN ACCOUNT
   // ─────────────────────────────────────────────────────────────────
   console.log("→ Super Admin account");
-  const adminEmail = process.env.SUPER_ADMIN_EMAIL || "admin@trainflow.io";
+  const adminEmail = process.env.SUPER_ADMIN_EMAIL || "admin@gcclab.com";
   const adminPassword = process.env.SUPER_ADMIN_PASSWORD || "ChangeMeInProduction!2024";
   const passwordHash = await hashPassword(adminPassword);
 

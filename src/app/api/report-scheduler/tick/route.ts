@@ -8,7 +8,7 @@ export async function POST(req: Request) {
   // In production, verify a secret token from the Authorization header
   // For now, require authentication
   const authHeader = req.headers.get("authorization");
-  const expectedToken = process.env.SCHEDULER_SECRET || "trainflow-scheduler-secret";
+  const expectedToken = process.env.SCHEDULER_SECRET || "gcclab-scheduler-secret";
 
   if (authHeader !== `Bearer ${expectedToken}`) {
     return fail("Unauthorized — invalid scheduler token", 401);

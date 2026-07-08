@@ -1,4 +1,4 @@
-// TrainFlow TMS — API helpers (cookies, current user, RBAC, response shapes)
+// GCCLAB TMS — API helpers (cookies, current user, RBAC, response shapes)
 // Updated to use standardized response envelope and audit service.
 
 import { cookies } from "next/headers";

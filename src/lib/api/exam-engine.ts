@@ -1,4 +1,4 @@
-// TrainFlow TMS — Exam Engine
+// GCCLAB TMS — Exam Engine
 // =====================================================================
 // Handles:
 //   - Selecting questions from the course Question Bank

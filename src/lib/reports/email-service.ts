@@ -1,4 +1,4 @@
-// TrainFlow TMS — Email Delivery Service
+// GCCLAB TMS — Email Delivery Service
 // =====================================================================
 // Sends emails with file attachments (Excel/PDF report files).
 // Reads SMTP config from the Settings table (system settings).
@@ -40,7 +40,7 @@ async function getSmtpSettings() {
     host: map["email.smtpHost"] || "",
     port: parseInt(map["email.smtpPort"] || "587", 10),
     user: map["email.smtpUser"] || "",
-    from: map["email.smtpFrom"] || "noreply@trainflow.io",
+    from: map["email.smtpFrom"] || "noreply@gcclab.com",
     enabled: !!(map["email.smtpHost"] && map["email.smtpUser"]),
   };
 }
@@ -157,11 +157,11 @@ export function buildEmailBody(opts: {
 
   lines.push(
     ``,
-    `This report was generated automatically by TrainFlow TMS.`,
+    `This report was generated automatically by GCCLAB TMS.`,
     `Please do not reply to this email.`,
     ``,
     `Best regards,`,
-    `TrainFlow TMS Reporting Engine`
+    `GCCLAB TMS Reporting Engine`
   );
 
   return lines.join("\n");

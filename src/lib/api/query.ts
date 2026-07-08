@@ -1,4 +1,4 @@
-// TrainFlow TMS — Generic list query parser
+// GCCLAB TMS — Generic list query parser
 // Supports: pagination, search, status filter, sort, arbitrary filters,
 // and "includeDeleted" toggle for soft-delete aware endpoints.
 
