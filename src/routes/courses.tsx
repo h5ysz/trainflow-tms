@@ -11,26 +11,54 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { StatusBadge } from "@/components/common/status-badge";
-import { BookOpen, Plus, Clock, Users, Award } from "lucide-react";
+import { BookOpen, Plus, Clock, Users, Award, AlertCircle } from "lucide-react";
+import { useList } from "@/lib/api/hooks";
+import { api } from "@/lib/api/client";
+import { useToast } from "@/hooks/use-toast";
+import { useAppStore } from "@/lib/store/app-store";
+import { canPerformAction } from "@/lib/auth/permissions";
 
 interface Course {
   id: string;
   code: string;
   title: string;
-  category: string;
+  titleAr?: string | null;
+  category?: string | null;
   durationHours: number;
   validityMonths: number;
   passScore: number;
+  maxTrainees: number;
+  language: string;
   status: string;
+  hasPreTest: boolean;
+  hasFinalTest: boolean;
+  hasEvaluation: boolean;
 }
 
 const STATUSES = ["ACTIVE", "INACTIVE", "DRAFT"];
 
 export function CoursesRoute() {
   const { t } = useI18n();
-  const [search, setSearch] = useState("");
+  const { toast } = useToast();
+  const { user } = useAppStore();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const data: Course[] = [];
+  const [submitting, setSubmitting] = useState(false);
+  const [formData, setFormData] = useState<Record<string, unknown>>({
+    durationHours: 8,
+    validityMonths: 12,
+    passScore: 70,
+    maxTrainees: 20,
+    language: "en",
+    status: "ACTIVE",
+    hasPreTest: true,
+    hasFinalTest: true,
+    hasEvaluation: true,
+  });
+
+  const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
+    useList<Course>("/courses");
+
+  const canCreate = user ? canPerformAction(user.role, "courses", "create") : false;
 
   const columns: Column<Course>[] = [
     {
@@ -89,25 +117,55 @@ export function CoursesRoute() {
     },
   ];
 
+  const handleSubmit = async () => {
+    if (!formData.code || !formData.title) {
+      toast({ title: t("misc.error"), description: "Code and title are required", variant: "destructive" });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api.post("/courses", formData);
+      toast({ title: t("misc.success"), description: t("misc.createSuccess") });
+      setDialogOpen(false);
+      refetch();
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const setField = (k: string, v: unknown) => setFormData((p) => ({ ...p, [k]: v }));
+
   return (
     <div className="space-y-5">
       <PageHeader
         title={t("courses.title")}
         subtitle={t("courses.subtitle")}
         icon={BookOpen}
-        actions={<Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("courses.new")}</Button>}
+        actions={canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("courses.new")}</Button>}
       />
+      {error && (
+        <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4" /> {error}
+        </div>
+      )}
       <DataTable
         columns={columns}
         data={data}
+        loading={loading}
         rowKey={(r) => r.id}
         searchable
         searchValue={search}
         onSearchChange={setSearch}
+        page={page}
+        total={pagination?.total ?? 0}
+        pageSize={pagination?.pageSize ?? 10}
+        onPageChange={setPage}
         emptyIcon={BookOpen}
         emptyTitle={t("courses.empty.title")}
         emptySubtitle={t("courses.empty.subtitle")}
-        emptyAction={<Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("courses.new")}</Button>}
+        emptyAction={canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("courses.new")}</Button>}
       />
 
       <FormDialog
@@ -117,61 +175,68 @@ export function CoursesRoute() {
         description={t("courses.subtitle")}
         icon={BookOpen}
         size="lg"
-        onSubmit={() => setDialogOpen(false)}
+        onSubmit={handleSubmit}
+        isSubmitting={submitting}
       >
         <div className="space-y-5">
           <FormGrid>
             <Field label={t("courses.code")} required>
-              <Input placeholder="CRS-001" />
+              <Input placeholder="CRS-001" value={(formData.code as string) ?? ""} onChange={(e) => setField("code", e.target.value)} />
             </Field>
             <Field label={t("courses.title2")} required>
-              <Input placeholder="Basic Safety Training" />
+              <Input placeholder="Basic Safety Training" value={(formData.title as string) ?? ""} onChange={(e) => setField("title", e.target.value)} />
             </Field>
             <Field label={t("courses.titleAr")}>
-              <Input placeholder="التدريب الأساسي على السلامة" dir="rtl" />
+              <Input placeholder="التدريب الأساسي على السلامة" dir="rtl" value={(formData.titleAr as string) ?? ""} onChange={(e) => setField("titleAr", e.target.value)} />
             </Field>
             <Field label={t("courses.category")}>
-              <Input placeholder="HSE / First Aid / Fire Safety" />
+              <Input placeholder="HSE / First Aid / Fire Safety" value={(formData.category as string) ?? ""} onChange={(e) => setField("category", e.target.value)} />
             </Field>
           </FormGrid>
 
           <Field label={t("courses.description")}>
-            <Textarea rows={3} placeholder={t("courses.description")} />
+            <Textarea rows={3} placeholder={t("courses.description")} value={(formData.description as string) ?? ""} onChange={(e) => setField("description", e.target.value)} />
           </Field>
 
           <div className="border-t pt-4">
             <FormGrid cols={3}>
               <Field label={t("courses.durationHours")} required>
-                <Input type="number" defaultValue={8} min={1} />
+                <Input type="number" min={1} value={formData.durationHours as number} onChange={(e) => setField("durationHours", parseInt(e.target.value, 10) || 0)} />
               </Field>
               <Field label={t("courses.validityMonths")} required>
-                <Input type="number" defaultValue={12} min={1} />
+                <Input type="number" min={1} value={formData.validityMonths as number} onChange={(e) => setField("validityMonths", parseInt(e.target.value, 10) || 0)} />
               </Field>
               <Field label={t("courses.passScore")} required>
-                <Input type="number" defaultValue={70} min={0} max={100} />
+                <Input type="number" min={0} max={100} value={formData.passScore as number} onChange={(e) => setField("passScore", parseInt(e.target.value, 10) || 0)} />
               </Field>
               <Field label={t("courses.maxTrainees")}>
-                <Input type="number" defaultValue={20} min={1} />
+                <Input type="number" min={1} value={formData.maxTrainees as number} onChange={(e) => setField("maxTrainees", parseInt(e.target.value, 10) || 0)} />
               </Field>
               <Field label={t("courses.language")}>
-                <Select defaultValue="en"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
-                  <SelectItem value="en">English</SelectItem>
-                  <SelectItem value="ar">العربية</SelectItem>
-                  <SelectItem value="bilingual">Bilingual</SelectItem>
-                </SelectContent></Select>
+                <Select value={formData.language as string} onValueChange={(v) => setField("language", v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="en">English</SelectItem>
+                    <SelectItem value="ar">العربية</SelectItem>
+                    <SelectItem value="bilingual">Bilingual</SelectItem>
+                  </SelectContent>
+                </Select>
               </Field>
               <Field label={t("courses.status")}>
-                <Select defaultValue="ACTIVE"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
-                  {STATUSES.map((s) => <SelectItem key={s} value={s}>{t(`status.${s}` as never)}</SelectItem>)}
-                </SelectContent></Select>
+                <Select value={formData.status as string} onValueChange={(v) => setField("status", v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {STATUSES.map((s) => <SelectItem key={s} value={s}>{t(`status.${s}` as never)}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </Field>
             </FormGrid>
           </div>
 
           <div className="border-t pt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <label className="flex items-center gap-2 text-sm"><Switch defaultChecked /> {t("courses.hasPreTest")}</label>
-            <label className="flex items-center gap-2 text-sm"><Switch defaultChecked /> {t("courses.hasFinalTest")}</label>
-            <label className="flex items-center gap-2 text-sm"><Switch defaultChecked /> {t("courses.hasEvaluation")}</label>
+            <label className="flex items-center gap-2 text-sm"><Switch checked={formData.hasPreTest as boolean} onCheckedChange={(v) => setField("hasPreTest", v)} /> {t("courses.hasPreTest")}</label>
+            <label className="flex items-center gap-2 text-sm"><Switch checked={formData.hasFinalTest as boolean} onCheckedChange={(v) => setField("hasFinalTest", v)} /> {t("courses.hasFinalTest")}</label>
+            <label className="flex items-center gap-2 text-sm"><Switch checked={formData.hasEvaluation as boolean} onCheckedChange={(v) => setField("hasEvaluation", v)} /> {t("courses.hasEvaluation")}</label>
           </div>
         </div>
       </FormDialog>

@@ -2,14 +2,13 @@
 
 import { useState } from "react";
 import { useI18n } from "@/lib/i18n/context";
-import { useAppStore, demoUsers } from "@/lib/store/app-store";
+import { useAppStore } from "@/lib/store/app-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { ShieldCheck, UserCog, GraduationCap, Building2, ArrowRight, Languages, GraduationCap as Logo } from "lucide-react";
+import { ShieldCheck, UserCog, GraduationCap, Building2, ArrowRight, Languages, GraduationCap as Logo, AlertCircle, Loader2 } from "lucide-react";
 import { type UserRole } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
 
@@ -26,18 +25,21 @@ const roleCards: {
 
 export function LoginForm() {
   const { t, locale, setLocale } = useI18n();
-  const signIn = useAppStore((s) => s.signIn);
+  const { signInByRole, signIn, authLoading, authError } = useAppStore();
   const [selectedRole, setSelectedRole] = useState<UserRole>("COORDINATOR");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const handleSignIn = () => {
-    const demo = demoUsers[selectedRole];
-    signIn({
-      ...demo,
-      language: locale,
-      email: email || demo.email,
-    });
+  const handleSignIn = async () => {
+    try {
+      if (email && password) {
+        await signIn(email, password);
+      } else {
+        await signInByRole(selectedRole);
+      }
+    } catch {
+      // error is stored in store
+    }
   };
 
   return (
@@ -140,8 +142,9 @@ export function LoginForm() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder={demoUsers[selectedRole].email}
+                placeholder={`${selectedRole.toLowerCase()}@trainflow.io`}
                 autoComplete="email"
+                disabled={authLoading}
               />
             </div>
             <div className="space-y-1.5">
@@ -151,8 +154,9 @@ export function LoginForm() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="trainflow123"
                 autoComplete="current-password"
+                disabled={authLoading}
               />
             </div>
             <div className="flex items-center justify-between">
@@ -166,16 +170,33 @@ export function LoginForm() {
                 {t("auth.forgotPassword")}
               </Button>
             </div>
-            <Button className="w-full" size="lg" onClick={handleSignIn}>
-              {t("auth.signInWithRole", { role: t(`role.${selectedRole}` as const) })}
-              <ArrowRight className="h-4 w-4 rtl:rotate-180 ms-2" />
+
+            {authError && (
+              <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{authError}</span>
+              </div>
+            )}
+
+            <Button className="w-full" size="lg" onClick={handleSignIn} disabled={authLoading}>
+              {authLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 me-2 animate-spin" />
+                  {t("misc.loading")}
+                </>
+              ) : (
+                <>
+                  {t("auth.signInWithRole", { role: t(`role.${selectedRole}` as const) })}
+                  <ArrowRight className="h-4 w-4 rtl:rotate-180 ms-2" />
+                </>
+              )}
             </Button>
           </Card>
 
           <p className="text-center text-xs text-muted-foreground">
             {locale === "en"
-              ? "Demo environment — no real credentials required. Click sign in to explore."
-              : "بيئة تجريبية — لا حاجة لبيانات اعتماد حقيقية. اضغط تسجيل الدخول للاستكشاف."}
+              ? "Demo: pick a role and click Sign in, or use email + password \"trainflow123\"."
+              : "تجريبي: اختر دوراً واضغط تسجيل الدخول، أو استخدم البريد وكلمة المرور \"trainflow123\"."}
           </p>
         </div>
       </div>

@@ -8,9 +8,14 @@ import { AppShell } from "@/components/layout/app-shell";
 import { RouteRouter } from "@/routes/router";
 
 export default function Home() {
-  const { isAuthenticated, locale, theme, setTheme, setLocale } = useAppStore();
+  const { isAuthenticated, locale, theme, setTheme, setLocale, refreshUser } = useAppStore();
 
-  // Sync theme on first paint
+  // On mount: try to restore session from cookie
+  useEffect(() => {
+    refreshUser();
+  }, []);
+
+  // Sync theme to <html>
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle("dark", theme === "dark");

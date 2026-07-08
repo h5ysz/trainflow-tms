@@ -5,26 +5,20 @@ import { persist } from "zustand/middleware";
 import type { Locale } from "@/lib/i18n/translations";
 import type { UserRole } from "@/lib/auth/permissions";
 import type { RouteKey } from "@/lib/auth/permissions";
-
-export interface SessionUser {
-  id: string;
-  email: string;
-  fullName: string;
-  role: UserRole;
-  language: Locale;
-  companyId?: string | null;
-  companyName?: string | null;
-  trainerId?: string | null;
-  avatarUrl?: string | null;
-}
+import { authApi, type AuthUser } from "@/lib/api/client";
 
 interface AppState {
   // Auth
-  user: SessionUser | null;
+  user: AuthUser | null;
   isAuthenticated: boolean;
-  signIn: (user: SessionUser) => void;
-  signOut: () => void;
-  switchRole: (role: UserRole) => void;
+  authLoading: boolean;
+  authError: string | null;
+  signIn: (email: string, password: string) => Promise<void>;
+  signInByRole: (role: UserRole) => Promise<void>;
+  refreshUser: () => Promise<void>;
+  signOut: () => Promise<void>;
+  switchRole: (role: UserRole) => Promise<void>;
+  clearAuth: () => void;
 
   // Locale
   locale: Locale;
@@ -34,7 +28,7 @@ interface AppState {
   theme: "light" | "dark";
   setTheme: (theme: "light" | "dark") => void;
 
-  // Routing (single-page app routing)
+  // Routing
   currentRoute: RouteKey;
   navigate: (route: RouteKey) => void;
 
@@ -47,65 +41,79 @@ interface AppState {
   setCommandOpen: (open: boolean) => void;
 }
 
-// Demo users for each role — for design exploration only (no fake business data)
-const demoUsers: Record<UserRole, SessionUser> = {
-  SUPER_ADMIN: {
-    id: "demo-super-admin",
-    email: "admin@trainflow.io",
-    fullName: "System Administrator",
-    role: "SUPER_ADMIN",
-    language: "en",
-  },
-  COORDINATOR: {
-    id: "demo-coordinator",
-    email: "coordinator@trainflow.io",
-    fullName: "Sarah Coordinator",
-    role: "COORDINATOR",
-    language: "en",
-  },
-  TRAINER: {
-    id: "demo-trainer",
-    email: "trainer@trainflow.io",
-    fullName: "Ahmed Trainer",
-    role: "TRAINER",
-    language: "en",
-  },
-  CONTRACTOR: {
-    id: "demo-contractor",
-    email: "contractor@trainflow.io",
-    fullName: "Khalid Contractor",
-    role: "CONTRACTOR",
-    language: "en",
-    companyName: "Demo Contracting Co.",
-  },
-};
-
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
       // Auth
       user: null,
       isAuthenticated: false,
-      signIn: (user) =>
-        set({
-          user,
-          isAuthenticated: true,
-          locale: user.language,
-          currentRoute: "dashboard",
-        }),
-      signOut: () =>
-        set({
-          user: null,
-          isAuthenticated: false,
-          currentRoute: "dashboard",
-          sidebarOpen: false,
-        }),
-      switchRole: (role) => {
-        const current = get().user;
-        if (!current) return;
-        const demo = demoUsers[role];
-        set({ user: { ...demo, language: current.language }, currentRoute: "dashboard" });
+      authLoading: false,
+      authError: null,
+
+      signIn: async (email, password) => {
+        set({ authLoading: true, authError: null });
+        try {
+          const { user } = await authApi.login(email, password);
+          set({
+            user,
+            isAuthenticated: true,
+            locale: (user.language as Locale) ?? "en",
+            currentRoute: "dashboard",
+            authLoading: false,
+          });
+        } catch (e) {
+          set({ authLoading: false, authError: (e as Error).message });
+          throw e;
+        }
       },
+
+      signInByRole: async (role) => {
+        set({ authLoading: true, authError: null });
+        try {
+          const { user } = await authApi.loginByRole(role);
+          set({
+            user,
+            isAuthenticated: true,
+            locale: (user.language as Locale) ?? "en",
+            currentRoute: "dashboard",
+            authLoading: false,
+          });
+        } catch (e) {
+          set({ authLoading: false, authError: (e as Error).message });
+          throw e;
+        }
+      },
+
+      refreshUser: async () => {
+        try {
+          const user = await authApi.me();
+          set({ user, isAuthenticated: true, locale: (user.language as Locale) ?? get().locale });
+        } catch {
+          // Not authenticated
+          set({ user: null, isAuthenticated: false });
+        }
+      },
+
+      signOut: async () => {
+        try {
+          await authApi.logout();
+        } catch {
+          // ignore — cookie cleared on server anyway
+        }
+        set({ user: null, isAuthenticated: false, currentRoute: "dashboard", sidebarOpen: false });
+      },
+
+      switchRole: async (role) => {
+        // In production: this would re-login. For demo: switch via role-login
+        try {
+          await get().signInByRole(role);
+        } catch {
+          // Fallback: just clear and let user re-login
+          await get().signOut();
+        }
+      },
+
+      clearAuth: () => set({ user: null, isAuthenticated: false, currentRoute: "dashboard" }),
 
       // Locale
       locale: "en",
@@ -143,5 +151,3 @@ export const useAppStore = create<AppState>()(
     }
   )
 );
-
-export { demoUsers };

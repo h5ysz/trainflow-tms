@@ -9,27 +9,40 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/common/status-badge";
-import { UserCheck, Plus, QrCode, Calendar, Building2 } from "lucide-react";
+import { UserCheck, Plus, QrCode, Calendar, Building2, AlertCircle } from "lucide-react";
+import { useList } from "@/lib/api/hooks";
+import { api } from "@/lib/api/client";
+import { useToast } from "@/hooks/use-toast";
+import { useAppStore } from "@/lib/store/app-store";
+import { canPerformAction } from "@/lib/auth/permissions";
 
 interface AttendanceRow {
   id: string;
-  sessionCode: string;
+  sessionCode?: string | null;
+  sessionTitle?: string | null;
   traineeName: string;
-  traineeEmail: string;
-  company: string;
-  checkInAt: string;
+  traineeEmail?: string | null;
+  company?: string | null;
+  checkInAt?: string | null;
   status: string;
-  checkInMethod: string;
+  checkInMethod?: string | null;
 }
 
 const STATUSES = ["REGISTERED", "PRESENT", "ABSENT", "LATE", "EXCUSED"];
 
 export function AttendanceRoute() {
   const { t } = useI18n();
-  const [search, setSearch] = useState("");
+  const { toast } = useToast();
+  const { user } = useAppStore();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
-  const data: AttendanceRow[] = [];
+  const [submitting, setSubmitting] = useState(false);
+  const [formData, setFormData] = useState<Record<string, unknown>>({ status: "PRESENT" });
+
+  const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
+    useList<AttendanceRow>("/attendance");
+
+  const canCreate = user ? canPerformAction(user.role, "attendance", "create") : false;
 
   const columns: Column<AttendanceRow>[] = [
     {
@@ -50,21 +63,19 @@ export function AttendanceRoute() {
     {
       key: "session",
       header: t("attendance.session"),
-      cell: (r) => <div className="font-mono text-xs font-semibold text-primary">{r.sessionCode}</div>,
+      cell: (r) => <div className="font-mono text-xs font-semibold text-primary">{r.sessionCode || "—"}</div>,
     },
     {
       key: "company",
       header: t("attendance.company"),
-      cell: (r) => (
-        <div className="text-sm flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5 text-muted-foreground" />{r.company || "—"}</div>
-      ),
+      cell: (r) => <div className="text-sm flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5 text-muted-foreground" />{r.company || "—"}</div>,
     },
     {
       key: "checkIn",
       header: t("attendance.checkInAt"),
       cell: (r) => (
         <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-          <Calendar className="h-3 w-3" />{r.checkInAt || "—"}
+          <Calendar className="h-3 w-3" />{r.checkInAt ? new Date(r.checkInAt).toLocaleString() : "—"}
         </div>
       ),
     },
@@ -89,6 +100,27 @@ export function AttendanceRoute() {
     },
   ];
 
+  const handleSubmit = async () => {
+    if (!formData.sessionId || !formData.traineeName) {
+      toast({ title: t("misc.error"), description: "Session and trainee name are required", variant: "destructive" });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api.post("/attendance", { ...formData, checkInMethod: "MANUAL" });
+      toast({ title: t("misc.success"), description: t("misc.createSuccess") });
+      setDialogOpen(false);
+      setFormData({ status: "PRESENT" });
+      refetch();
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const setField = (k: string, v: unknown) => setFormData((p) => ({ ...p, [k]: v }));
+
   return (
     <div className="space-y-5">
       <PageHeader
@@ -96,23 +128,35 @@ export function AttendanceRoute() {
         subtitle={t("attendance.subtitle")}
         icon={UserCheck}
         actions={
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setScanOpen(true)}>
-              <QrCode className="h-4 w-4 me-1.5" />{t("attendance.scanQR")}
-            </Button>
-            <Button onClick={() => setDialogOpen(true)}>
-              <Plus className="h-4 w-4 me-1.5" />{t("attendance.manualCheckIn")}
-            </Button>
-          </div>
+          canCreate && (
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setScanOpen(true)}>
+                <QrCode className="h-4 w-4 me-1.5" />{t("attendance.scanQR")}
+              </Button>
+              <Button onClick={() => setDialogOpen(true)}>
+                <Plus className="h-4 w-4 me-1.5" />{t("attendance.manualCheckIn")}
+              </Button>
+            </div>
+          )
         }
       />
+      {error && (
+        <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4" /> {error}
+        </div>
+      )}
       <DataTable
         columns={columns}
         data={data}
+        loading={loading}
         rowKey={(r) => r.id}
         searchable
         searchValue={search}
         onSearchChange={setSearch}
+        page={page}
+        total={pagination?.total ?? 0}
+        pageSize={pagination?.pageSize ?? 10}
+        onPageChange={setPage}
         emptyIcon={UserCheck}
         emptyTitle={t("attendance.empty.title")}
         emptySubtitle={t("attendance.empty.subtitle")}
@@ -123,58 +167,49 @@ export function AttendanceRoute() {
         onOpenChange={setDialogOpen}
         title={t("attendance.manualCheckIn")}
         icon={UserCheck}
-        onSubmit={() => setDialogOpen(false)}
+        onSubmit={handleSubmit}
+        isSubmitting={submitting}
       >
         <div className="space-y-4">
           <FormGrid>
             <Field label={t("attendance.session")} required>
-              <Select><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger><SelectContent>
-                <SelectItem value="—" disabled>—</SelectItem>
-              </SelectContent></Select>
+              <Input placeholder="Session ID" value={(formData.sessionId as string) ?? ""} onChange={(e) => setField("sessionId", e.target.value)} />
             </Field>
             <Field label={t("attendance.status")}>
-              <Select defaultValue="PRESENT"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
-                {STATUSES.map((s) => <SelectItem key={s} value={s}>{t(`status.${s}` as never)}</SelectItem>)}
-              </SelectContent></Select>
+              <Select value={formData.status as string} onValueChange={(v) => setField("status", v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {STATUSES.map((s) => <SelectItem key={s} value={s}>{t(`status.${s}` as never)}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </Field>
           </FormGrid>
           <FormGrid>
             <Field label={t("attendance.traineeName")} required>
-              <Input placeholder="Full name" />
+              <Input placeholder="Full name" value={(formData.traineeName as string) ?? ""} onChange={(e) => setField("traineeName", e.target.value)} />
             </Field>
             <Field label={t("attendance.traineeId")}>
-              <Input placeholder="National ID" />
+              <Input placeholder="National ID" value={(formData.traineeIdNational as string) ?? ""} onChange={(e) => setField("traineeIdNational", e.target.value)} />
             </Field>
             <Field label={t("attendance.traineeEmail")}>
-              <Input type="email" placeholder="trainee@company.com" />
+              <Input type="email" placeholder="trainee@company.com" value={(formData.traineeEmail as string) ?? ""} onChange={(e) => setField("traineeEmail", e.target.value)} />
             </Field>
             <Field label={t("attendance.traineePhone")}>
-              <Input placeholder="+966 5X XXX XXXX" />
+              <Input placeholder="+966 5X XXX XXXX" value={(formData.traineePhone as string) ?? ""} onChange={(e) => setField("traineePhone", e.target.value)} />
             </Field>
             <Field label={t("attendance.company")}>
-              <Input placeholder="Company name" />
-            </Field>
-            <Field label={t("attendance.checkInAt")}>
-              <Input type="datetime-local" />
+              <Input placeholder="Company name" value={(formData.company as string) ?? ""} onChange={(e) => setField("company", e.target.value)} />
             </Field>
           </FormGrid>
         </div>
       </FormDialog>
 
-      <FormDialog
-        open={scanOpen}
-        onOpenChange={setScanOpen}
-        title={t("attendance.scanQR")}
-        icon={QrCode}
-        size="sm"
-      >
+      <FormDialog open={scanOpen} onOpenChange={setScanOpen} title={t("attendance.scanQR")} icon={QrCode} size="sm">
         <div className="text-center py-4">
           <div className="flex h-40 w-40 mx-auto items-center justify-center rounded-xl border-2 border-dashed border-primary/40 bg-primary/5">
             <QrCode className="h-16 w-16 text-primary/60" />
           </div>
-          <p className="mt-4 text-sm text-muted-foreground">
-            {t("qr.scanInstructions")}
-          </p>
+          <p className="mt-4 text-sm text-muted-foreground">{t("qr.scanInstructions")}</p>
         </div>
       </FormDialog>
     </div>

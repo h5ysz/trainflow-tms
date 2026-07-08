@@ -9,20 +9,22 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
 import { Field, FormGrid } from "@/components/common/form-dialog";
-import { ScrollText, Download, User, FileText, Clock } from "lucide-react";
+import { ScrollText, Download, User, Clock, AlertCircle } from "lucide-react";
+import { useList } from "@/lib/api/hooks";
+import { useAppStore } from "@/lib/store/app-store";
 
 interface AuditRow {
   id: string;
-  userName: string;
+  userName?: string | null;
   action: string;
   entity: string;
-  entityId: string;
+  entityId?: string | null;
   description: string;
-  ipAddress: string;
+  ipAddress?: string | null;
   createdAt: string;
 }
 
-const ACTIONS = ["CREATE", "UPDATE", "DELETE", "LOGIN", "LOGOUT", "APPROVE", "REJECT", "ISSUE"];
+const ACTIONS = ["CREATE", "UPDATE", "DELETE", "LOGIN", "LOGOUT", "APPROVE", "REJECT", "ISSUE", "REVOKE"];
 const ENTITIES = ["COMPANY", "TRAINER", "COURSE", "REQUEST", "SESSION", "CERTIFICATE", "USER", "SETTING"];
 
 const ACTION_STYLES: Record<string, string> = {
@@ -34,33 +36,32 @@ const ACTION_STYLES: Record<string, string> = {
   APPROVE: "bg-success/10 text-success border-success/20",
   REJECT: "bg-destructive/10 text-destructive border-destructive/20",
   ISSUE: "bg-warning/10 text-warning border-warning/20",
+  REVOKE: "bg-destructive/10 text-destructive border-destructive/20",
 };
 
 export function AuditLogRoute() {
   const { t } = useI18n();
-  const [search, setSearch] = useState("");
-  const [action, setAction] = useState("ALL");
-  const [entity, setEntity] = useState("ALL");
-  const data: AuditRow[] = [];
+  const { user } = useAppStore();
+  const [action, setAction] = useState("");
+  const [entity, setEntity] = useState("");
+
+  const extra: Record<string, string | undefined> = {};
+  if (action) extra.action = action;
+  if (entity) extra.entity = entity;
+
+  const { data, pagination, loading, error, page, setPage, search, setSearch } =
+    useList<AuditRow>("/audit-log", { extraParams: extra });
 
   const columns: Column<AuditRow>[] = [
     {
       key: "timestamp",
       header: t("audit.timestamp"),
-      cell: (r) => (
-        <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-          <Clock className="h-3 w-3" />{r.createdAt}
-        </div>
-      ),
+      cell: (r) => <div className="text-xs text-muted-foreground flex items-center gap-1.5"><Clock className="h-3 w-3" />{new Date(r.createdAt).toLocaleString()}</div>,
     },
     {
       key: "user",
       header: t("audit.user"),
-      cell: (r) => (
-        <div className="flex items-center gap-2 text-sm">
-          <User className="h-3.5 w-3.5 text-muted-foreground" />{r.userName}
-        </div>
-      ),
+      cell: (r) => <div className="flex items-center gap-2 text-sm"><User className="h-3.5 w-3.5 text-muted-foreground" />{r.userName || "—"}</div>,
     },
     {
       key: "action",
@@ -77,20 +78,12 @@ export function AuditLogRoute() {
       cell: (r) => (
         <div className="text-sm">
           <div className="font-medium">{r.entity}</div>
-          <div className="text-xs text-muted-foreground font-mono">{r.entityId}</div>
+          <div className="text-xs text-muted-foreground font-mono">{r.entityId || "—"}</div>
         </div>
       ),
     },
-    {
-      key: "description",
-      header: t("audit.description"),
-      cell: (r) => <span className="text-xs text-muted-foreground">{r.description}</span>,
-    },
-    {
-      key: "ip",
-      header: t("audit.ipAddress"),
-      cell: (r) => <span className="text-xs text-muted-foreground font-mono">{r.ipAddress}</span>,
-    },
+    { key: "description", header: t("audit.description"), cell: (r) => <span className="text-xs text-muted-foreground">{r.description}</span> },
+    { key: "ip", header: t("audit.ipAddress"), cell: (r) => <span className="text-xs text-muted-foreground font-mono">{r.ipAddress || "—"}</span> },
   ];
 
   return (
@@ -105,7 +98,7 @@ export function AuditLogRoute() {
       <Card className="p-4">
         <FormGrid cols={3}>
           <Field label={t("audit.action")}>
-            <Select value={action} onValueChange={setAction}>
+            <Select value={action || "ALL"} onValueChange={(v) => setAction(v === "ALL" ? "" : v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">{t("misc.all")}</SelectItem>
@@ -114,7 +107,7 @@ export function AuditLogRoute() {
             </Select>
           </Field>
           <Field label={t("audit.entity")}>
-            <Select value={entity} onValueChange={setEntity}>
+            <Select value={entity || "ALL"} onValueChange={(v) => setEntity(v === "ALL" ? "" : v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">{t("misc.all")}</SelectItem>
@@ -128,10 +121,21 @@ export function AuditLogRoute() {
         </FormGrid>
       </Card>
 
+      {error && (
+        <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4" /> {error}
+        </div>
+      )}
+
       <DataTable
         columns={columns}
         data={data}
+        loading={loading}
         rowKey={(r) => r.id}
+        page={page}
+        total={pagination?.total ?? 0}
+        pageSize={pagination?.pageSize ?? 10}
+        onPageChange={setPage}
         emptyIcon={ScrollText}
         emptyTitle={t("audit.empty.title")}
         emptySubtitle={t("audit.empty.subtitle")}

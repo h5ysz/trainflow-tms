@@ -9,29 +9,41 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { StatusBadge } from "@/components/common/status-badge";
-import { Users, Plus, Mail, Phone, Award, CalendarDays } from "lucide-react";
+import { Users, Plus, Mail, Phone, Award, CalendarDays, AlertCircle } from "lucide-react";
+import { useList } from "@/lib/api/hooks";
+import { api } from "@/lib/api/client";
+import { useToast } from "@/hooks/use-toast";
+import { useAppStore } from "@/lib/store/app-store";
+import { canPerformAction } from "@/lib/auth/permissions";
 
 interface Trainer {
   id: string;
   fullName: string;
-  email: string;
-  phone: string;
-  nationality: string;
+  fullNameAr?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  nationality?: string | null;
   status: string;
   qualificationsCount: number;
   sessionsCount: number;
-  hireDate: string;
+  hireDate?: string | null;
 }
 
 const STATUSES = ["ACTIVE", "INACTIVE", "SUSPENDED"];
 
 export function TrainersRoute() {
   const { t } = useI18n();
-  const [search, setSearch] = useState("");
+  const { toast } = useToast();
+  const { user } = useAppStore();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const data: Trainer[] = [];
+  const [submitting, setSubmitting] = useState(false);
+  const [formData, setFormData] = useState<Record<string, unknown>>({});
+
+  const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
+    useList<Trainer>("/trainers");
+
+  const canCreate = user ? canPerformAction(user.role, "trainers", "create") : false;
 
   const columns: Column<Trainer>[] = [
     {
@@ -78,7 +90,7 @@ export function TrainersRoute() {
     {
       key: "hireDate",
       header: t("trainers.hireDate"),
-      cell: (r) => <span className="text-sm text-muted-foreground">{r.hireDate || "—"}</span>,
+      cell: (r) => <span className="text-sm text-muted-foreground">{r.hireDate ? new Date(r.hireDate).toLocaleDateString() : "—"}</span>,
     },
     {
       key: "status",
@@ -94,25 +106,56 @@ export function TrainersRoute() {
     },
   ];
 
+  const handleSubmit = async () => {
+    if (!formData.fullName) {
+      toast({ title: t("misc.error"), description: "Name is required", variant: "destructive" });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api.post("/trainers", formData);
+      toast({ title: t("misc.success"), description: t("misc.createSuccess") });
+      setDialogOpen(false);
+      setFormData({});
+      refetch();
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const setField = (k: string, v: unknown) => setFormData((p) => ({ ...p, [k]: v }));
+
   return (
     <div className="space-y-5">
       <PageHeader
         title={t("trainers.title")}
         subtitle={t("trainers.subtitle")}
         icon={Users}
-        actions={<Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("trainers.new")}</Button>}
+        actions={canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("trainers.new")}</Button>}
       />
+      {error && (
+        <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4" /> {error}
+        </div>
+      )}
       <DataTable
         columns={columns}
         data={data}
+        loading={loading}
         rowKey={(r) => r.id}
         searchable
         searchValue={search}
         onSearchChange={setSearch}
+        page={page}
+        total={pagination?.total ?? 0}
+        pageSize={pagination?.pageSize ?? 10}
+        onPageChange={setPage}
         emptyIcon={Users}
         emptyTitle={t("trainers.empty.title")}
         emptySubtitle={t("trainers.empty.subtitle")}
-        emptyAction={<Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("trainers.new")}</Button>}
+        emptyAction={canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("trainers.new")}</Button>}
       />
 
       <FormDialog
@@ -122,68 +165,72 @@ export function TrainersRoute() {
         description={t("trainers.subtitle")}
         icon={Users}
         size="lg"
-        onSubmit={() => setDialogOpen(false)}
+        onSubmit={handleSubmit}
+        isSubmitting={submitting}
       >
         <div className="space-y-5">
           <FormGrid>
             <Field label={t("trainers.fullName")} required>
-              <Input placeholder="Full name" />
+              <Input placeholder="Full name" value={(formData.fullName as string) ?? ""} onChange={(e) => setField("fullName", e.target.value)} />
             </Field>
             <Field label={t("trainers.fullNameAr")}>
-              <Input placeholder="الاسم بالعربية" dir="rtl" />
+              <Input placeholder="الاسم بالعربية" dir="rtl" value={(formData.fullNameAr as string) ?? ""} onChange={(e) => setField("fullNameAr", e.target.value)} />
             </Field>
             <Field label={t("trainers.nationalId")}>
-              <Input placeholder="ID Number" />
+              <Input placeholder="ID Number" value={(formData.nationalId as string) ?? ""} onChange={(e) => setField("nationalId", e.target.value)} />
             </Field>
             <Field label={t("trainers.gender")}>
-              <Select><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger><SelectContent>
-                <SelectItem value="MALE">{t("misc.yes") === "Yes" ? "Male" : "ذكر"}</SelectItem>
-                <SelectItem value="FEMALE">{t("misc.yes") === "Yes" ? "Female" : "أنثى"}</SelectItem>
-              </SelectContent></Select>
+              <Select onValueChange={(v) => setField("gender", v)}>
+                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MALE">{t("misc.yes") === "Yes" ? "Male" : "ذكر"}</SelectItem>
+                  <SelectItem value="FEMALE">{t("misc.yes") === "Yes" ? "Female" : "أنثى"}</SelectItem>
+                </SelectContent>
+              </Select>
             </Field>
             <Field label={t("trainers.nationality")}>
-              <Input placeholder="Saudi" />
+              <Input placeholder="Saudi" value={(formData.nationality as string) ?? ""} onChange={(e) => setField("nationality", e.target.value)} />
             </Field>
             <Field label={t("trainers.hireDate")}>
-              <Input type="date" />
+              <Input type="date" value={(formData.hireDate as string) ?? ""} onChange={(e) => setField("hireDate", e.target.value)} />
             </Field>
           </FormGrid>
 
           <div className="border-t pt-4">
             <FormGrid>
               <Field label={t("trainers.email")} required>
-                <Input type="email" placeholder="trainer@trainflow.io" />
+                <Input type="email" placeholder="trainer@trainflow.io" value={(formData.email as string) ?? ""} onChange={(e) => setField("email", e.target.value)} />
               </Field>
               <Field label={t("trainers.phone")}>
-                <Input placeholder="+966 11 000 0000" />
+                <Input placeholder="+966 11 000 0000" value={(formData.phone as string) ?? ""} onChange={(e) => setField("phone", e.target.value)} />
               </Field>
               <Field label={t("trainers.mobile")}>
-                <Input placeholder="+966 5X XXX XXXX" />
+                <Input placeholder="+966 5X XXX XXXX" value={(formData.mobile as string) ?? ""} onChange={(e) => setField("mobile", e.target.value)} />
               </Field>
               <Field label={t("trainers.country")}>
-                <Input placeholder="Saudi Arabia" />
+                <Input placeholder="Saudi Arabia" value={(formData.country as string) ?? ""} onChange={(e) => setField("country", e.target.value)} />
               </Field>
               <Field label={t("trainers.city")}>
-                <Input placeholder="Riyadh" />
+                <Input placeholder="Riyadh" value={(formData.city as string) ?? ""} onChange={(e) => setField("city", e.target.value)} />
               </Field>
             </FormGrid>
           </div>
 
           <div className="border-t pt-4 space-y-4">
             <Field label={t("trainers.address")}>
-              <Input placeholder="Street, District" />
+              <Input placeholder="Street, District" value={(formData.address as string) ?? ""} onChange={(e) => setField("address", e.target.value)} />
             </Field>
             <Field label={t("trainers.bio")}>
-              <Textarea placeholder={t("trainers.bio")} rows={3} />
+              <Textarea placeholder={t("trainers.bio")} rows={3} value={(formData.bio as string) ?? ""} onChange={(e) => setField("bio", e.target.value)} />
             </Field>
             <Field label={t("trainers.status")}>
-              <Select defaultValue="ACTIVE"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
-                {STATUSES.map((s) => <SelectItem key={s} value={s}>{t(`status.${s}` as never)}</SelectItem>)}
-              </SelectContent></Select>
+              <Select defaultValue="ACTIVE" onValueChange={(v) => setField("status", v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {STATUSES.map((s) => <SelectItem key={s} value={s}>{t(`status.${s}` as never)}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </Field>
-            <label className="flex items-center gap-2 text-sm">
-              <Switch defaultChecked /> {t("status.ACTIVE")}
-            </label>
           </div>
         </div>
       </FormDialog>

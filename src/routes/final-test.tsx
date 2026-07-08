@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useState as useReactState } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
@@ -11,43 +11,59 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FileCheck2, Plus, Check, X, User } from "lucide-react";
+import { FileCheck2, Plus, Check, X, User, AlertCircle } from "lucide-react";
+import { useList } from "@/lib/api/hooks";
+import { api } from "@/lib/api/client";
+import { useToast } from "@/hooks/use-toast";
+import { useAppStore } from "@/lib/store/app-store";
+import { canPerformAction } from "@/lib/auth/permissions";
 
+interface CourseOption { id: string; title: string; code: string; }
 interface Question {
-  id: string;
-  courseCode: string;
-  type: string;
-  text: string;
-  points: number;
-  order: number;
-  isActive: boolean;
+  id: string; courseCode?: string | null; type: string; text: string;
+  options: string[]; correctAnswers: number[]; points: number; order: number; isActive: boolean;
 }
 interface TestResultRow {
-  id: string;
-  sessionCode: string;
-  traineeName: string;
-  scorePercent: number;
-  passed: boolean;
-  attemptedAt: string;
+  id: string; sessionCode?: string | null; traineeName: string;
+  scorePercent: number; passed: boolean; attemptedAt: string;
 }
+
+const TEST_TYPE = "FINAL_TEST";
 
 export function FinalTestRoute() {
   const { t } = useI18n();
-  const [search, setSearch] = useState("");
+  const { toast } = useToast();
+  const { user } = useAppStore();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const questions: Question[] = [];
-  const results: TestResultRow[] = [];
+  const [submitting, setSubmitting] = useState(false);
+  const [formData, setFormData] = useState<Record<string, unknown>>({
+    type: "SINGLE_CHOICE", testType: TEST_TYPE, points: 1, order: 1, isActive: true,
+    options: ["", "", "", ""], correctAnswers: [] as number[],
+  });
+  const [courses, setCourses] = useReactState<CourseOption[]>([]);
+
+  const questionsList = useList<Question>("/questions", { extraParams: { testType: TEST_TYPE } });
+  const resultsList = useList<TestResultRow>("/test-results", { extraParams: { testType: TEST_TYPE } });
+
+  const canCreate = user ? canPerformAction(user.role, "final-test", "create") : false;
+
+  useEffect(() => {
+    if (dialogOpen && courses.length === 0) {
+      api.get<{ rows: CourseOption[] }>("/courses", { pageSize: 100 }).then((r) => {
+        setCourses(r.rows.map((c) => ({ id: c.id, title: c.title, code: c.code })));
+      }).catch(() => {});
+    }
+  }, [dialogOpen, courses.length]);
 
   const questionColumns: Column<Question>[] = [
     {
-      key: "text",
-      header: t("finalTest.questionText"),
+      key: "text", header: t("finalTest.questionText"),
       cell: (r) => (
         <div className="flex items-center gap-3">
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-muted text-xs font-mono font-semibold shrink-0">{r.order}</div>
           <div className="min-w-0">
             <div className="text-sm font-medium truncate max-w-md">{r.text}</div>
-            <div className="text-xs text-muted-foreground">{r.courseCode} · {r.type.replace("_", " ")}</div>
+            <div className="text-xs text-muted-foreground">{r.courseCode || "—"} · {r.type.replace("_", " ")}</div>
           </div>
         </div>
       ),
@@ -61,8 +77,7 @@ export function FinalTestRoute() {
         <span className="inline-flex items-center gap-1 text-muted-foreground text-xs font-medium"><X className="h-3.5 w-3.5" />{t("status.INACTIVE")}</span>
       ),
     },
-    {
-      key: "actions", header: t("action.actions"), headerClassName: "text-end", className: "text-end",
+    { key: "actions", header: t("action.actions"), headerClassName: "text-end", className: "text-end",
       cell: () => <Button variant="ghost" size="sm" className="h-8">{t("action.edit")}</Button>,
     },
   ];
@@ -95,8 +110,50 @@ export function FinalTestRoute() {
         </div>
       ),
     },
-    { key: "attemptedAt", header: t("finalTest.attemptedAt"), cell: (r) => <span className="text-xs text-muted-foreground">{r.attemptedAt}</span> },
+    { key: "attemptedAt", header: t("finalTest.attemptedAt"), cell: (r) => <span className="text-xs text-muted-foreground">{new Date(r.attemptedAt).toLocaleString()}</span> },
   ];
+
+  const handleSubmit = async () => {
+    if (!formData.courseId || !formData.text) {
+      toast({ title: t("misc.error"), description: "Course and text are required", variant: "destructive" });
+      return;
+    }
+    const options = (formData.options as string[]).filter((o) => o.trim() !== "");
+    if (options.length < 2) {
+      toast({ title: t("misc.error"), description: "At least 2 options required", variant: "destructive" });
+      return;
+    }
+    if ((formData.correctAnswers as number[]).length === 0) {
+      toast({ title: t("misc.error"), description: "Mark at least 1 correct answer", variant: "destructive" });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api.post("/questions", formData);
+      toast({ title: t("misc.success"), description: t("misc.createSuccess") });
+      setDialogOpen(false);
+      setFormData({ type: "SINGLE_CHOICE", testType: TEST_TYPE, points: 1, order: 1, isActive: true, options: ["", "", "", ""], correctAnswers: [] });
+      questionsList.refetch();
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const setField = (k: string, v: unknown) => setFormData((p) => ({ ...p, [k]: v }));
+
+  const toggleCorrect = (idx: number) => {
+    const current = (formData.correctAnswers as number[]) ?? [];
+    const next = current.includes(idx) ? current.filter((i) => i !== idx) : [...current, idx];
+    setField("correctAnswers", next);
+  };
+
+  const updateOption = (idx: number, value: string) => {
+    const opts = [...((formData.options as string[]) ?? [])];
+    opts[idx] = value;
+    setField("options", opts);
+  };
 
   return (
     <div className="space-y-5">
@@ -104,7 +161,7 @@ export function FinalTestRoute() {
         title={t("finalTest.title")}
         subtitle={t("finalTest.subtitle")}
         icon={FileCheck2}
-        actions={<Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("finalTest.newQuestion")}</Button>}
+        actions={canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("finalTest.newQuestion")}</Button>}
       />
       <Tabs defaultValue="questions">
         <TabsList>
@@ -112,24 +169,44 @@ export function FinalTestRoute() {
           <TabsTrigger value="results">{t("finalTest.results")}</TabsTrigger>
         </TabsList>
         <TabsContent value="questions" className="mt-4">
+          {questionsList.error && (
+            <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive mb-3">
+              <AlertCircle className="h-4 w-4" /> {questionsList.error}
+            </div>
+          )}
           <DataTable
             columns={questionColumns}
-            data={questions}
+            data={questionsList.data}
+            loading={questionsList.loading}
             rowKey={(r) => r.id}
             searchable
-            searchValue={search}
-            onSearchChange={setSearch}
+            searchValue={questionsList.search}
+            onSearchChange={questionsList.setSearch}
+            page={questionsList.page}
+            total={questionsList.pagination?.total ?? 0}
+            pageSize={questionsList.pagination?.pageSize ?? 10}
+            onPageChange={questionsList.setPage}
             emptyIcon={FileCheck2}
             emptyTitle={t("finalTest.empty.title")}
             emptySubtitle={t("finalTest.empty.subtitle")}
-            emptyAction={<Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("finalTest.newQuestion")}</Button>}
+            emptyAction={canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("finalTest.newQuestion")}</Button>}
           />
         </TabsContent>
         <TabsContent value="results" className="mt-4">
+          {resultsList.error && (
+            <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive mb-3">
+              <AlertCircle className="h-4 w-4" /> {resultsList.error}
+            </div>
+          )}
           <DataTable
             columns={resultColumns}
-            data={results}
+            data={resultsList.data}
+            loading={resultsList.loading}
             rowKey={(r) => r.id}
+            page={resultsList.page}
+            total={resultsList.pagination?.total ?? 0}
+            pageSize={resultsList.pagination?.pageSize ?? 10}
+            onPageChange={resultsList.setPage}
             emptyIcon={User}
             emptyTitle={t("finalTest.empty.title")}
             emptySubtitle={t("misc.pageUnderConstruction")}
@@ -143,42 +220,65 @@ export function FinalTestRoute() {
         title={t("finalTest.newQuestion")}
         icon={FileCheck2}
         size="lg"
-        onSubmit={() => setDialogOpen(false)}
+        onSubmit={handleSubmit}
+        isSubmitting={submitting}
       >
         <div className="space-y-4">
           <FormGrid>
             <Field label={t("courses.title2")} required>
-              <Select><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger><SelectContent>
-                <SelectItem value="—" disabled>—</SelectItem>
-              </SelectContent></Select>
+              <Select onValueChange={(v) => setField("courseId", v)}>
+                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>
+                  {courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.title} ({c.code})</SelectItem>)}
+                </SelectContent>
+              </Select>
             </Field>
             <Field label={t("finalTest.questionType")} required>
-              <Select defaultValue="SINGLE_CHOICE"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
-                <SelectItem value="SINGLE_CHOICE">Single Choice</SelectItem>
-                <SelectItem value="MULTIPLE_CHOICE">Multiple Choice</SelectItem>
-                <SelectItem value="TRUE_FALSE">True / False</SelectItem>
-                <SelectItem value="SHORT_ANSWER">Short Answer</SelectItem>
-              </SelectContent></Select>
+              <Select value={formData.type as string} onValueChange={(v) => setField("type", v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SINGLE_CHOICE">Single Choice</SelectItem>
+                  <SelectItem value="MULTIPLE_CHOICE">Multiple Choice</SelectItem>
+                  <SelectItem value="TRUE_FALSE">True / False</SelectItem>
+                  <SelectItem value="SHORT_ANSWER">Short Answer</SelectItem>
+                </SelectContent>
+              </Select>
             </Field>
           </FormGrid>
           <Field label={t("finalTest.questionText")} required>
-            <Textarea rows={3} placeholder={t("finalTest.questionText")} />
+            <Textarea rows={3} placeholder={t("finalTest.questionText")} value={(formData.text as string) ?? ""} onChange={(e) => setField("text", e.target.value)} />
           </Field>
           <div>
-            <Label className="text-xs font-medium mb-2 block">{t("finalTest.options")}</Label>
+            <Label className="text-xs font-medium mb-2 block">{t("finalTest.options")} ({t("finalTest.correctAnswers")})</Label>
             <div className="space-y-2">
-              {[1, 2, 3, 4].map((i) => (
+              {((formData.options as string[]) ?? []).map((opt, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <Input placeholder={`Option ${i}`} />
-                  <Button variant="outline" size="icon" className="h-9 w-9"><Check className="h-4 w-4" /></Button>
+                  <Input placeholder={`Option ${i + 1}`} value={opt} onChange={(e) => updateOption(i, e.target.value)} />
+                  <Button
+                    type="button"
+                    variant={((formData.correctAnswers as number[]) ?? []).includes(i) ? "default" : "outline"}
+                    size="icon"
+                    className="h-9 w-9 shrink-0"
+                    onClick={() => toggleCorrect(i)}
+                  >
+                    <Check className="h-4 w-4" />
+                  </Button>
                 </div>
               ))}
-              <Button variant="ghost" size="sm" className="text-xs"><Plus className="h-3.5 w-3.5 me-1" />{t("action.add")}</Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-xs"
+                onClick={() => setField("options", [...((formData.options as string[]) ?? []), ""])}
+              >
+                <Plus className="h-3.5 w-3.5 me-1" />{t("action.add")}
+              </Button>
             </div>
           </div>
           <FormGrid>
-            <Field label={t("finalTest.points")}><Input type="number" defaultValue={1} min={1} /></Field>
-            <Field label={t("finalTest.order")}><Input type="number" defaultValue={1} min={1} /></Field>
+            <Field label={t("finalTest.points")}><Input type="number" min={1} value={formData.points as number} onChange={(e) => setField("points", parseInt(e.target.value, 10) || 1)} /></Field>
+            <Field label={t("finalTest.order")}><Input type="number" min={1} value={formData.order as number} onChange={(e) => setField("order", parseInt(e.target.value, 10) || 1)} /></Field>
           </FormGrid>
         </div>
       </FormDialog>
