@@ -141,6 +141,19 @@ export const POST = withModuleAction("certificates", "create", async ({ req, use
   });
   const finalScore = finalTestAttempt?.scorePercent ?? 0;
 
+  // MULTI-COMPANY: Use the TRAINEE's company from the attendance record,
+  // NOT the session's owning company. This preserves the trainee's original company
+  // even when multiple companies participate in the same session.
+  const attendanceForCompany = await db.attendance.findFirst({
+    where: {
+      sessionId,
+      traineeName: { equals: traineeName },
+      deletedAt: null,
+    },
+    select: { companyId: true },
+  });
+  const certificateCompanyId = attendanceForCompany?.companyId ?? session.request?.companyId ?? null;
+
   // Check pass score
   if (finalScore < session.course.passScore) {
     return fail(`Score ${finalScore}% is below passing score ${session.course.passScore}%`, 400);
@@ -165,7 +178,7 @@ export const POST = withModuleAction("certificates", "create", async ({ req, use
       refNumber,
       sessionId,
       courseId: session.courseId,
-      companyId: session.request?.companyId ?? null,
+      companyId: certificateCompanyId, // MULTI-COMPANY: trainee's company, not session's
       attendanceId: eligibility.attendanceId ?? null,
       traineeName,
       traineeIdNational: traineeIdNational ?? null,

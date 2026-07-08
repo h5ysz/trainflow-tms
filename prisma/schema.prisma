@@ -240,6 +240,8 @@ model Company {
   users           User[]
   trainingRequests TrainingRequest[]
   certificates    Certificate[]
+  sessionEnrollments SessionEnrollment[]
+  sessionCompanies   SessionCompany[]
 
   @@index([status])
   @@index([tenantId])
@@ -270,6 +272,7 @@ model Trainee {
 
   company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   requestCourses  TrainingRequestCourseTrainee[]
+  sessionEnrollments SessionEnrollment[]
 
   @@index([companyId])
   @@index([nationalId])
@@ -565,6 +568,61 @@ model TrainingRequestCourseTrainee {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MULTI-COMPANY SESSION ENROLLMENT
+// =====================================================================
+// A Training Session can contain trainees from MULTIPLE companies.
+// This junction allows direct enrollment of any trainee (from any company)
+// into a session, independent of the original Training Request's company.
+//
+// The trainee's original company is always preserved via Trainee.companyId.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SessionEnrollment {
+  id              String   @id @default(uuid())
+  sessionId       String
+  session         TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  traineeId       String
+  trainee         Trainee  @relation(fields: [traineeId], references: [id], onDelete: Cascade)
+  // The trainee's company at time of enrollment (snapshot — preserves original company)
+  companyId       String   // trainee's original company (NOT the session's company)
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  enrolledAt      DateTime @default(now())
+  enrolledBy      String?
+  status          String   @default("ENROLLED") // ENROLLED | ATTENDED | COMPLETED | CANCELLED
+  notes           String?
+  // Audit
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+
+  @@unique([sessionId, traineeId])
+  @@index([sessionId])
+  @@index([traineeId])
+  @@index([companyId])
+}
+
+// Tracks which companies have trainees enrolled in a session (for multi-company reporting)
+model SessionCompany {
+  id              String   @id @default(uuid())
+  sessionId       String
+  session         TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  traineeCount    Int      @default(0)
+  addedAt         DateTime @default(now())
+  // Audit
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+
+  @@unique([sessionId, companyId])
+  @@index([sessionId])
+  @@index([companyId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // TRAINING SESSIONS + QR ATTENDANCE
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -617,6 +675,8 @@ model TrainingSession {
   evaluations     CourseEvaluation[]
   certificates    Certificate[]
   lifecycleEvents SessionLifecycleEvent[]
+  enrollments     SessionEnrollment[]
+  sessionCompanies SessionCompany[]
 
   @@index([status])
   @@index([trainerId])

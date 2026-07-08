@@ -95,7 +95,7 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
         refNumber,
         sessionId,
         courseId: session.courseId,
-        companyId: session.request?.companyId ?? null,
+        companyId: trainee.companyId ?? session.request?.companyId ?? null, // MULTI-COMPANY: trainee's company
         attendanceId: trainee.id,
         traineeName: trainee.traineeName,
         traineeIdNational: trainee.traineeIdNational,

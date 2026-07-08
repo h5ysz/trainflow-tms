@@ -124,7 +124,25 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     timestamp: now.toISOString(),
   });
 
-  // 6. Create attendance record
+  // 5a. MULTI-COMPANY: Look up the trainee to get their ORIGINAL company.
+  // The trainee may be from a DIFFERENT company than the session's owning company.
+  // This is the key multi-company change — we do NOT restrict check-in to the request's company.
+  let traineeCompanyId = body.companyId ?? null;
+  let traineeCompanyName = body.company ?? null;
+
+  if (body.traineeIdNational) {
+    // Try to find the trainee by national ID — their original company is preserved
+    const trainee = await db.trainee.findFirst({
+      where: { nationalId: body.traineeIdNational, deletedAt: null },
+      include: { company: { select: { id: true, name: true } } },
+    });
+    if (trainee) {
+      traineeCompanyId = trainee.companyId;
+      traineeCompanyName = trainee.company?.name ?? null;
+    }
+  }
+
+  // 6. Create attendance record — using the TRAINEE's company (NOT the session's company)
   const attendance = await db.attendance.create({
     data: {
       sessionId,
@@ -132,8 +150,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       traineeIdNational: body.traineeIdNational ?? null,
       traineeEmail: body.traineeEmail ?? null,
       traineePhone: body.traineePhone ?? null,
-      company: body.company ?? null,
-      companyId: body.companyId ?? null,
+      company: traineeCompanyName,
+      companyId: traineeCompanyId,
       checkInAt: now,
       status: "PRESENT",
       checkInMethod: "QR",
