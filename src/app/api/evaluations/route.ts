@@ -63,9 +63,9 @@ export const GET = withModuleAction("evaluation", "view", async ({ req }) => {
 export const POST = withModuleAction("evaluation", "create", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
   const {
-    sessionId, trainerId, traineeName, traineeEmail,
+    sessionId, trainerId, traineeName, traineeEmail, traineeIdNational, attendanceId,
     trainerRating, contentRating, venueRating, materialsRating,
-    overallRating, comments, wouldRecommend,
+    overallRating, comments, suggestions, wouldRecommend,
   } = body;
 
   if (!sessionId || !traineeName) return fail("sessionId and traineeName are required", 422, "VALIDATION_ERROR");
@@ -76,23 +76,49 @@ export const POST = withModuleAction("evaluation", "create", async ({ req, user 
   const session = await db.trainingSession.findFirst({ where: { id: sessionId, deletedAt: null } });
   if (!session) return fail("Session not found", 404);
 
+  // Prevent duplicate evaluations from same trainee
+  const existing = await db.courseEvaluation.findFirst({
+    where: {
+      sessionId,
+      traineeName: { equals: traineeName },
+      deletedAt: null,
+      ...(traineeIdNational ? { traineeIdNational } : {}),
+    },
+  });
+  if (existing) {
+    return fail("Evaluation already submitted by this trainee", 400, "DUPLICATE_EVALUATION");
+  }
+
   const evaluation = await db.courseEvaluation.create({
     data: {
       sessionId,
       trainerId: trainerId ?? session.trainerId ?? null,
       traineeName,
       traineeEmail: traineeEmail ?? null,
+      traineeIdNational: traineeIdNational ?? null,
+      attendanceId: attendanceId ?? null,
       trainerRating,
       contentRating,
       venueRating,
       materialsRating,
       overallRating,
       comments: comments ?? null,
+      suggestions: suggestions ?? null,
       wouldRecommend: wouldRecommend ?? null,
       createdBy: user.id,
       updatedBy: user.id,
     },
   });
+
+  // Update attendance progress: mark evaluation as completed
+  if (attendanceId) {
+    const { updateAttendanceProgress } = await import("@/lib/api/certificate-eligibility");
+    await updateAttendanceProgress({
+      attendanceId,
+      step: "evaluation",
+      userId: user.id,
+    });
+  }
 
   return created(evaluation);
 });

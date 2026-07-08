@@ -581,12 +581,12 @@ model TrainingSession {
   trainer         Trainer? @relation(fields: [trainerId], references: [id])
   title           String
   location        String?
-  city            String?  // NEW
-  region          String?  // NEW
+  city            String?
+  region          String?
   venue           String?
-  shift           String?  // NEW — MORNING | EVENING
-  durationHours   Int      @default(6) // NEW — Morning/Evening = 6 hours each
-  capacity        Int      @default(20) // NEW — max trainees per session
+  shift           String?  // MORNING | EVENING
+  durationHours   Int      @default(6)
+  capacity        Int      @default(20)
   language        String   @default("en")
   startDate       DateTime
   endDate         DateTime
@@ -595,6 +595,13 @@ model TrainingSession {
   status          SessionStatus @default(SCHEDULED)
   qrCodeToken     String?  @unique
   qrCodeGeneratedAt DateTime?
+  // QR attendance window — QR is only active during this period
+  qrActiveFrom    DateTime?
+  qrActiveTo      DateTime?
+  // Session lifecycle tracking
+  lifecycleStatus String   @default("NOT_STARTED") // NOT_STARTED | STARTED | ON_BREAK | COMPLETED
+  startedAt       DateTime?
+  completedAt     DateTime?
   notes           String?
   // Audit
   createdAt       DateTime @default(now())
@@ -606,8 +613,10 @@ model TrainingSession {
   attendance      Attendance[]
   checkInAttempts CheckInAttempt[]
   testResults     TestResult[]
+  examAttempts    ExamAttempt[]
   evaluations     CourseEvaluation[]
   certificates    Certificate[]
+  lifecycleEvents SessionLifecycleEvent[]
 
   @@index([status])
   @@index([trainerId])
@@ -615,6 +624,23 @@ model TrainingSession {
   @@index([shift])
   @@index([city])
   @@index([requestCourseId])
+  @@index([lifecycleStatus])
+}
+
+// Session lifecycle events: STARTED → BREAK → RESUMED → COMPLETED
+model SessionLifecycleEvent {
+  id              String   @id @default(uuid())
+  sessionId       String
+  session         TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  eventType       String   // STARTED | BREAK | RESUMED | COMPLETED
+  eventTime       DateTime @default(now())
+  notes           String?
+  // Audit
+  createdAt       DateTime @default(now())
+  createdBy       String?
+
+  @@index([sessionId])
+  @@index([eventType])
 }
 
 model Attendance {
@@ -632,6 +658,17 @@ model Attendance {
   status          String   @default("REGISTERED") // REGISTERED | PRESENT | ABSENT | LATE | EXCUSED
   checkInMethod   String?  // QR | MANUAL
   notes           String?
+  // Device tracking for QR check-in
+  deviceInfo      String?  // JSON: { userAgent, ipAddress, platform, deviceFingerprint }
+  // Training execution progress (pipeline tracking)
+  preTestAssignedAt  DateTime?
+  preTestCompletedAt DateTime?
+  finalTestAssignedAt  DateTime?
+  finalTestCompletedAt DateTime?
+  finalTestPassed    Boolean?
+  evaluationCompletedAt DateTime?
+  certificateEligible Boolean @default(false)
+  certificateId      String?
   // Audit
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -639,8 +676,12 @@ model Attendance {
   updatedBy       String?
   deletedAt       DateTime?
 
+  examAttempts    ExamAttempt[]
+
   @@index([sessionId])
   @@index([status])
+  @@index([traineeIdNational])
+  @@index([certificateEligible])
 }
 
 // Tracks every QR scan attempt (success + failures) — for analytics + fraud detection
@@ -694,6 +735,52 @@ model TestResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// EXAM ATTEMPTS — randomized per-trainee exam versions
+// Each attempt has a unique question set (randomized order + randomized answer choices)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ExamAttempt {
+  id              String   @id @default(uuid())
+  refNumber       String   @unique // EXAM-YYYY-000001
+  sessionId       String
+  session         TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  attendanceId    String?
+  attendance      Attendance? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
+  testType        TestType // PRE_TEST | FINAL_TEST
+  traineeName     String
+  traineeEmail    String?
+  traineeIdNational String?
+  // Randomized exam version — snapshot of question IDs + their option ordering
+  questionSet     String   // JSON: [{ questionId, order, optionsOrder: [0,2,1,3] }]
+  // Attempt state
+  status          String   @default("ASSIGNED") // ASSIGNED | IN_PROGRESS | SUBMITTED | GRADED
+  attemptNumber   Int      @default(1)
+  maxAttempts     Int      @default(1)
+  // Grading
+  scorePercent    Int?
+  passed          Boolean?
+  passScore       Int?     // snapshot of course.passScore at time of attempt
+  // Timing
+  assignedAt      DateTime @default(now())
+  startedAt       DateTime?
+  submittedAt     DateTime?
+  durationSec     Int?
+  // Answers — JSON: [{ questionId, selectedAnswerIndices: [...], correct: boolean }]
+  answers         String?
+  // Audit
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+
+  @@index([sessionId, testType])
+  @@index([attendanceId])
+  @@index([status])
+  @@index([traineeEmail])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // COURSE EVALUATION
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -705,12 +792,15 @@ model CourseEvaluation {
   trainer         Trainer? @relation(fields: [trainerId], references: [id])
   traineeName     String
   traineeEmail    String?
+  traineeIdNational String?
+  attendanceId    String?
   trainerRating   Int
   contentRating   Int
   venueRating     Int
   materialsRating Int
   overallRating   Int
   comments        String?
+  suggestions     String?  // Trainee's suggestions for improvement
   wouldRecommend  Boolean?
   submittedAt     DateTime @default(now())
   // Audit
@@ -722,6 +812,7 @@ model CourseEvaluation {
 
   @@index([sessionId])
   @@index([trainerId])
+  @@index([attendanceId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -737,6 +828,7 @@ model Certificate {
   course          Course   @relation(fields: [courseId], references: [id])
   companyId       String?
   company         Company? @relation(fields: [companyId], references: [id])
+  attendanceId    String?  // link to attendance record that earned this certificate
   traineeName     String
   traineeIdNational String?
   traineeEmail    String?
@@ -745,6 +837,7 @@ model Certificate {
   validUntil      DateTime
   status          String   @default("VALID") // VALID | EXPIRED | REVOKED
   pdfUrl          String?
+  pdfGeneratedAt  DateTime?
   // QR verification
   verificationToken String? @unique
   qrCodeUrl       String?
@@ -763,6 +856,7 @@ model Certificate {
   @@index([companyId])
   @@index([status])
   @@index([verificationToken])
+  @@index([attendanceId])
 }
 
 // Public QR verification log (mobile-friendly)

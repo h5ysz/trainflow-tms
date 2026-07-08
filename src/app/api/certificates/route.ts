@@ -1,9 +1,14 @@
 // /api/certificates — list + issue (CERT-YYYY-000001 ref number, verification token, CERTIFICATE_GENERATE audit)
+// Sprint 3: Certificate generation now requires:
+//   1. Attendance completed (PRESENT)
+//   2. Final Test passed
+//   3. Course Evaluation submitted
 import { db } from "@/lib/db";
 import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
+import { checkCertificateEligibility } from "@/lib/api/certificate-eligibility";
 import { randomBytes } from "crypto";
 
 const ALLOWED_SORT_FIELDS = ["refNumber", "traineeName", "issuedAt", "validUntil", "status", "finalScore"];
@@ -87,10 +92,10 @@ export const GET = withModuleAction("certificates", "view", async ({ req, user }
 
 export const POST = withModuleAction("certificates", "create", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
-  const { sessionId, traineeName, traineeIdNational, traineeEmail, finalScore } = body;
+  const { sessionId, traineeName, traineeIdNational, traineeEmail } = body;
 
-  if (!sessionId || !traineeName || finalScore === undefined) {
-    return fail("sessionId, traineeName, finalScore are required", 422, "VALIDATION_ERROR");
+  if (!sessionId || !traineeName) {
+    return fail("sessionId and traineeName are required", 422, "VALIDATION_ERROR");
   }
 
   const session = await db.trainingSession.findFirst({
@@ -99,6 +104,42 @@ export const POST = withModuleAction("certificates", "create", async ({ req, use
   });
   if (!session) return fail("Session not found", 404);
   if (!session.course) return fail("Course not found", 404);
+
+  // ─── Sprint 3: Enforce 3-condition eligibility ───────────────────────
+  const eligibility = await checkCertificateEligibility({
+    sessionId,
+    traineeName,
+    traineeEmail,
+    traineeIdNational,
+  });
+
+  if (!eligibility.eligible) {
+    return fail(
+      "Certificate cannot be issued: trainee has not completed all required steps",
+      422,
+      "ELIGIBILITY_FAILED",
+      {
+        attendanceCompleted: eligibility.attendanceCompleted,
+        finalTestPassed: eligibility.finalTestPassed,
+        evaluationCompleted: eligibility.evaluationCompleted,
+        reasons: eligibility.reasons,
+      }
+    );
+  }
+
+  // Get the final test score from the most recent passed attempt
+  const finalTestAttempt = await db.examAttempt.findFirst({
+    where: {
+      sessionId,
+      testType: "FINAL_TEST",
+      traineeName: { equals: traineeName },
+      status: "GRADED",
+      passed: true,
+      deletedAt: null,
+    },
+    orderBy: { submittedAt: "desc" },
+  });
+  const finalScore = finalTestAttempt?.scorePercent ?? 0;
 
   // Check pass score
   if (finalScore < session.course.passScore) {
@@ -110,7 +151,7 @@ export const POST = withModuleAction("certificates", "create", async ({ req, use
     where: { sessionId, traineeName: { equals: traineeName }, deletedAt: null },
   });
   if (existing) {
-    return fail("Certificate already issued for this trainee in this session", 400);
+    return fail("Certificate already issued for this trainee in this session", 400, "DUPLICATE_CERTIFICATE");
   }
 
   const refNumber = await nextRefNumber("CERTIFICATE");
@@ -125,6 +166,7 @@ export const POST = withModuleAction("certificates", "create", async ({ req, use
       sessionId,
       courseId: session.courseId,
       companyId: session.request?.companyId ?? null,
+      attendanceId: eligibility.attendanceId ?? null,
       traineeName,
       traineeIdNational: traineeIdNational ?? null,
       traineeEmail: traineeEmail ?? null,
@@ -137,6 +179,14 @@ export const POST = withModuleAction("certificates", "create", async ({ req, use
     },
   });
 
+  // Update attendance: link certificate
+  if (eligibility.attendanceId) {
+    await db.attendance.update({
+      where: { id: eligibility.attendanceId },
+      data: { certificateId: cert.id, updatedBy: user.id },
+    });
+  }
+
   // Audit: CERTIFICATE_GENERATE
   await audit({
     user,
@@ -144,10 +194,18 @@ export const POST = withModuleAction("certificates", "create", async ({ req, use
     entity: "CERTIFICATE",
     entityId: cert.id,
     entityRef: cert.refNumber,
-    description: `Issued certificate ${cert.refNumber} to ${traineeName} (${finalScore}%)`,
-    descriptionAr: `تم إصدار شهادة ${cert.refNumber} لـ ${traineeName} (${finalScore}%)`,
+    description: `Issued certificate ${cert.refNumber} to ${traineeName} (${finalScore}%) — all eligibility conditions met`,
+    descriptionAr: `تم إصدار شهادة ${cert.refNumber} لـ ${traineeName} (${finalScore}%) — استيفاء جميع شروط الأهلية`,
     req,
-    metadata: { sessionId, courseId: session.courseId, verificationToken },
+    metadata: {
+      sessionId,
+      courseId: session.courseId,
+      verificationToken,
+      finalScore,
+      attendanceId: eligibility.attendanceId,
+      finalTestAttemptId: finalTestAttempt?.id,
+      evaluationId: eligibility.evaluationId,
+    },
   });
 
   return created(cert);
