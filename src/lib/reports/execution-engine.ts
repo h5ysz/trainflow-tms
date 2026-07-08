@@ -287,24 +287,45 @@ export async function retryExecution(executionId: string): Promise<void> {
     return;
   }
 
-  // Increment attempt and re-execute
+  // BUG FIX: Don't create a new execution — update the existing one and re-run
   await db.reportExecution.update({
     where: { id: executionId },
     data: {
       status: "RETRYING",
       attemptNumber: { increment: 1 },
       nextRetryAt: null,
+      errorMessage: null,
+      errorStack: null,
     },
   });
 
   try {
-    await executeReportSchedule({
+    // Re-run the schedule pipeline (will create a NEW execution for the retry)
+    const result = await executeReportSchedule({
       scheduleId: execution.scheduleId,
       triggerType: "SCHEDULED",
       triggeredBy: null,
     });
+
+    // Link this retry to the original execution
+    await db.reportExecution.update({
+      where: { id: executionId },
+      data: {
+        status: result.status === "SENT" ? "SENT" : "FAILED",
+        emailStatus: result.emailSent ? "SENT" : "FAILED",
+        completedAt: new Date(),
+        ...(result.emailSent ? {} : { nextRetryAt: getNextRetryTime(execution.schedule.retryDelayMin) }),
+      },
+    });
   } catch {
     // Will be caught by the next retry cycle
+    await db.reportExecution.update({
+      where: { id: executionId },
+      data: {
+        status: "FAILED",
+        nextRetryAt: getNextRetryTime(execution.schedule.retryDelayMin),
+      },
+    });
   }
 }
 

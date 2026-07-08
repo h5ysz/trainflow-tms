@@ -54,7 +54,7 @@ export const GET = withModuleAction("requests", "view", async ({ req, user }) =>
       include: {
         company: { select: { id: true, name: true, refNumber: true } },
         course: { select: { id: true, title: true, code: true, refNumber: true } },
-        session: { select: { id: true, refNumber: true } },
+        sessions: { select: { id: true, refNumber: true } },
       },
       orderBy,
       skip: (q.page - 1) * q.pageSize,
@@ -94,8 +94,8 @@ export const GET = withModuleAction("requests", "view", async ({ req, user }) =>
       rejectedAt: r.rejectedAt,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
-      sessionId: r.session?.id ?? null,
-      sessionRef: r.session?.refNumber ?? null,
+      sessionId: r.sessions?.[0]?.id ?? null,
+      sessionRef: r.sessions?.[0]?.refNumber ?? null,
     })),
     buildListMeta(total, q)
   );

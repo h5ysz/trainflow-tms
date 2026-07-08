@@ -59,8 +59,18 @@ export async function POST(req: Request) {
     emailSubject, emailBody, maxRetries, retryDelayMin,
   } = body;
 
-  if (!name || !templateCode || !scheduleType || !recipients) {
-    return fail("name, templateCode, scheduleType, recipients are required", 422, "VALIDATION_ERROR");
+  if (!name || !templateCode || !scheduleType) {
+    return fail("name, templateCode, scheduleType are required", 422, "VALIDATION_ERROR");
+  }
+
+  // BUG FIX: recipients is optional — schedule can be preview-only (no email)
+  // But if provided, validate email format
+  if (recipients && Array.isArray(recipients)) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const invalidEmails = recipients.filter((e: string) => !emailRegex.test(e));
+    if (invalidEmails.length > 0) {
+      return fail(`Invalid email format: ${invalidEmails.join(", ")}`, 422, "INVALID_EMAIL");
+    }
   }
 
   // Read timing defaults from Settings (configurable by Super Admin)
@@ -97,7 +107,7 @@ export async function POST(req: Request) {
       dayOfMonth: effectiveDayOfMonth ?? null,
       filters: filters ? JSON.stringify(filters) : null,
       exportFormats: exportFormats ? JSON.stringify(exportFormats) : '["xlsx"]',
-      recipients: JSON.stringify(recipients),
+      recipients: JSON.stringify(recipients ?? []),
       ccRecipients: ccRecipients ? JSON.stringify(ccRecipients) : null,
       bccRecipients: bccRecipients ? JSON.stringify(bccRecipients) : null,
       emailSubject: emailSubject ?? null,

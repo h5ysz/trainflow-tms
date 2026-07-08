@@ -9,7 +9,30 @@ export const POST = withModuleAction("pre-test", "view", async ({ req, params, u
   const attempt = await db.examAttempt.findUnique({ where: { id } });
   if (!attempt || attempt.deletedAt) return notFound("Exam attempt not found");
 
-  // Must be in ASSIGNED or IN_PROGRESS state
+  // BUG FIX: Enforce maxAttempts — prevent starting if attempt is already GRADED/SUBMITTED
+  // and the trainee has exhausted their max attempts
+  if (attempt.status === "GRADED" || attempt.status === "SUBMITTED") {
+    // Check if this trainee has remaining attempts
+    const totalAttempts = await db.examAttempt.count({
+      where: {
+        sessionId: attempt.sessionId,
+        testType: attempt.testType,
+        traineeName: attempt.traineeName,
+        status: { in: ["GRADED", "SUBMITTED", "IN_PROGRESS"] },
+        deletedAt: null,
+      },
+    });
+    if (totalAttempts >= attempt.maxAttempts) {
+      return fail(
+        `Maximum attempts (${attempt.maxAttempts}) reached for this exam`,
+        400,
+        "MAX_ATTEMPTS_REACHED",
+        { attemptNumber: totalAttempts, maxAttempts: attempt.maxAttempts }
+      );
+    }
+  }
+
+  // Must be in ASSIGNED or IN_PROGRESS state to start
   if (!["ASSIGNED", "IN_PROGRESS"].includes(attempt.status)) {
     return fail(
       `Cannot start exam: current status is ${attempt.status}`,

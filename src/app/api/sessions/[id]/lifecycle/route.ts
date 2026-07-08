@@ -150,6 +150,42 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
     }
   }
 
+  // BUG FIX: On COMPLETED, mark absent trainees as NO_SHOW on their SessionEnrollment
+  let noShowCount = 0;
+  if (eventType === "COMPLETED") {
+    // Find all enrollments that were never checked in
+    const absentEnrollments = await db.sessionEnrollment.findMany({
+      where: {
+        sessionId: id,
+        deletedAt: null,
+        attendanceStatus: "NOT_STARTED",
+        enrollmentStatus: { in: ["PENDING", "CONFIRMED"] },
+      },
+    });
+    for (const enrollment of absentEnrollments) {
+      await db.sessionEnrollment.update({
+        where: { id: enrollment.id },
+        data: {
+          enrollmentStatus: "NO_SHOW",
+          attendanceStatus: "ABSENT",
+          updatedBy: user.id,
+        },
+      });
+      noShowCount++;
+    }
+
+    // Also mark attendance records that never checked in as ABSENT
+    await db.attendance.updateMany({
+      where: {
+        sessionId: id,
+        status: "REGISTERED",
+        checkInAt: null,
+        deletedAt: null,
+      },
+      data: { status: "ABSENT", updatedBy: user.id },
+    });
+  }
+
   await recordStatusChange({
     user,
     entity: "SESSION",
@@ -165,6 +201,7 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
     sessionRef: session.refNumber,
     lifecycleStatus: newLifecycleStatus,
     finalTestsAssigned,
+    noShowCount,
   });
 });
 

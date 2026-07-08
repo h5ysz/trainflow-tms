@@ -225,7 +225,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ type: string }>
         by: ["companyId"],
         where: {
           deletedAt: null,
-          enrolledAt: { gte: from, lte: to },
+          enrollmentDate: { gte: from, lte: to },
           ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
         },
         _count: { id: true },

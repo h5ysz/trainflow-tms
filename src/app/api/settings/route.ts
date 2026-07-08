@@ -18,14 +18,6 @@ export async function GET() {
   return ok(map);
 }
 
-// Public settings endpoint — no auth required, returns only isPublic=true settings
-export async function GET_PUBLIC() {
-  const settings = await db.setting.findMany({ where: { isPublic: true } });
-  const map: Record<string, string> = {};
-  for (const s of settings) map[s.key] = s.value;
-  return ok(map);
-}
-
 export async function PUT(req: Request) {
   let user;
   try {
