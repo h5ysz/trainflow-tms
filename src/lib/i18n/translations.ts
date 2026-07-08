@@ -672,7 +672,7 @@ export const dict = {
 
   ar: {
     // App
-    "app.name": "المختبر العربي",
+    "app.name": "المختبر الخليجي",
     "app.tagline": "نظام إدارة التدريب",
     "app.shortcut": "ابحث أو انتقل إلى...",
 

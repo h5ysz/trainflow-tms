@@ -19,10 +19,10 @@ const plexArabic = IBM_Plex_Sans_Arabic({
 
 export const metadata: Metadata = {
   title: "GCC Lab — Training Management System",
-  description: "GCC Lab Enterprise Training & Certification Management System — المختبر العربي",
-  keywords: ["GCC Lab", "TMS", "Training", "Safety", "Certification", "المختبر العربي"],
+  description: "GCC Lab Enterprise Training & Certification Management System — المختبر الخليجي",
+  keywords: ["GCC Lab", "TMS", "Training", "Safety", "Certification", "المختبر الخليجي"],
   authors: [{ name: "GCC Lab" }],
-  icons: { icon: "/gcclab-logo-official.png" },
+  icons: { icon: "/gcclab-icon.png" },
 };
 
 export default function RootLayout({

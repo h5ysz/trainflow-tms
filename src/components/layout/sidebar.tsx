@@ -48,15 +48,15 @@ export function Sidebar() {
       {/* Brand — Official GCC Lab Logo */}
       <div className="flex h-16 items-center gap-3 px-5 border-b border-sidebar-border shrink-0">
         <Image
-          src="/gcclab-logo-official.png"
+          src="/gcclab-icon.png"
           alt="GCC Lab"
-          width={40}
-          height={40}
-          className="shrink-0 object-contain"
+          width={36}
+          height={36}
+          className="shrink-0 object-contain rounded-md"
         />
         <div className="min-w-0">
           <div className="text-sm font-bold leading-tight tracking-tight">
-            {locale === "en" ? "GCC Lab" : "المختبر العربي"}
+            {locale === "en" ? "GCC Lab" : "المختبر الخليجي"}
           </div>
           <div className="text-[10px] text-muted-foreground leading-tight font-medium">
             {locale === "en" ? "Training Management" : "إدارة التدريب"}

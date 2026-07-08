@@ -43,22 +43,16 @@ export function LoginForm() {
       <div className="hidden lg:flex lg:flex-1 flex-col justify-between p-12 xl:p-16 bg-primary text-primary-foreground relative overflow-hidden tf-industrial-bg">
         {/* Top — Logo */}
         <div className="relative z-10">
-          <div className="flex items-center gap-4">
-            <Image
-              src="/gcclab-logo-official.png"
-              alt="GCC Lab"
-              width={56}
-              height={56}
-              className="object-contain"
-            />
-            <div>
-              <div className="text-xl font-bold tracking-tight">
-                {locale === "en" ? "GCC Lab" : "المختبر العربي"}
-              </div>
-              <div className="text-xs text-primary-foreground/70 font-medium tracking-wide">
-                {locale === "en" ? "Training & Certification Management System" : "نظام إدارة التدريب والشهادات"}
-              </div>
-            </div>
+          <Image
+            src="/gcclab-logo-white.png"
+            alt="GCC Lab"
+            width={260}
+            height={74}
+            className="object-contain"
+            priority
+          />
+          <div className="mt-2 text-xs text-primary-foreground/70 font-medium tracking-wide">
+            {locale === "en" ? "Training & Certification Management System" : "نظام إدارة التدريب والشهادات"}
           </div>
         </div>
 
@@ -108,15 +102,15 @@ export function LoginForm() {
           {/* Mobile logo */}
           <div className="flex lg:hidden items-center gap-3 mb-8">
             <Image
-              src="/gcclab-logo-official.png"
+              src="/gcclab-icon.png"
               alt="GCC Lab"
               width={44}
               height={44}
-              className="object-contain"
+              className="object-contain rounded-lg"
             />
             <div>
               <div className="text-lg font-bold tracking-tight">
-                {locale === "en" ? "GCC Lab" : "المختبر العربي"}
+                {locale === "en" ? "GCC Lab" : "المختبر الخليجي"}
               </div>
               <div className="text-[10px] text-muted-foreground font-medium">
                 {locale === "en" ? "Training Management" : "إدارة التدريب"}
