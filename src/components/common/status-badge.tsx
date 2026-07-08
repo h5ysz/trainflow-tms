@@ -12,8 +12,10 @@ const STATUS_STYLES: Record<string, string> = {
   SUSPENDED: "bg-warning/10 text-warning border-warning/20",
   DRAFT: "bg-muted text-muted-foreground border-border",
 
-  // requests / sessions
+  // training request workflow
   PENDING: "bg-warning/10 text-warning border-warning/20",
+  SUBMITTED: "bg-info/10 text-info border-info/20",
+  UNDER_REVIEW: "bg-info/10 text-info border-info/20",
   APPROVED: "bg-success/10 text-success border-success/20",
   REJECTED: "bg-destructive/10 text-destructive border-destructive/20",
   SCHEDULED: "bg-info/10 text-info border-info/20",
@@ -45,7 +47,10 @@ export function StatusBadge({
 }) {
   const { t } = useI18n();
   const style = STATUS_STYLES[status] ?? STATUS_STYLES["INACTIVE"];
-  const label = (t as (key: string) => string)(`status.${status}`) ?? status;
+  // Try translation; fall back to a prettified version of the status string
+  const key = `status.${status}` as never;
+  const translated = t(key);
+  const label = translated === key ? status.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()) : translated;
   return (
     <span
       className={cn(

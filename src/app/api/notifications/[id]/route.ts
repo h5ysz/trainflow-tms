@@ -13,7 +13,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const body = await req.json().catch(() => ({}));
   const updated = await db.notification.update({
     where: { id },
-    data: { ...(body.isRead !== undefined && { isRead: body.isRead }) },
+    data: {
+      ...(body.isRead !== undefined && { isRead: body.isRead, readAt: body.isRead ? new Date() : null }),
+    },
   });
 
   return ok(updated);

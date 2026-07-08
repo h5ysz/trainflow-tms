@@ -62,9 +62,9 @@ export function Topbar() {
   const loadNotifications = async () => {
     setNotifLoading(true);
     try {
-      const res = await api.get<{ rows: Notification[]; unreadCount: number }>("/notifications", { pageSize: 5 });
+      const res = await api.getList<Notification>("/notifications", { pageSize: 5 });
       setNotifications(res.rows ?? []);
-      setUnreadCount(res.unreadCount ?? 0);
+      setUnreadCount((res.pagination as any)?.unreadCount ?? 0);
     } catch {
       // ignore — silent
     } finally {

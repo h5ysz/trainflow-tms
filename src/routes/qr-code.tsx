@@ -33,7 +33,7 @@ export function QrCodeRoute() {
   const [regenerating, setRegenerating] = useState(false);
 
   useEffect(() => {
-    api.get<{ rows: SessionOption[] }>("/sessions", { pageSize: 100, status: "SCHEDULED" })
+    api.getList<SessionOption>("/sessions", { pageSize: 100, status: "SCHEDULED" })
       .then((r) => setSessions(r.rows ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));

@@ -21,10 +21,13 @@ interface CourseOption { id: string; title: string; code: string; }
 interface TrainerOption { id: string; fullName: string; }
 interface Session {
   id: string;
-  sessionCode: string;
+  refNumber: string;
+  sessionCode?: string;
   courseTitle?: string | null;
   courseCode?: string | null;
+  courseRef?: string | null;
   trainerName?: string | null;
+  trainerRef?: string | null;
   location?: string | null;
   startDate: string;
   endDate: string;
@@ -53,12 +56,12 @@ export function TrainingSessionsRoute() {
   useEffect(() => {
     if (dialogOpen) {
       if (courses.length === 0) {
-        api.get<{ rows: CourseOption[] }>("/courses", { pageSize: 100 }).then((r) => {
+        api.getList<CourseOption>("/courses", { pageSize: 100 }).then((r) => {
           setCourses(r.rows.map((c) => ({ id: c.id, title: c.title, code: c.code })));
         }).catch(() => {});
       }
       if (trainers.length === 0) {
-        api.get<{ rows: TrainerOption[] }>("/trainers", { pageSize: 100 }).then((r) => {
+        api.getList<TrainerOption>("/trainers", { pageSize: 100 }).then((r) => {
           setTrainers(r.rows.map((t) => ({ id: t.id, fullName: t.fullName })));
         }).catch(() => {});
       }
@@ -66,7 +69,7 @@ export function TrainingSessionsRoute() {
   }, [dialogOpen, courses.length, trainers.length]);
 
   const columns: Column<Session>[] = [
-    { key: "code", header: t("sessions.sessionCode"), cell: (r) => <div className="font-mono text-xs font-semibold text-primary">{r.sessionCode}</div> },
+    { key: "code", header: t("sessions.sessionCode"), cell: (r) => <div className="font-mono text-xs font-semibold text-primary">{r.refNumber}</div> },
     {
       key: "course",
       header: t("sessions.course"),

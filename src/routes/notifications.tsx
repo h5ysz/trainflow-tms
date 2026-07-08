@@ -41,12 +41,12 @@ export function NotificationsRoute() {
   const load = async (filter?: string) => {
     setLoading(true);
     try {
-      const res = await api.get<{ rows: Notification[]; unreadCount: number }>("/notifications", {
+      const res = await api.getList<Notification>("/notifications", {
         filter: filter === "unread" ? "unread" : undefined,
         pageSize: 50,
       });
       setNotifications(res.rows ?? []);
-      setUnreadCount(res.unreadCount ?? 0);
+      setUnreadCount((res.pagination as any)?.unreadCount ?? 0);
     } catch (e) {
       // ignore
     } finally {

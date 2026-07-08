@@ -117,6 +117,8 @@ export const dict = {
     "status.SUSPENDED": "Suspended",
     "status.DRAFT": "Draft",
     "status.PENDING": "Pending",
+    "status.SUBMITTED": "Submitted",
+    "status.UNDER_REVIEW": "Under Review",
     "status.APPROVED": "Approved",
     "status.REJECTED": "Rejected",
     "status.SCHEDULED": "Scheduled",
@@ -133,6 +135,17 @@ export const dict = {
     "status.LATE": "Late",
     "status.EXCUSED": "Excused",
     "status.REGISTERED": "Registered",
+
+    // Workflow actions
+    "workflow.submit": "Submit",
+    "workflow.review": "Start Review",
+    "workflow.approve": "Approve",
+    "workflow.schedule": "Mark as Scheduled",
+    "workflow.start": "Start Session",
+    "workflow.complete": "Complete",
+    "workflow.cancel": "Cancel",
+    "workflow.reject": "Reject",
+    "workflow.resubmit": "Resubmit",
 
     // Priorities
     "priority.LOW": "Low",
@@ -644,6 +657,8 @@ export const dict = {
     "status.SUSPENDED": "موقوف",
     "status.DRAFT": "مسودة",
     "status.PENDING": "قيد الانتظار",
+    "status.SUBMITTED": "مُقدَّم",
+    "status.UNDER_REVIEW": "قيد المراجعة",
     "status.APPROVED": "معتمد",
     "status.REJECTED": "مرفوض",
     "status.SCHEDULED": "مجدول",
@@ -660,6 +675,17 @@ export const dict = {
     "status.LATE": "متأخر",
     "status.EXCUSED": "بعذر",
     "status.REGISTERED": "مسجل",
+
+    // Workflow actions
+    "workflow.submit": "تقديم",
+    "workflow.review": "بدء المراجعة",
+    "workflow.approve": "اعتماد",
+    "workflow.schedule": "تحديد كمجدول",
+    "workflow.start": "بدء الجلسة",
+    "workflow.complete": "إكمال",
+    "workflow.cancel": "إلغاء",
+    "workflow.reject": "رفض",
+    "workflow.resubmit": "إعادة التقديم",
 
     // Priorities
     "priority.LOW": "منخفضة",

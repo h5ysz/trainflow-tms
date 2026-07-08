@@ -20,6 +20,7 @@ import { canPerformAction } from "@/lib/auth/permissions";
 
 interface Course {
   id: string;
+  refNumber: string;
   code: string;
   title: string;
   titleAr?: string | null;
@@ -69,9 +70,9 @@ export function CoursesRoute() {
           <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary shrink-0 font-mono text-xs font-bold">
             {r.code || "—"}
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="text-sm font-medium">{r.title}</div>
-            <div className="text-xs text-muted-foreground">{r.category || "—"}</div>
+            <div className="text-[10px] text-muted-foreground font-mono">{r.refNumber} · {r.category || "—"}</div>
           </div>
         </div>
       ),

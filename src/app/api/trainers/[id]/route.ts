@@ -1,14 +1,15 @@
-// /api/trainers/[id] — get / update / delete
+// /api/trainers/[id] — get / update / soft-delete
 import { db } from "@/lib/db";
-import { withModuleAction, ok, notFound, fail, auditLog } from "@/lib/auth/api";
+import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 
 export const GET = withModuleAction("trainers", "view", async ({ params }) => {
   const id = params.id as string;
   const trainer = await db.trainer.findUnique({
     where: { id },
     include: {
-      qualifications: { orderBy: { createdAt: "desc" } },
+      qualifications: { where: { deletedAt: null }, orderBy: { createdAt: "desc" } },
       sessions: {
+        where: { deletedAt: null },
         orderBy: { startDate: "desc" },
         take: 20,
         include: { course: { select: { id: true, title: true, code: true } } },
@@ -16,7 +17,7 @@ export const GET = withModuleAction("trainers", "view", async ({ params }) => {
       _count: { select: { qualifications: true, sessions: true, evaluations: true } },
     },
   });
-  if (!trainer) return notFound("Trainer not found");
+  if (!trainer || trainer.deletedAt) return notFound("Trainer not found");
   return ok(trainer);
 });
 
@@ -24,7 +25,7 @@ export const PUT = withModuleAction("trainers", "edit", async ({ req, params, us
   const id = params.id as string;
   const body = await req.json().catch(() => ({}));
   const existing = await db.trainer.findUnique({ where: { id } });
-  if (!existing) return notFound("Trainer not found");
+  if (!existing || existing.deletedAt) return notFound("Trainer not found");
 
   const {
     fullName, fullNameAr, nationalId, email, phone, mobile,
@@ -32,13 +33,12 @@ export const PUT = withModuleAction("trainers", "edit", async ({ req, params, us
     status, hireDate,
   } = body;
 
-  // Uniqueness checks
   if (nationalId && nationalId !== existing.nationalId) {
-    const dup = await db.trainer.findUnique({ where: { nationalId } });
+    const dup = await db.trainer.findFirst({ where: { nationalId, deletedAt: null } });
     if (dup) return fail("National ID already exists", 400);
   }
   if (email && email !== existing.email) {
-    const dup = await db.trainer.findUnique({ where: { email } });
+    const dup = await db.trainer.findFirst({ where: { email, deletedAt: null } });
     if (dup) return fail("Email already exists", 400);
   }
 
@@ -60,16 +60,20 @@ export const PUT = withModuleAction("trainers", "edit", async ({ req, params, us
       ...(photoUrl !== undefined && { photoUrl }),
       ...(status !== undefined && { status }),
       ...(hireDate !== undefined && { hireDate: hireDate ? new Date(hireDate) : null }),
+      updatedBy: user.id,
     },
   });
 
-  await auditLog({
-    userId: user.id,
+  await audit({
+    user,
     action: "UPDATE",
     entity: "TRAINER",
     entityId: id,
+    entityRef: updated.refNumber,
     description: `Updated trainer: ${updated.fullName}`,
+    descriptionAr: `تم تحديث مدرب: ${updated.fullName}`,
     req,
+    metadata: { before: existing, after: updated },
   });
 
   return ok(updated);
@@ -78,20 +82,26 @@ export const PUT = withModuleAction("trainers", "edit", async ({ req, params, us
 export const DELETE = withModuleAction("trainers", "delete", async ({ params, user, req }) => {
   const id = params.id as string;
   const existing = await db.trainer.findUnique({ where: { id } });
-  if (!existing) return notFound("Trainer not found");
+  if (!existing || existing.deletedAt) return notFound("Trainer not found");
 
-  const sessions = await db.trainingSession.count({ where: { trainerId: id } });
+  const sessions = await db.trainingSession.count({ where: { trainerId: id, deletedAt: null } });
   if (sessions > 0) {
     return fail("Cannot delete a trainer with sessions. Suspend instead.", 400);
   }
 
-  await db.trainer.delete({ where: { id } });
-  await auditLog({
-    userId: user.id,
+  await db.trainer.update({
+    where: { id },
+    data: { deletedAt: new Date(), updatedBy: user.id },
+  });
+
+  await audit({
+    user,
     action: "DELETE",
     entity: "TRAINER",
     entityId: id,
+    entityRef: existing.refNumber,
     description: `Deleted trainer: ${existing.fullName}`,
+    descriptionAr: `تم حذف مدرب: ${existing.fullName}`,
     req,
   });
 

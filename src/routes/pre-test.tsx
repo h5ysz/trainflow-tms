@@ -67,7 +67,7 @@ export function PreTestRoute() {
 
   useEffect(() => {
     if (dialogOpen && courses.length === 0) {
-      api.get<{ rows: CourseOption[] }>("/courses", { pageSize: 100 }).then((r) => {
+      api.getList<CourseOption>("/courses", { pageSize: 100 }).then((r) => {
         setCourses(r.rows.map((c) => ({ id: c.id, title: c.title, code: c.code })));
       }).catch(() => {});
     }

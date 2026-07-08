@@ -6,7 +6,7 @@ export async function GET() {
   const user = await getCurrentUser();
   if (!user) return fail("Unauthorized", 401);
 
-  // For contractors/trainers, scope by their entity
+  const notDeleted = { deletedAt: null };
   const companyFilter = user.role === "CONTRACTOR" && user.companyId
     ? { companyId: user.companyId }
     : {};
@@ -25,38 +25,39 @@ export async function GET() {
     sessionsThisYear,
     certsThisYear,
   ] = await Promise.all([
-    db.trainingSession.count({ where: { ...trainerFilter } }),
+    db.trainingSession.count({ where: { ...notDeleted, ...trainerFilter } }),
     db.attendance.groupBy({
       by: ["traineeEmail"],
-      where: { session: { ...trainerFilter } },
+      where: { deletedAt: null, session: { ...notDeleted, ...trainerFilter } },
     }).then((r) => r.length),
     db.trainingRequest.count({
       where: {
-        status: "PENDING",
+        deletedAt: null,
+        status: { in: ["DRAFT", "SUBMITTED", "UNDER_REVIEW"] },
         ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
       },
     }),
-    db.certificate.count({ where: { ...companyFilter } }),
+    db.certificate.count({ where: { deletedAt: null, ...companyFilter } }),
     db.certificate.count({
       where: {
+        deletedAt: null,
         ...companyFilter,
         status: "VALID",
-        validUntil: {
-          gte: new Date(),
-          lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        },
+        validUntil: { gte: new Date(), lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
       },
     }),
-    db.trainer.count({ where: { status: "ACTIVE" } }),
-    db.trainingSession.count({ where: { status: "COMPLETED", ...trainerFilter } }),
+    db.trainer.count({ where: { ...notDeleted, status: "ACTIVE" } }),
+    db.trainingSession.count({ where: { ...notDeleted, status: "COMPLETED", ...trainerFilter } }),
     db.trainingSession.count({
       where: {
+        ...notDeleted,
         startDate: { gte: new Date(new Date().getFullYear(), 0, 1) },
         ...trainerFilter,
       },
     }),
     db.certificate.count({
       where: {
+        deletedAt: null,
         issuedAt: { gte: new Date(new Date().getFullYear(), 0, 1) },
         ...companyFilter,
       },
@@ -70,10 +71,7 @@ export async function GET() {
   twelveMonthsAgo.setHours(0, 0, 0, 0);
 
   const sessionsByMonthRaw = await db.trainingSession.findMany({
-    where: {
-      startDate: { gte: twelveMonthsAgo },
-      ...trainerFilter,
-    },
+    where: { deletedAt: null, startDate: { gte: twelveMonthsAgo }, ...trainerFilter },
     select: { startDate: true, status: true },
   });
 
@@ -89,13 +87,14 @@ export async function GET() {
     sessionsByMonth.push({ month: key, count });
   }
 
-  // Requests by status
-  const requestStatuses = ["PENDING", "APPROVED", "REJECTED", "SCHEDULED", "COMPLETED", "CANCELLED"];
+  // Requests by status (new workflow states)
+  const requestStatuses = ["DRAFT", "SUBMITTED", "UNDER_REVIEW", "APPROVED", "SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED", "REJECTED"];
   const requestsByStatus: { status: string; count: number }[] = [];
   for (const status of requestStatuses) {
     const count = await db.trainingRequest.count({
       where: {
-        status,
+        deletedAt: null,
+        status: status as any,
         ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
       },
     });
@@ -105,7 +104,7 @@ export async function GET() {
   // Certificates by course (top 5)
   const certsByCourseRaw = await db.certificate.groupBy({
     by: ["courseId"],
-    where: companyFilter,
+    where: { deletedAt: null, ...companyFilter },
     _count: { id: true },
     orderBy: { _count: { id: "desc" } },
     take: 5,
@@ -122,28 +121,24 @@ export async function GET() {
 
   // Average score (from final test results)
   const avgScoreResult = await db.testResult.aggregate({
-    where: { testType: "FINAL_TEST" },
+    where: { deletedAt: null, testType: "FINAL_TEST" },
     _avg: { scorePercent: true },
   });
-  const avgScore = avgScoreResult._avg.scorePercent
-    ? Math.round(avgScoreResult._avg.scorePercent)
-    : null;
+  const avgScore = avgScoreResult._avg.scorePercent ? Math.round(avgScoreResult._avg.scorePercent) : null;
 
-  // Completion rate
-  const completionRate = totalSessions > 0
-    ? Math.round((completedSessions / totalSessions) * 100)
-    : null;
+  const completionRate = totalSessions > 0 ? Math.round((completedSessions / totalSessions) * 100) : null;
 
   // Upcoming sessions (next 5)
   const upcomingSessions = await db.trainingSession.findMany({
     where: {
+      deletedAt: null,
       startDate: { gte: new Date() },
       status: "SCHEDULED",
       ...trainerFilter,
     },
     include: {
-      course: { select: { id: true, title: true, code: true } },
-      trainer: { select: { id: true, fullName: true } },
+      course: { select: { id: true, title: true, code: true, refNumber: true } },
+      trainer: { select: { id: true, fullName: true, refNumber: true } },
     },
     orderBy: { startDate: "asc" },
     take: 5,
@@ -179,11 +174,14 @@ export async function GET() {
     },
     upcomingSessions: upcomingSessions.map((s) => ({
       id: s.id,
-      sessionCode: s.sessionCode,
+      refNumber: s.refNumber,
+      sessionCode: s.refNumber,
       title: s.title,
       courseTitle: s.course?.title ?? null,
       courseCode: s.course?.code ?? null,
+      courseRef: s.course?.refNumber ?? null,
       trainerName: s.trainer?.fullName ?? null,
+      trainerRef: s.trainer?.refNumber ?? null,
       startDate: s.startDate,
       endDate: s.endDate,
       status: s.status,
@@ -192,7 +190,9 @@ export async function GET() {
       id: a.id,
       action: a.action,
       entity: a.entity,
+      entityRef: a.entityRef,
       description: a.description,
+      descriptionAr: a.descriptionAr,
       userName: a.user?.fullName ?? null,
       createdAt: a.createdAt,
     })),

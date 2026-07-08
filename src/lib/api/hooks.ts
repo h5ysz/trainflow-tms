@@ -70,7 +70,7 @@ export function useList<T>(path: string, options: UseListOptions = {}): UseListR
     });
 
     api
-      .get<ListResponse<T>>(path, {
+      .getList<T>(path, {
         page,
         pageSize,
         search: debouncedSearch || undefined,

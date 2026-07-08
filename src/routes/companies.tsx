@@ -20,6 +20,7 @@ import { canPerformAction } from "@/lib/auth/permissions";
 
 interface Company {
   id: string;
+  refNumber: string;
   name: string;
   nameAr?: string | null;
   industry?: string | null;
@@ -60,7 +61,7 @@ export function CompaniesRoute() {
           </div>
           <div className="min-w-0">
             <div className="text-sm font-medium text-foreground truncate">{row.name}</div>
-            <div className="text-xs text-muted-foreground truncate">{row.industry || "—"}</div>
+            <div className="text-[10px] text-muted-foreground font-mono">{row.refNumber}</div>
           </div>
         </div>
       ),

@@ -1,6 +1,6 @@
-// /api/courses/[id] — get / update / delete
+// /api/courses/[id] — get / update / soft-delete
 import { db } from "@/lib/db";
-import { withModuleAction, ok, notFound, fail, auditLog } from "@/lib/auth/api";
+import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 
 export const GET = withModuleAction("courses", "view", async ({ params }) => {
   const id = params.id as string;
@@ -10,7 +10,7 @@ export const GET = withModuleAction("courses", "view", async ({ params }) => {
       _count: { select: { requests: true, sessions: true, certificates: true, questions: true } },
     },
   });
-  if (!course) return notFound("Course not found");
+  if (!course || course.deletedAt) return notFound("Course not found");
   return ok(course);
 });
 
@@ -18,10 +18,10 @@ export const PUT = withModuleAction("courses", "edit", async ({ req, params, use
   const id = params.id as string;
   const body = await req.json().catch(() => ({}));
   const existing = await db.course.findUnique({ where: { id } });
-  if (!existing) return notFound("Course not found");
+  if (!existing || existing.deletedAt) return notFound("Course not found");
 
   if (body.code && body.code !== existing.code) {
-    const dup = await db.course.findUnique({ where: { code: body.code } });
+    const dup = await db.course.findFirst({ where: { code: body.code, deletedAt: null } });
     if (dup) return fail("Course code already exists", 400);
   }
 
@@ -29,6 +29,7 @@ export const PUT = withModuleAction("courses", "edit", async ({ req, params, use
     code, title, titleAr, description, category, durationHours,
     language, validityMonths, passScore, maxTrainees,
     hasPreTest, hasFinalTest, hasEvaluation, status,
+    aiExamEnabled, aiExamConfig,
   } = body;
 
   const updated = await db.course.update({
@@ -48,16 +49,22 @@ export const PUT = withModuleAction("courses", "edit", async ({ req, params, use
       ...(hasFinalTest !== undefined && { hasFinalTest }),
       ...(hasEvaluation !== undefined && { hasEvaluation }),
       ...(status !== undefined && { status }),
+      ...(aiExamEnabled !== undefined && { aiExamEnabled }),
+      ...(aiExamConfig !== undefined && { aiExamConfig }),
+      updatedBy: user.id,
     },
   });
 
-  await auditLog({
-    userId: user.id,
+  await audit({
+    user,
     action: "UPDATE",
     entity: "COURSE",
     entityId: id,
+    entityRef: updated.refNumber,
     description: `Updated course: ${updated.title}`,
+    descriptionAr: `تم تحديث دورة: ${updated.title}`,
     req,
+    metadata: { before: existing, after: updated },
   });
 
   return ok(updated);
@@ -66,20 +73,26 @@ export const PUT = withModuleAction("courses", "edit", async ({ req, params, use
 export const DELETE = withModuleAction("courses", "delete", async ({ params, user, req }) => {
   const id = params.id as string;
   const existing = await db.course.findUnique({ where: { id } });
-  if (!existing) return notFound("Course not found");
+  if (!existing || existing.deletedAt) return notFound("Course not found");
 
-  const sessions = await db.trainingSession.count({ where: { courseId: id } });
+  const sessions = await db.trainingSession.count({ where: { courseId: id, deletedAt: null } });
   if (sessions > 0) {
     return fail("Cannot delete a course with sessions. Deactivate it instead.", 400);
   }
 
-  await db.course.delete({ where: { id } });
-  await auditLog({
-    userId: user.id,
+  await db.course.update({
+    where: { id },
+    data: { deletedAt: new Date(), updatedBy: user.id },
+  });
+
+  await audit({
+    user,
     action: "DELETE",
     entity: "COURSE",
     entityId: id,
+    entityRef: existing.refNumber,
     description: `Deleted course: ${existing.title}`,
+    descriptionAr: `تم حذف دورة: ${existing.title}`,
     req,
   });
 

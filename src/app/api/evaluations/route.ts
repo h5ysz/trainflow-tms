@@ -1,62 +1,62 @@
 // /api/evaluations — list + create course evaluations
 import { db } from "@/lib/db";
-import { withModuleAction, ok, created, fail, auditLog } from "@/lib/auth/api";
-import { parseListParams, listResponse } from "@/lib/api/query";
+import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
+import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
+import { list } from "@/lib/api/response";
+
+const ALLOWED_SORT_FIELDS = ["submittedAt", "traineeName", "overallRating", "trainerRating"];
 
 export const GET = withModuleAction("evaluation", "view", async ({ req }) => {
-  const params = parseListParams(req);
-  const url = new URL(req.url);
-  const sessionId = url.searchParams.get("sessionId");
-  const trainerId = url.searchParams.get("trainerId");
+  const q = parseListQuery(req);
+  const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
 
-  const where: Record<string, unknown> = {};
-  if (sessionId) where.sessionId = sessionId;
-  if (trainerId) where.trainerId = trainerId;
-
-  if (params.search) {
+  if (q.filters.sessionId) where.sessionId = q.filters.sessionId;
+  if (q.filters.trainerId) where.trainerId = q.filters.trainerId;
+  if (q.search) {
     where.OR = [
-      { traineeName: { contains: params.search } },
-      { comments: { contains: params.search } },
+      { traineeName: { contains: q.search } },
+      { comments: { contains: q.search } },
     ];
   }
+
+  const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS, "submittedAt");
 
   const [rows, total] = await Promise.all([
     db.courseEvaluation.findMany({
       where,
       include: {
-        session: { select: { id: true, sessionCode: true, title: true } },
-        trainer: { select: { id: true, fullName: true } },
+        session: { select: { id: true, refNumber: true, title: true } },
+        trainer: { select: { id: true, fullName: true, refNumber: true } },
       },
-      orderBy: { submittedAt: "desc" },
-      skip: (params.page - 1) * params.pageSize,
-      take: params.pageSize,
+      orderBy,
+      skip: (q.page - 1) * q.pageSize,
+      take: q.pageSize,
     }),
     db.courseEvaluation.count({ where }),
   ]);
 
-  return ok(
-    listResponse(
-      rows.map((e) => ({
-        id: e.id,
-        sessionId: e.sessionId,
-        sessionCode: e.session?.sessionCode ?? null,
-        sessionTitle: e.session?.title ?? null,
-        trainerId: e.trainerId,
-        trainerName: e.trainer?.fullName ?? null,
-        traineeName: e.traineeName,
-        traineeEmail: e.traineeEmail,
-        trainerRating: e.trainerRating,
-        contentRating: e.contentRating,
-        venueRating: e.venueRating,
-        materialsRating: e.materialsRating,
-        overallRating: e.overallRating,
-        comments: e.comments,
-        wouldRecommend: e.wouldRecommend,
-        submittedAt: e.submittedAt,
-      })),
-      total,
-      params
-    )
+  return list(
+    rows.map((e) => ({
+      id: e.id,
+      sessionId: e.sessionId,
+      sessionRef: e.session?.refNumber ?? null,
+      sessionCode: e.session?.refNumber ?? null,
+      sessionTitle: e.session?.title ?? null,
+      trainerId: e.trainerId,
+      trainerName: e.trainer?.fullName ?? null,
+      trainerRef: e.trainer?.refNumber ?? null,
+      traineeName: e.traineeName,
+      traineeEmail: e.traineeEmail,
+      trainerRating: e.trainerRating,
+      contentRating: e.contentRating,
+      venueRating: e.venueRating,
+      materialsRating: e.materialsRating,
+      overallRating: e.overallRating,
+      comments: e.comments,
+      wouldRecommend: e.wouldRecommend,
+      submittedAt: e.submittedAt,
+    })),
+    buildListMeta(total, q)
   );
 });
 
@@ -68,12 +68,12 @@ export const POST = withModuleAction("evaluation", "create", async ({ req, user 
     overallRating, comments, wouldRecommend,
   } = body;
 
-  if (!sessionId || !traineeName) return fail("sessionId and traineeName are required", 400);
+  if (!sessionId || !traineeName) return fail("sessionId and traineeName are required", 422, "VALIDATION_ERROR");
   if ([trainerRating, contentRating, venueRating, materialsRating, overallRating].some((r) => r === undefined || r < 1 || r > 5)) {
-    return fail("All ratings must be between 1 and 5", 400);
+    return fail("All ratings must be between 1 and 5", 422, "VALIDATION_ERROR");
   }
 
-  const session = await db.trainingSession.findUnique({ where: { id: sessionId } });
+  const session = await db.trainingSession.findFirst({ where: { id: sessionId, deletedAt: null } });
   if (!session) return fail("Session not found", 404);
 
   const evaluation = await db.courseEvaluation.create({
@@ -89,6 +89,8 @@ export const POST = withModuleAction("evaluation", "create", async ({ req, user 
       overallRating,
       comments: comments ?? null,
       wouldRecommend: wouldRecommend ?? null,
+      createdBy: user.id,
+      updatedBy: user.id,
     },
   });
 

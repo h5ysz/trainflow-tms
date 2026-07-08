@@ -1,21 +1,36 @@
 // TrainFlow TMS — Frontend API client (typed fetch wrapper)
 // All functions return parsed JSON. Throws on non-success responses.
+//
+// Standardized response envelope:
+//   Success: { success: true, data: T, meta?: {...} }
+//   List:    { success: true, data: T[], meta: { page, pageSize, total, totalPages, sortBy, sortDir, filters } }
+//   Error:   { success: false, error: string, code?: string, details?: unknown }
+//
+// For list endpoints, this client unwraps `data` + `meta` into the legacy
+// { rows, pagination } shape so existing useList hook keeps working.
 
 const BASE = "/api";
 
+export interface ListMeta {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
+  filters?: Record<string, string | undefined>;
+  [key: string]: unknown; // for extra fields like unreadCount
+}
+
 export interface ListResponse<T> {
   rows: T[];
-  pagination: {
-    page: number;
-    pageSize: number;
-    total: number;
-    totalPages: number;
-  };
+  pagination: ListMeta | null;
 }
 
 export interface ApiResponse<T> {
   success: boolean;
   data: T;
+  meta?: ListMeta;
   error?: string;
 }
 
@@ -56,9 +71,43 @@ async function request<T>(
   return json.data as T;
 }
 
+// List-specific request — unwraps `data` + `meta` into { rows, pagination }
+async function requestList<T>(
+  path: string,
+  params?: Record<string, string | number | boolean | undefined | null>
+): Promise<ListResponse<T>> {
+  let url = `${BASE}${path}`;
+  if (params) {
+    const search = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null && v !== "") {
+        search.set(k, String(v));
+      }
+    }
+    const qs = search.toString();
+    if (qs) url += `?${qs}`;
+  }
+
+  const res = await fetch(url, { credentials: "same-origin" });
+  const json = await res.json().catch(() => ({ success: false, error: "Invalid JSON response" }));
+
+  if (!res.ok || !json.success) {
+    const msg = json.error ?? `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+
+  // Standardized list shape: { success, data: [], meta: {...} }
+  return {
+    rows: Array.isArray(json.data) ? json.data : [],
+    pagination: json.meta ?? null,
+  };
+}
+
 export const api = {
   get: <T>(path: string, params?: Record<string, string | number | boolean | undefined | null>) =>
     request<T>(path, { method: "GET" }, params),
+  getList: <T>(path: string, params?: Record<string, string | number | boolean | undefined | null>) =>
+    requestList<T>(path, params),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
   put: <T>(path: string, body?: unknown) =>

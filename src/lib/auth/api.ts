@@ -1,9 +1,11 @@
 // TrainFlow TMS — API helpers (cookies, current user, RBAC, response shapes)
+// Updated to use standardized response envelope and audit service.
+
 import { cookies } from "next/headers";
-import { NextResponse } from "next/server";
 import { verifyToken, type JwtPayload } from "./jwt";
-import { db } from "@/lib/db";
 import { canAccessModule, canPerformAction, type RouteKey, type Action, type UserRole } from "@/lib/auth/permissions";
+import { recordAudit, type AuditAction, type AuditEntity } from "./audit";
+import { ok, created, fail, notFound, type ApiMeta } from "@/lib/api/response";
 
 const COOKIE_NAME = "tf_session";
 const COOKIE_TTL_DAYS = 7;
@@ -80,21 +82,33 @@ export class ApiError extends Error {
   }
 }
 
-// Standard JSON helpers
-export function ok<T>(data: T, init?: ResponseInit) {
-  return NextResponse.json({ success: true, data }, init);
-}
+// Re-export response helpers for convenience
+export { ok, created, fail, notFound };
+export type { ApiMeta };
 
-export function created<T>(data: T) {
-  return NextResponse.json({ success: true, data }, { status: 201 });
-}
-
-export function fail(message: string, status = 400, details?: unknown) {
-  return NextResponse.json({ success: false, error: message, details }, { status });
-}
-
-export function notFound(message = "Not found") {
-  return NextResponse.json({ success: false, error: message }, { status: 404 });
+// Audit log convenience wrapper (auto-fills user from auth context)
+export async function audit(opts: {
+  user: AuthUser;
+  action: AuditAction;
+  entity: AuditEntity;
+  entityId?: string;
+  entityRef?: string;
+  description: string;
+  descriptionAr?: string;
+  req?: Request;
+  metadata?: Record<string, unknown>;
+}) {
+  return recordAudit({
+    userId: opts.user.id,
+    action: opts.action,
+    entity: opts.entity,
+    entityId: opts.entityId,
+    entityRef: opts.entityRef,
+    description: opts.description,
+    descriptionAr: opts.descriptionAr,
+    req: opts.req,
+    metadata: opts.metadata,
+  });
 }
 
 // Wrap an API handler with error + RBAC handling
@@ -142,32 +156,4 @@ export function withModuleAction<T>(module: RouteKey, action: Action, handler: H
       return fail("Internal server error", 500);
     }
   };
-}
-
-// Audit log helper
-export async function auditLog(opts: {
-  userId?: string;
-  action: string;
-  entity: string;
-  entityId?: string;
-  description: string;
-  req?: Request;
-  metadata?: unknown;
-}) {
-  try {
-    await db.auditLog.create({
-      data: {
-        userId: opts.userId ?? null,
-        action: opts.action,
-        entity: opts.entity,
-        entityId: opts.entityId ?? null,
-        description: opts.description,
-        ipAddress: opts.req?.headers.get("x-forwarded-for") ?? null,
-        userAgent: opts.req?.headers.get("user-agent") ?? null,
-        metadata: opts.metadata ? JSON.stringify(opts.metadata) : null,
-      },
-    });
-  } catch (e) {
-    console.error("[Audit log error]", e);
-  }
 }

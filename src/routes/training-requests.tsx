@@ -10,21 +10,23 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge, PriorityBadge } from "@/components/common/status-badge";
-import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Check, X } from "lucide-react";
+import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Check, X, RotateCcw, ArrowRight, FileText } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/lib/store/app-store";
 import { canPerformAction } from "@/lib/auth/permissions";
 
-interface CompanyOption { id: string; name: string; }
-interface CourseOption { id: string; title: string; code: string; }
+interface CompanyOption { id: string; name: string; refNumber: string; }
+interface CourseOption { id: string; title: string; code: string; refNumber: string; }
 interface Request {
   id: string;
-  requestNumber: string;
+  refNumber: string;
   companyName?: string | null;
+  companyRef?: string | null;
   courseTitle?: string | null;
   courseCode?: string | null;
+  courseRef?: string | null;
   traineeCount: number;
   preferredDateFrom?: string | null;
   preferredDateTo?: string | null;
@@ -33,21 +35,67 @@ interface Request {
   notes?: string | null;
   status: string;
   priority: string;
+  submittedAt?: string | null;
+  reviewedAt?: string | null;
+  approvedAt?: string | null;
+  scheduledAt?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  rejectedAt?: string | null;
+  rejectionReason?: string | null;
   createdAt: string;
 }
 
 const PRIORITIES = ["LOW", "NORMAL", "HIGH", "URGENT"];
+
+// Workflow transition matrix (mirror of backend)
+const NEXT_ACTIONS: Record<string, { status: string; labelKey: string; variant: "default" | "outline" | "ghost"; tone?: "success" | "destructive" | "info" | "warning" }[]> = {
+  DRAFT: [
+    { status: "SUBMITTED", labelKey: "workflow.submit", variant: "default", tone: "info" },
+    { status: "CANCELLED", labelKey: "workflow.cancel", variant: "ghost", tone: "destructive" },
+  ],
+  SUBMITTED: [
+    { status: "UNDER_REVIEW", labelKey: "workflow.review", variant: "default", tone: "info" },
+    { status: "CANCELLED", labelKey: "workflow.cancel", variant: "ghost", tone: "destructive" },
+  ],
+  UNDER_REVIEW: [
+    { status: "APPROVED", labelKey: "workflow.approve", variant: "default", tone: "success" },
+    { status: "REJECTED", labelKey: "workflow.reject", variant: "ghost", tone: "destructive" },
+    { status: "CANCELLED", labelKey: "workflow.cancel", variant: "ghost", tone: "destructive" },
+  ],
+  APPROVED: [
+    { status: "SCHEDULED", labelKey: "workflow.schedule", variant: "default", tone: "info" },
+    { status: "CANCELLED", labelKey: "workflow.cancel", variant: "ghost", tone: "destructive" },
+  ],
+  SCHEDULED: [
+    { status: "IN_PROGRESS", labelKey: "workflow.start", variant: "default", tone: "info" },
+    { status: "CANCELLED", labelKey: "workflow.cancel", variant: "ghost", tone: "destructive" },
+  ],
+  IN_PROGRESS: [
+    { status: "COMPLETED", labelKey: "workflow.complete", variant: "default", tone: "success" },
+    { status: "CANCELLED", labelKey: "workflow.cancel", variant: "ghost", tone: "destructive" },
+  ],
+  COMPLETED: [],
+  CANCELLED: [],
+  REJECTED: [
+    { status: "SUBMITTED", labelKey: "workflow.resubmit", variant: "default", tone: "info" },
+  ],
+};
 
 export function TrainingRequestsRoute() {
   const { t } = useI18n();
   const { toast } = useToast();
   const { user } = useAppStore();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectTarget, setRejectTarget] = useState<Request | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState<Record<string, unknown>>({
     priority: "NORMAL",
     traineeCount: 1,
     preferredLanguage: "en",
+    status: "DRAFT",
   });
   const [companies, setCompanies] = useReactState<CompanyOption[]>([]);
   const [courses, setCourses] = useReactState<CourseOption[]>([]);
@@ -56,36 +104,46 @@ export function TrainingRequestsRoute() {
     useList<Request>("/requests");
 
   const canCreate = user ? canPerformAction(user.role, "requests", "create") : false;
-  const canApprove = user ? canPerformAction(user.role, "requests", "edit") : false;
+  const canEdit = user ? canPerformAction(user.role, "requests", "edit") : false;
 
   useEffect(() => {
     if (dialogOpen) {
       if (companies.length === 0) {
-        api.get<{ rows: CompanyOption[] }>("/companies", { pageSize: 100 }).then((r) => {
-          setCompanies(r.rows.map((c) => ({ id: c.id, name: c.name })));
+        api.getList<CompanyOption>("/companies", { pageSize: 100 }).then((r) => {
+          setCompanies(r.rows.map((c) => ({ id: c.id, name: c.name, refNumber: c.refNumber })));
         }).catch(() => {});
       }
       if (courses.length === 0) {
-        api.get<{ rows: CourseOption[] }>("/courses", { pageSize: 100 }).then((r) => {
-          setCourses(r.rows.map((c) => ({ id: c.id, title: c.title, code: c.code })));
+        api.getList<CourseOption>("/courses", { pageSize: 100 }).then((r) => {
+          setCourses(r.rows.map((c) => ({ id: c.id, title: c.title, code: c.code, refNumber: c.refNumber })));
         }).catch(() => {});
       }
     }
   }, [dialogOpen, companies.length, courses.length]);
 
-  const handleApprove = async (id: string) => {
+  const handleTransition = async (req: Request, newStatus: string) => {
+    if (newStatus === "REJECTED") {
+      setRejectTarget(req);
+      setRejectDialogOpen(true);
+      return;
+    }
     try {
-      await api.put(`/requests/${id}`, { status: "APPROVED" });
-      toast({ title: t("misc.success"), description: t("action.approve") });
+      await api.put(`/requests/${req.id}`, { status: newStatus });
+      toast({ title: t("misc.success"), description: t("misc.updateSuccess") });
       refetch();
     } catch (e) {
       toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
     }
   };
-  const handleReject = async (id: string) => {
+
+  const handleRejectSubmit = async () => {
+    if (!rejectTarget) return;
     try {
-      await api.put(`/requests/${id}`, { status: "REJECTED", rejectionReason: "Rejected by coordinator" });
-      toast({ title: t("misc.success"), description: t("action.reject") });
+      await api.put(`/requests/${rejectTarget.id}`, { status: "REJECTED", rejectionReason: rejectReason || "Rejected" });
+      toast({ title: t("misc.success"), description: t("workflow.reject") });
+      setRejectDialogOpen(false);
+      setRejectTarget(null);
+      setRejectReason("");
       refetch();
     } catch (e) {
       toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
@@ -96,20 +154,34 @@ export function TrainingRequestsRoute() {
     {
       key: "id",
       header: t("requests.requestNumber"),
-      cell: (r) => <div className="font-mono text-xs font-semibold text-primary">{r.requestNumber}</div>,
+      cell: (r) => (
+        <div className="font-mono text-xs font-semibold text-primary">{r.refNumber}</div>
+      ),
     },
     {
       key: "company",
       header: t("requests.company"),
       cell: (r) => (
-        <div className="flex items-center gap-2 text-sm"><Building2 className="h-3.5 w-3.5 text-muted-foreground" />{r.companyName || "—"}</div>
+        <div className="flex items-center gap-2 text-sm">
+          <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+          <div>
+            <div>{r.companyName || "—"}</div>
+            {r.companyRef && <div className="text-[10px] text-muted-foreground font-mono">{r.companyRef}</div>}
+          </div>
+        </div>
       ),
     },
     {
       key: "course",
       header: t("requests.course"),
       cell: (r) => (
-        <div className="flex items-center gap-2 text-sm"><BookOpen className="h-3.5 w-3.5 text-muted-foreground" />{r.courseTitle || "—"}</div>
+        <div className="flex items-center gap-2 text-sm">
+          <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
+          <div>
+            <div>{r.courseTitle || "—"}</div>
+            {r.courseCode && <div className="text-[10px] text-muted-foreground font-mono">{r.courseCode}</div>}
+          </div>
+        </div>
       ),
     },
     {
@@ -141,23 +213,29 @@ export function TrainingRequestsRoute() {
       header: t("action.actions"),
       headerClassName: "text-end",
       className: "text-end",
-      cell: (r) => (
-        <div className="flex justify-end gap-1">
-          {canApprove && r.status === "PENDING" && (
-            <>
-              <Button variant="ghost" size="sm" className="h-8 text-success" onClick={() => handleApprove(r.id)}>
-                <Check className="h-3.5 w-3.5 me-1" />{t("action.approve")}
+      cell: (r) => {
+        const actions = NEXT_ACTIONS[r.status] ?? [];
+        if (actions.length === 0) return <Button variant="ghost" size="sm" className="h-8">{t("action.details")}</Button>;
+        return (
+          <div className="flex justify-end gap-1 flex-wrap">
+            {actions.map((a) => (
+              <Button
+                key={a.status}
+                variant={a.variant}
+                size="sm"
+                className={`h-8 ${a.tone === "success" ? "text-success" : a.tone === "destructive" ? "text-destructive" : a.tone === "info" ? "text-info" : ""}`}
+                onClick={() => handleTransition(r, a.status)}
+                disabled={!canEdit && user?.role !== "CONTRACTOR"}
+              >
+                {a.status === "SUBMITTED" && r.status === "REJECTED" && <RotateCcw className="h-3.5 w-3.5 me-1" />}
+                {a.status === "APPROVED" && <Check className="h-3.5 w-3.5 me-1" />}
+                {a.status === "REJECTED" && <X className="h-3.5 w-3.5 me-1" />}
+                {t(a.labelKey as never)}
               </Button>
-              <Button variant="ghost" size="sm" className="h-8 text-destructive" onClick={() => handleReject(r.id)}>
-                <X className="h-3.5 w-3.5 me-1" />{t("action.reject")}
-              </Button>
-            </>
-          )}
-          {(!canApprove || r.status !== "PENDING") && (
-            <Button variant="ghost" size="sm" className="h-8">{t("action.details")}</Button>
-          )}
-        </div>
-      ),
+            ))}
+          </div>
+        );
+      },
     },
   ];
 
@@ -171,7 +249,7 @@ export function TrainingRequestsRoute() {
       await api.post("/requests", formData);
       toast({ title: t("misc.success"), description: t("misc.createSuccess") });
       setDialogOpen(false);
-      setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: "en" });
+      setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: "en", status: "DRAFT" });
       refetch();
     } catch (e) {
       toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
@@ -224,13 +302,24 @@ export function TrainingRequestsRoute() {
         isSubmitting={submitting}
       >
         <div className="space-y-5">
+          {/* Status selector: Draft or Submit immediately */}
+          <Field label={t("requests.status")}>
+            <Select value={(formData.status as string) ?? "DRAFT"} onValueChange={(v) => setField("status", v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="DRAFT">{t("status.DRAFT")}</SelectItem>
+                <SelectItem value="SUBMITTED">{t("status.SUBMITTED")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+
           <FormGrid>
             {user?.role !== "CONTRACTOR" && (
               <Field label={t("requests.company")} required>
                 <Select onValueChange={(v) => setField("companyId", v)}>
                   <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                   <SelectContent>
-                    {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                    {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.name} ({c.refNumber})</SelectItem>)}
                   </SelectContent>
                 </Select>
               </Field>
@@ -278,6 +367,32 @@ export function TrainingRequestsRoute() {
             <Textarea rows={3} placeholder={t("requests.notes")} value={(formData.notes as string) ?? ""} onChange={(e) => setField("notes", e.target.value)} />
           </Field>
         </div>
+      </FormDialog>
+
+      {/* Reject dialog */}
+      <FormDialog
+        open={rejectDialogOpen}
+        onOpenChange={setRejectDialogOpen}
+        title={t("workflow.reject")}
+        icon={FileText}
+        size="sm"
+        onSubmit={handleRejectSubmit}
+        isSubmitting={submitting}
+      >
+        <Field label={t("requests.rejectionReason")} required>
+          <Textarea
+            rows={4}
+            placeholder={t("requests.rejectionReason")}
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+          />
+        </Field>
+        {rejectTarget && (
+          <div className="mt-3 text-xs text-muted-foreground">
+            <span>{t("requests.requestNumber")}: </span>
+            <span className="font-mono font-semibold text-primary">{rejectTarget.refNumber}</span>
+          </div>
+        )}
       </FormDialog>
     </div>
   );

@@ -44,7 +44,7 @@ export function TrainerQualificationsRoute() {
 
   useEffect(() => {
     if (dialogOpen && trainers.length === 0) {
-      api.get<{ rows: TrainerOption[] }>("/trainers", { pageSize: 100 }).then((r) => {
+      api.getList<TrainerOption>("/trainers", { pageSize: 100 }).then((r) => {
         setTrainers(r.rows.map((t) => ({ id: t.id, fullName: t.fullName })));
       }).catch(() => {});
     }

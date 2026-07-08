@@ -37,7 +37,7 @@ export function SchedulingRoute() {
     // Compute month range
     const start = new Date(current.getFullYear(), current.getMonth(), 1);
     const end = new Date(current.getFullYear(), current.getMonth() + 1, 0, 23, 59, 59);
-    api.get<{ rows: SessionItem[] }>("/sessions", {
+    api.getList<SessionItem>("/sessions", {
       pageSize: 200,
       from: start.toISOString(),
       to: end.toISOString(),

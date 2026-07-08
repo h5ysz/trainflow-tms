@@ -1,102 +1,100 @@
-// /api/certificates — list + issue
+// /api/certificates — list + issue (CERT-YYYY-000001 ref number, verification token, CERTIFICATE_GENERATE audit)
 import { db } from "@/lib/db";
-import { withModuleAction, ok, created, fail, auditLog } from "@/lib/auth/api";
-import { parseListParams, listResponse } from "@/lib/api/query";
+import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
+import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
+import { nextRefNumber } from "@/lib/api/ref-number";
+import { list } from "@/lib/api/response";
+import { randomBytes } from "crypto";
 
-function genCertNumber(): string {
-  const d = new Date();
-  const yy = d.getFullYear().toString();
-  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `TF-${yy}-${rand}`;
+const ALLOWED_SORT_FIELDS = ["refNumber", "traineeName", "issuedAt", "validUntil", "status", "finalScore"];
+
+function genVerificationToken(): string {
+  return randomBytes(12).toString("hex");
 }
 
 export const GET = withModuleAction("certificates", "view", async ({ req, user }) => {
-  const params = parseListParams(req);
-  const where: Record<string, unknown> = {};
-  if (params.search) {
+  const q = parseListQuery(req);
+  const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
+
+  if (q.search) {
     where.OR = [
-      { certificateNumber: { contains: params.search } },
-      { traineeName: { contains: params.search } },
-      { traineeEmail: { contains: params.search } },
-      { traineeIdNational: { contains: params.search } },
+      { refNumber: { contains: q.search } },
+      { traineeName: { contains: q.search } },
+      { traineeEmail: { contains: q.search } },
+      { traineeIdNational: { contains: q.search } },
+      { verificationToken: { contains: q.search } },
     ];
   }
-  if (params.status) where.status = params.status;
-  const url = new URL(req.url);
-  const sessionId = url.searchParams.get("sessionId");
-  const companyId = url.searchParams.get("companyId");
-  if (sessionId) where.sessionId = sessionId;
-  if (companyId) where.companyId = companyId;
+  if (q.filters.status) where.status = q.filters.status;
+  if (q.filters.sessionId) where.sessionId = q.filters.sessionId;
+  if (q.filters.companyId) where.companyId = q.filters.companyId;
+  if (q.filters.courseId) where.courseId = q.filters.courseId;
 
   // Contractors see only their company's certificates
   if (user.role === "CONTRACTOR" && user.companyId) {
     where.companyId = user.companyId;
   }
 
+  const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS, "issuedAt");
+
   const [rows, total] = await Promise.all([
     db.certificate.findMany({
       where,
       include: {
         session: {
-          select: {
-            id: true,
-            sessionCode: true,
-            title: true,
-            startDate: true,
-            endDate: true,
-          },
+          select: { id: true, refNumber: true, title: true, startDate: true, endDate: true },
         },
-        course: { select: { id: true, title: true, code: true } },
-        company: { select: { id: true, name: true } },
+        course: { select: { id: true, title: true, code: true, refNumber: true } },
+        company: { select: { id: true, name: true, refNumber: true } },
       },
-      orderBy: { issuedAt: "desc" },
-      skip: (params.page - 1) * params.pageSize,
-      take: params.pageSize,
+      orderBy,
+      skip: (q.page - 1) * q.pageSize,
+      take: q.pageSize,
     }),
     db.certificate.count({ where }),
   ]);
 
-  return ok(
-    listResponse(
-      rows.map((c) => ({
-        id: c.id,
-        certificateNumber: c.certificateNumber,
-        sessionId: c.sessionId,
-        sessionCode: c.session?.sessionCode ?? null,
-        sessionTitle: c.session?.title ?? null,
-        courseId: c.courseId,
-        courseTitle: c.course?.title ?? null,
-        courseCode: c.course?.code ?? null,
-        companyId: c.companyId,
-        companyName: c.company?.name ?? null,
-        traineeName: c.traineeName,
-        traineeIdNational: c.traineeIdNational,
-        traineeEmail: c.traineeEmail,
-        finalScore: c.finalScore,
-        issuedAt: c.issuedAt,
-        validUntil: c.validUntil,
-        status: c.status,
-        pdfUrl: c.pdfUrl,
-        qrCodeUrl: c.qrCodeUrl,
-      })),
-      total,
-      params
-    )
+  return list(
+    rows.map((c) => ({
+      id: c.id,
+      refNumber: c.refNumber,
+      sessionId: c.sessionId,
+      sessionRef: c.session?.refNumber ?? null,
+      sessionCode: c.session?.refNumber ?? null,
+      sessionTitle: c.session?.title ?? null,
+      courseId: c.courseId,
+      courseTitle: c.course?.title ?? null,
+      courseCode: c.course?.code ?? null,
+      courseRef: c.course?.refNumber ?? null,
+      companyId: c.companyId,
+      companyName: c.company?.name ?? null,
+      companyRef: c.company?.refNumber ?? null,
+      traineeName: c.traineeName,
+      traineeIdNational: c.traineeIdNational,
+      traineeEmail: c.traineeEmail,
+      finalScore: c.finalScore,
+      issuedAt: c.issuedAt,
+      validUntil: c.validUntil,
+      status: c.status,
+      pdfUrl: c.pdfUrl,
+      verificationToken: c.verificationToken,
+      verificationCount: c.verificationCount,
+      lastVerifiedAt: c.lastVerifiedAt,
+    })),
+    buildListMeta(total, q)
   );
 });
 
 export const POST = withModuleAction("certificates", "create", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
-  const {
-    sessionId, traineeName, traineeIdNational, traineeEmail, finalScore,
-  } = body;
+  const { sessionId, traineeName, traineeIdNational, traineeEmail, finalScore } = body;
 
   if (!sessionId || !traineeName || finalScore === undefined) {
-    return fail("sessionId, traineeName, finalScore are required", 400);
+    return fail("sessionId, traineeName, finalScore are required", 422, "VALIDATION_ERROR");
   }
 
-  const session = await db.trainingSession.findUnique({
-    where: { id: sessionId },
+  const session = await db.trainingSession.findFirst({
+    where: { id: sessionId, deletedAt: null },
     include: { course: true, request: { include: { company: true } } },
   });
   if (!session) return fail("Session not found", 404);
@@ -107,26 +105,23 @@ export const POST = withModuleAction("certificates", "create", async ({ req, use
     return fail(`Score ${finalScore}% is below passing score ${session.course.passScore}%`, 400);
   }
 
-  // Prevent duplicate certificate
+  // Prevent duplicate
   const existing = await db.certificate.findFirst({
-    where: { sessionId, traineeName: { equals: traineeName } },
+    where: { sessionId, traineeName: { equals: traineeName }, deletedAt: null },
   });
   if (existing) {
     return fail("Certificate already issued for this trainee in this session", 400);
   }
 
-  // Unique certificate number
-  let certificateNumber = genCertNumber();
-  while (await db.certificate.findUnique({ where: { certificateNumber } })) {
-    certificateNumber = genCertNumber();
-  }
+  const refNumber = await nextRefNumber("CERTIFICATE");
+  const verificationToken = genVerificationToken();
 
   const validUntil = new Date();
   validUntil.setMonth(validUntil.getMonth() + session.course.validityMonths);
 
   const cert = await db.certificate.create({
     data: {
-      certificateNumber,
+      refNumber,
       sessionId,
       courseId: session.courseId,
       companyId: session.request?.companyId ?? null,
@@ -136,16 +131,23 @@ export const POST = withModuleAction("certificates", "create", async ({ req, use
       finalScore,
       validUntil,
       status: "VALID",
+      verificationToken,
+      createdBy: user.id,
+      updatedBy: user.id,
     },
   });
 
-  await auditLog({
-    userId: user.id,
-    action: "ISSUE",
+  // Audit: CERTIFICATE_GENERATE
+  await audit({
+    user,
+    action: "CERTIFICATE_GENERATE",
     entity: "CERTIFICATE",
     entityId: cert.id,
-    description: `Issued certificate ${certificateNumber} to ${traineeName} (${finalScore}%)`,
+    entityRef: cert.refNumber,
+    description: `Issued certificate ${cert.refNumber} to ${traineeName} (${finalScore}%)`,
+    descriptionAr: `تم إصدار شهادة ${cert.refNumber} لـ ${traineeName} (${finalScore}%)`,
     req,
+    metadata: { sessionId, courseId: session.courseId, verificationToken },
   });
 
   return created(cert);

@@ -1,6 +1,6 @@
 // /api/settings — list + bulk update (Super Admin only)
 import { db } from "@/lib/db";
-import { requireRole, ok, fail, auditLog } from "@/lib/auth/api";
+import { requireRole, ok, fail, audit } from "@/lib/auth/api";
 
 export async function GET() {
   let user;
@@ -11,11 +11,18 @@ export async function GET() {
   }
 
   const settings = await db.setting.findMany({ orderBy: { category: "asc" } });
-  // Group as key-value map
-  const map: Record<string, { value: string; category: string; description?: string | null }> = {};
+  const map: Record<string, { value: string; category: string; description?: string | null; isPublic: boolean }> = {};
   for (const s of settings) {
-    map[s.key] = { value: s.value, category: s.category, description: s.description };
+    map[s.key] = { value: s.value, category: s.category, description: s.description, isPublic: s.isPublic };
   }
+  return ok(map);
+}
+
+// Public settings endpoint — no auth required, returns only isPublic=true settings
+export async function GET_PUBLIC() {
+  const settings = await db.setting.findMany({ where: { isPublic: true } });
+  const map: Record<string, string> = {};
+  for (const s of settings) map[s.key] = s.value;
   return ok(map);
 }
 
@@ -28,10 +35,9 @@ export async function PUT(req: Request) {
   }
 
   const body = await req.json().catch(() => ({}));
-  // body: { settings: { key: value, ... } }
   const updates = body.settings ?? body;
   if (typeof updates !== "object" || Array.isArray(updates)) {
-    return fail("Expected { settings: { key: value } }", 400);
+    return fail("Expected { settings: { key: value } }", 422, "VALIDATION_ERROR");
   }
 
   const ops = Object.entries(updates).map(([key, value]) =>
@@ -49,12 +55,14 @@ export async function PUT(req: Request) {
 
   await Promise.all(ops);
 
-  await auditLog({
-    userId: user.id,
+  await audit({
+    user,
     action: "UPDATE",
     entity: "SETTING",
     description: `Updated settings: ${Object.keys(updates).join(", ")}`,
+    descriptionAr: `تم تحديث الإعدادات: ${Object.keys(updates).join(", ")}`,
     req,
+    metadata: { keys: Object.keys(updates) },
   });
 
   return ok({ success: true, updated: Object.keys(updates) });

@@ -11,15 +11,20 @@ import { useList } from "@/lib/api/hooks";
 
 interface Certificate {
   id: string;
-  certificateNumber: string;
+  refNumber: string;
+  certificateNumber?: string;
   traineeName: string;
   courseTitle?: string | null;
   courseCode?: string | null;
+  courseRef?: string | null;
   companyName?: string | null;
+  companyRef?: string | null;
   finalScore: number;
   issuedAt: string;
   validUntil: string;
   status: string;
+  verificationToken?: string | null;
+  verificationCount?: number;
 }
 
 export function CertificatesRoute() {
@@ -37,7 +42,7 @@ export function CertificatesRoute() {
             <BadgeCheck className="h-4 w-4" />
           </div>
           <div>
-            <div className="font-mono text-xs font-semibold text-primary">{r.certificateNumber}</div>
+            <div className="font-mono text-xs font-semibold text-primary">{r.refNumber}</div>
             <div className="text-xs text-muted-foreground">{t("certificates.issuedAt")}: {new Date(r.issuedAt).toLocaleDateString()}</div>
           </div>
         </div>

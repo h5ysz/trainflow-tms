@@ -1,6 +1,6 @@
-// /api/attendance/[id] — get / update / delete
+// /api/attendance/[id] — get / update / soft-delete
 import { db } from "@/lib/db";
-import { withModuleAction, ok, notFound, auditLog } from "@/lib/auth/api";
+import { withModuleAction, ok, notFound, audit } from "@/lib/auth/api";
 
 export const GET = withModuleAction("attendance", "view", async ({ params }) => {
   const id = params.id as string;
@@ -8,7 +8,7 @@ export const GET = withModuleAction("attendance", "view", async ({ params }) => 
     where: { id },
     include: { session: { include: { course: true } } },
   });
-  if (!a) return notFound("Attendance record not found");
+  if (!a || a.deletedAt) return notFound("Attendance record not found");
   return ok(a);
 });
 
@@ -16,7 +16,7 @@ export const PUT = withModuleAction("attendance", "edit", async ({ req, params, 
   const id = params.id as string;
   const body = await req.json().catch(() => ({}));
   const existing = await db.attendance.findUnique({ where: { id } });
-  if (!existing) return notFound("Attendance record not found");
+  if (!existing || existing.deletedAt) return notFound("Attendance record not found");
 
   const { traineeName, traineeIdNational, traineeEmail, traineePhone, company, checkInAt, checkOutAt, status, checkInMethod, notes } = body;
 
@@ -33,15 +33,17 @@ export const PUT = withModuleAction("attendance", "edit", async ({ req, params, 
       ...(status !== undefined && { status }),
       ...(checkInMethod !== undefined && { checkInMethod }),
       ...(notes !== undefined && { notes }),
+      updatedBy: user.id,
     },
   });
 
-  await auditLog({
-    userId: user.id,
+  await audit({
+    user,
     action: "UPDATE",
-    entity: "SESSION",
-    entityId: existing.sessionId,
+    entity: "ATTENDANCE",
+    entityId: id,
     description: `Updated attendance for ${existing.traineeName}`,
+    descriptionAr: `تم تحديث حضور ${existing.traineeName}`,
     req,
   });
 
@@ -51,22 +53,25 @@ export const PUT = withModuleAction("attendance", "edit", async ({ req, params, 
 export const DELETE = withModuleAction("attendance", "delete", async ({ params, user, req }) => {
   const id = params.id as string;
   const existing = await db.attendance.findUnique({ where: { id } });
-  if (!existing) return notFound("Attendance record not found");
+  if (!existing || existing.deletedAt) return notFound("Attendance record not found");
 
-  await db.attendance.delete({ where: { id } });
+  await db.attendance.update({
+    where: { id },
+    data: { deletedAt: new Date(), updatedBy: user.id },
+  });
 
-  // Decrement actualTrainees
   await db.trainingSession.update({
     where: { id: existing.sessionId },
     data: { actualTrainees: { decrement: 1 } },
   });
 
-  await auditLog({
-    userId: user.id,
+  await audit({
+    user,
     action: "DELETE",
-    entity: "SESSION",
-    entityId: existing.sessionId,
+    entity: "ATTENDANCE",
+    entityId: id,
     description: `Removed attendance for ${existing.traineeName}`,
+    descriptionAr: `تم حذف حضور ${existing.traineeName}`,
     req,
   });
 

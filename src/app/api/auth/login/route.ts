@@ -2,7 +2,8 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { signToken, verifyPassword, getOrCreateDemoUser } from "@/lib/auth/jwt";
-import { setSessionCookie, ok, fail } from "@/lib/auth/api";
+import { setSessionCookie, ok, fail, audit } from "@/lib/auth/api";
+import { recordAudit } from "@/lib/auth/audit";
 import type { UserRole } from "@/lib/auth/permissions";
 
 const VALID_ROLES: UserRole[] = ["SUPER_ADMIN", "COORDINATOR", "TRAINER", "CONTRACTOR"];
@@ -17,20 +18,15 @@ export async function POST(req: NextRequest) {
     };
 
     let userId: string;
-    let userRole: UserRole;
-    let userEmail: string;
-    let userFullName: string;
 
     // Demo role-based login (for design exploration)
     if (role && VALID_ROLES.includes(role as UserRole) && !email) {
       const payload = await getOrCreateDemoUser(role as UserRole);
       userId = payload.id;
-      userRole = payload.role;
-      userEmail = payload.email;
-      userFullName = payload.fullName;
     } else if (email && password) {
+      // Real email/password login
       const user = await db.user.findUnique({ where: { email } });
-      if (!user || !user.isActive) {
+      if (!user || !user.isActive || user.deletedAt) {
         return fail("Invalid email or password", 401);
       }
       const valid = await verifyPassword(password, user.passwordHash);
@@ -42,9 +38,6 @@ export async function POST(req: NextRequest) {
         data: { lastLoginAt: new Date() },
       });
       userId = user.id;
-      userRole = user.role;
-      userEmail = user.email;
-      userFullName = user.fullName;
     } else {
       return fail("Provide email+password or role", 400);
     }
@@ -53,41 +46,43 @@ export async function POST(req: NextRequest) {
       where: { id: userId },
       include: { company: true, trainer: true },
     });
+    if (!dbUser || !dbUser.isActive || dbUser.deletedAt) {
+      return fail("Invalid account", 401);
+    }
 
     const token = await signToken({
-      sub: dbUser!.id,
-      email: dbUser!.email,
-      role: dbUser!.role,
-      fullName: dbUser!.fullName,
-      companyId: dbUser!.companyId,
-      trainerId: dbUser!.trainerId,
+      sub: dbUser.id,
+      email: dbUser.email,
+      role: dbUser.role,
+      fullName: dbUser.fullName,
+      companyId: dbUser.companyId,
+      trainerId: dbUser.trainerId,
     });
 
     await setSessionCookie(token);
 
-    await db.auditLog.create({
-      data: {
-        userId: dbUser!.id,
-        action: "LOGIN",
-        entity: "USER",
-        entityId: dbUser!.id,
-        description: `${dbUser!.fullName} (${dbUser!.role}) signed in`,
-        ipAddress: req.headers.get("x-forwarded-for") ?? null,
-        userAgent: req.headers.get("user-agent") ?? null,
-      },
+    // Audit log: LOGIN
+    await recordAudit({
+      userId: dbUser.id,
+      action: "LOGIN",
+      entity: "USER",
+      entityId: dbUser.id,
+      description: `${dbUser.fullName} (${dbUser.role}) signed in`,
+      descriptionAr: `${dbUser.fullName} (${dbUser.role}) سجّل الدخول`,
+      req,
     });
 
     return ok({
       user: {
-        id: dbUser!.id,
-        email: dbUser!.email,
-        fullName: dbUser!.fullName,
-        role: dbUser!.role,
-        language: dbUser!.language,
-        companyId: dbUser!.companyId,
-        companyName: dbUser!.company?.name ?? null,
-        trainerId: dbUser!.trainerId,
-        avatarUrl: dbUser!.avatarUrl ?? null,
+        id: dbUser.id,
+        email: dbUser.email,
+        fullName: dbUser.fullName,
+        role: dbUser.role,
+        language: dbUser.language,
+        companyId: dbUser.companyId,
+        companyName: dbUser.company?.name ?? null,
+        trainerId: dbUser.trainerId,
+        avatarUrl: dbUser.avatarUrl ?? null,
       },
       token,
     });
@@ -96,3 +91,6 @@ export async function POST(req: NextRequest) {
     return fail("Login failed", 500);
   }
 }
+
+// Suppress unused warning
+void audit;

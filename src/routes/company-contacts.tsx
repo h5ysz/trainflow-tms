@@ -48,7 +48,7 @@ export function CompanyContactsRoute() {
   // Load companies for the dropdown when dialog opens
   useEffect(() => {
     if (dialogOpen && companies.length === 0) {
-      api.get<{ rows: CompanyOption[] }>("/companies", { pageSize: 100 }).then((r) => {
+      api.getList<CompanyOption>("/companies", { pageSize: 100 }).then((r) => {
         setCompanies(r.rows.map((c) => ({ id: c.id, name: c.name })));
       }).catch(() => {});
     }

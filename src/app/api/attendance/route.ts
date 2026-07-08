@@ -1,27 +1,30 @@
-// /api/attendance — list + create (manual check-in / QR check-in)
+// /api/attendance — list + create (manual + QR check-in, with attempt logging)
 import { db } from "@/lib/db";
-import { withModuleAction, ok, created, fail, auditLog } from "@/lib/auth/api";
-import { parseListParams, listResponse } from "@/lib/api/query";
+import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
+import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
+import { list } from "@/lib/api/response";
+
+const ALLOWED_SORT_FIELDS = ["traineeName", "createdAt", "updatedAt", "status", "checkInAt"];
 
 export const GET = withModuleAction("attendance", "view", async ({ req, user }) => {
-  const params = parseListParams(req);
-  const where: Record<string, unknown> = {};
-  if (params.search) {
+  const q = parseListQuery(req);
+  const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
+
+  if (q.search) {
     where.OR = [
-      { traineeName: { contains: params.search } },
-      { traineeEmail: { contains: params.search } },
-      { company: { contains: params.search } },
+      { traineeName: { contains: q.search } },
+      { traineeEmail: { contains: q.search } },
+      { company: { contains: q.search } },
     ];
   }
-  if (params.status) where.status = params.status;
-  const url = new URL(req.url);
-  const sessionId = url.searchParams.get("sessionId");
-  if (sessionId) where.sessionId = sessionId;
+  if (q.filters.status) where.status = q.filters.status;
+  if (q.filters.sessionId) where.sessionId = q.filters.sessionId;
 
-  // Trainers see only their own sessions' attendance
   if (user.role === "TRAINER" && user.trainerId) {
     where.session = { trainerId: user.trainerId };
   }
+
+  const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS);
 
   const [rows, total] = await Promise.all([
     db.attendance.findMany({
@@ -29,43 +32,39 @@ export const GET = withModuleAction("attendance", "view", async ({ req, user }) 
       include: {
         session: {
           select: {
-            id: true,
-            sessionCode: true,
-            title: true,
+            id: true, refNumber: true, title: true,
             course: { select: { id: true, title: true } },
           },
         },
       },
-      orderBy: { createdAt: "desc" },
-      skip: (params.page - 1) * params.pageSize,
-      take: params.pageSize,
+      orderBy,
+      skip: (q.page - 1) * q.pageSize,
+      take: q.pageSize,
     }),
     db.attendance.count({ where }),
   ]);
 
-  return ok(
-    listResponse(
-      rows.map((a) => ({
-        id: a.id,
-        sessionId: a.sessionId,
-        sessionCode: a.session?.sessionCode ?? null,
-        sessionTitle: a.session?.title ?? null,
-        courseTitle: a.session?.course?.title ?? null,
-        traineeName: a.traineeName,
-        traineeIdNational: a.traineeIdNational,
-        traineeEmail: a.traineeEmail,
-        traineePhone: a.traineePhone,
-        company: a.company,
-        checkInAt: a.checkInAt,
-        checkOutAt: a.checkOutAt,
-        status: a.status,
-        checkInMethod: a.checkInMethod,
-        notes: a.notes,
-        createdAt: a.createdAt,
-      })),
-      total,
-      params
-    )
+  return list(
+    rows.map((a) => ({
+      id: a.id,
+      sessionId: a.sessionId,
+      sessionRef: a.session?.refNumber ?? null,
+      sessionCode: a.session?.refNumber ?? null,
+      sessionTitle: a.session?.title ?? null,
+      courseTitle: a.session?.course?.title ?? null,
+      traineeName: a.traineeName,
+      traineeIdNational: a.traineeIdNational,
+      traineeEmail: a.traineeEmail,
+      traineePhone: a.traineePhone,
+      company: a.company,
+      checkInAt: a.checkInAt,
+      checkOutAt: a.checkOutAt,
+      status: a.status,
+      checkInMethod: a.checkInMethod,
+      notes: a.notes,
+      createdAt: a.createdAt,
+    })),
+    buildListMeta(total, q)
   );
 });
 
@@ -73,37 +72,68 @@ export const POST = withModuleAction("attendance", "create", async ({ req, user 
   const body = await req.json().catch(() => ({}));
   const {
     sessionId, qrCodeToken, traineeName, traineeIdNational, traineeEmail,
-    traineePhone, company, status, checkInMethod, notes,
+    traineePhone, company, companyId, status, checkInMethod, notes,
   } = body;
 
-  if (!sessionId) return fail("sessionId is required", 400);
+  if (!sessionId) return fail("sessionId is required", 422, "VALIDATION_ERROR");
 
-  // If QR token provided, validate it
+  // Validate session + QR token (if provided)
+  let session;
   if (qrCodeToken) {
-    const session = await db.trainingSession.findUnique({
-      where: { qrCodeToken },
+    session = await db.trainingSession.findFirst({
+      where: { qrCodeToken, deletedAt: null },
     });
     if (!session || session.id !== sessionId) {
+      // Log failed attempt
+      await db.checkInAttempt.create({
+        data: {
+          sessionId,
+          qrToken: qrCodeToken ?? null,
+          traineeName: traineeName ?? null,
+          traineeEmail: traineeEmail ?? null,
+          traineeIdNational: traineeIdNational ?? null,
+          ipAddress: req.headers.get("x-forwarded-for") ?? null,
+          userAgent: req.headers.get("user-agent") ?? null,
+          success: false,
+          failureReason: "Invalid QR token",
+        },
+      });
       return fail("Invalid QR code", 400);
     }
   } else {
-    const session = await db.trainingSession.findUnique({ where: { id: sessionId } });
+    session = await db.trainingSession.findFirst({ where: { id: sessionId, deletedAt: null } });
     if (!session) return fail("Session not found", 404);
   }
 
-  if (!traineeName) return fail("traineeName is required", 400);
+  if (!traineeName) return fail("traineeName is required", 422, "VALIDATION_ERROR");
 
-  // Prevent duplicate check-ins (same trainee + session)
+  // Prevent duplicate check-ins
   const existing = await db.attendance.findFirst({
     where: {
       sessionId,
       traineeName: { equals: traineeName },
-      ...(traineeIdNational && { traineeIdNational }),
+      deletedAt: null,
+      ...(traineeIdNational ? { traineeIdNational } : {}),
     },
   });
   if (existing) {
+    await db.checkInAttempt.create({
+      data: {
+        sessionId,
+        qrToken: qrCodeToken ?? null,
+        traineeName,
+        traineeEmail: traineeEmail ?? null,
+        traineeIdNational: traineeIdNational ?? null,
+        ipAddress: req.headers.get("x-forwarded-for") ?? null,
+        userAgent: req.headers.get("user-agent") ?? null,
+        success: false,
+        failureReason: "Already checked in",
+      },
+    });
     return fail("Trainee already checked in for this session", 400);
   }
+
+  const method = checkInMethod ?? (qrCodeToken ? "QR" : "MANUAL");
 
   const attendance = await db.attendance.create({
     data: {
@@ -113,26 +143,46 @@ export const POST = withModuleAction("attendance", "create", async ({ req, user 
       traineeEmail: traineeEmail ?? null,
       traineePhone: traineePhone ?? null,
       company: company ?? null,
+      companyId: companyId ?? null,
       checkInAt: new Date(),
       status: status ?? "PRESENT",
-      checkInMethod: checkInMethod ?? (qrCodeToken ? "QR" : "MANUAL"),
+      checkInMethod: method,
       notes: notes ?? null,
+      createdBy: user.id,
+      updatedBy: user.id,
+    },
+  });
+
+  // Log successful attempt
+  await db.checkInAttempt.create({
+    data: {
+      sessionId,
+      qrToken: qrCodeToken ?? null,
+      traineeName,
+      traineeEmail: traineeEmail ?? null,
+      traineeIdNational: traineeIdNational ?? null,
+      ipAddress: req.headers.get("x-forwarded-for") ?? null,
+      userAgent: req.headers.get("user-agent") ?? null,
+      success: true,
     },
   });
 
   // Bump actualTrainees on the session
   await db.trainingSession.update({
     where: { id: sessionId },
-    data: { actualTrainees: { increment: 1 } },
+    data: { actualTrainees: { increment: 1 }, updatedBy: user.id },
   });
 
-  await auditLog({
-    userId: user.id,
+  await audit({
+    user,
     action: "CREATE",
-    entity: "SESSION",
-    entityId: sessionId,
-    description: `Checked in ${traineeName}`,
+    entity: "ATTENDANCE",
+    entityId: attendance.id,
+    entityRef: session.refNumber,
+    description: `Checked in ${traineeName} for session ${session.refNumber} (${method})`,
+    descriptionAr: `تسجيل حضور ${traineeName} لجلسة ${session.refNumber} (${method === "QR" ? "QR" : "يدوي"})`,
     req,
+    metadata: { method, sessionId },
   });
 
   return created(attendance);

@@ -1,25 +1,36 @@
-// /api/companies — list + create
+// /api/companies — list + create (with UUID, COM-000001 ref number, soft delete, audit)
 import { db } from "@/lib/db";
-import { withModuleAction, ok, created, fail } from "@/lib/auth/api";
-import { parseListParams, listResponse } from "@/lib/api/query";
+import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
+import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
+import { nextRefNumber } from "@/lib/api/ref-number";
+import { list } from "@/lib/api/response";
+
+const ALLOWED_SORT_FIELDS = ["name", "createdAt", "updatedAt", "status", "industry", "country", "city"];
 
 export const GET = withModuleAction("companies", "view", async ({ req, user }) => {
-  const params = parseListParams(req);
-  const where: Record<string, unknown> = {};
-  if (params.search) {
+  const q = parseListQuery(req);
+  const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
+
+  if (q.search) {
     where.OR = [
-      { name: { contains: params.search } },
-      { legalName: { contains: params.search } },
-      { email: { contains: params.search } },
-      { crNumber: { contains: params.search } },
+      { name: { contains: q.search } },
+      { legalName: { contains: q.search } },
+      { email: { contains: q.search } },
+      { crNumber: { contains: q.search } },
+      { refNumber: { contains: q.search } },
     ];
   }
-  if (params.status) where.status = params.status;
+  // Apply status filter (legacy — also supported via q.filters)
+  if (q.filters.status) where.status = q.filters.status;
+  if (q.filters.industry) where.industry = q.filters.industry;
+  if (q.filters.country) where.country = q.filters.country;
 
   // Contractors only see their own company
   if (user.role === "CONTRACTOR" && user.companyId) {
     where.id = user.companyId;
   }
+
+  const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS);
 
   const [rows, total] = await Promise.all([
     db.company.findMany({
@@ -27,44 +38,42 @@ export const GET = withModuleAction("companies", "view", async ({ req, user }) =
       include: {
         _count: { select: { contacts: true, trainingRequests: true, users: true } },
       },
-      orderBy: { createdAt: "desc" },
-      skip: (params.page - 1) * params.pageSize,
-      take: params.pageSize,
+      orderBy,
+      skip: (q.page - 1) * q.pageSize,
+      take: q.pageSize,
     }),
     db.company.count({ where }),
   ]);
 
-  return ok(
-    listResponse(
-      rows.map((c) => ({
-        id: c.id,
-        name: c.name,
-        nameAr: c.nameAr,
-        legalName: c.legalName,
-        crNumber: c.crNumber,
-        vatNumber: c.vatNumber,
-        industry: c.industry,
-        country: c.country,
-        city: c.city,
-        address: c.address,
-        postalCode: c.postalCode,
-        phone: c.phone,
-        email: c.email,
-        website: c.website,
-        contactPerson: c.contactPerson,
-        contactPhone: c.contactPhone,
-        contactEmail: c.contactEmail,
-        status: c.status,
-        logoUrl: c.logoUrl,
-        createdAt: c.createdAt,
-        updatedAt: c.updatedAt,
-        contactsCount: c._count.contacts,
-        requestsCount: c._count.trainingRequests,
-        usersCount: c._count.users,
-      })),
-      total,
-      params
-    )
+  return list(
+    rows.map((c) => ({
+      id: c.id,
+      refNumber: c.refNumber,
+      name: c.name,
+      nameAr: c.nameAr,
+      legalName: c.legalName,
+      crNumber: c.crNumber,
+      vatNumber: c.vatNumber,
+      industry: c.industry,
+      country: c.country,
+      city: c.city,
+      address: c.address,
+      postalCode: c.postalCode,
+      phone: c.phone,
+      email: c.email,
+      website: c.website,
+      contactPerson: c.contactPerson,
+      contactPhone: c.contactPhone,
+      contactEmail: c.contactEmail,
+      status: c.status,
+      logoUrl: c.logoUrl,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+      contactsCount: c._count.contacts,
+      requestsCount: c._count.trainingRequests,
+      usersCount: c._count.users,
+    })),
+    buildListMeta(total, q)
   );
 });
 
@@ -76,10 +85,19 @@ export const POST = withModuleAction("companies", "create", async ({ req, user }
     contactPerson, contactPhone, contactEmail, status, logoUrl,
   } = body;
 
-  if (!name) return fail("Company name is required", 400);
+  if (!name) return fail("Company name is required", 422, "VALIDATION_ERROR");
+
+  // Uniqueness checks
+  if (crNumber) {
+    const dup = await db.company.findFirst({ where: { crNumber, deletedAt: null } });
+    if (dup) return fail("Commercial Registration number already exists", 400);
+  }
+
+  const refNumber = await nextRefNumber("COMPANY");
 
   const company = await db.company.create({
     data: {
+      refNumber,
       name,
       nameAr: nameAr ?? null,
       legalName: legalName ?? null,
@@ -98,17 +116,20 @@ export const POST = withModuleAction("companies", "create", async ({ req, user }
       contactEmail: contactEmail ?? null,
       status: status ?? "ACTIVE",
       logoUrl: logoUrl ?? null,
+      createdBy: user.id,
+      updatedBy: user.id,
     },
   });
 
-  await db.auditLog.create({
-    data: {
-      userId: user.id,
-      action: "CREATE",
-      entity: "COMPANY",
-      entityId: company.id,
-      description: `Created company: ${company.name}`,
-    },
+  await audit({
+    user,
+    action: "CREATE",
+    entity: "COMPANY",
+    entityId: company.id,
+    entityRef: company.refNumber,
+    description: `Created company: ${company.name} (${company.refNumber})`,
+    descriptionAr: `تم إنشاء شركة: ${company.name} (${company.refNumber})`,
+    req,
   });
 
   return created(company);

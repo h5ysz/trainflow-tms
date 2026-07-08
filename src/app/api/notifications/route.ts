@@ -1,29 +1,31 @@
 // /api/notifications — list + create + mark-read
 import { db } from "@/lib/db";
 import { getCurrentUser, ok, created, fail } from "@/lib/auth/api";
-import { parseListParams, listResponse } from "@/lib/api/query";
+import { parseListQuery, buildListMeta, buildOrderBy } from "@/lib/api/query";
+import { list } from "@/lib/api/response";
+
+const ALLOWED_SORT_FIELDS = ["createdAt", "isRead", "type", "category"];
 
 export async function GET(req: Request) {
   const user = await getCurrentUser();
   if (!user) return fail("Unauthorized", 401);
 
-  const params = parseListParams(req);
-  const url = new URL(req.url);
-  const filter = url.searchParams.get("filter"); // "unread"
-  const category = url.searchParams.get("category");
-
+  const q = parseListQuery(req);
   const where: Record<string, unknown> = {
     OR: [{ userId: user.id }, { userId: null }],
   };
-  if (filter === "unread") where.isRead = false;
-  if (category) where.category = category;
+  if (q.filters.filter === "unread" || q.filters.unread === "true") where.isRead = false;
+  if (q.filters.category) where.category = q.filters.category;
+  if (q.filters.type) where.type = q.filters.type;
+
+  const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS, "createdAt");
 
   const [rows, total] = await Promise.all([
     db.notification.findMany({
       where,
-      orderBy: { createdAt: "desc" },
-      skip: (params.page - 1) * params.pageSize,
-      take: params.pageSize,
+      orderBy,
+      skip: (q.page - 1) * q.pageSize,
+      take: q.pageSize,
     }),
     db.notification.count({ where }),
   ]);
@@ -35,7 +37,7 @@ export async function GET(req: Request) {
     },
   });
 
-  return ok({ ...listResponse(rows, total, params), unreadCount });
+  return list(rows, { ...buildListMeta(total, q), unreadCount } as any);
 }
 
 export async function POST(req: Request) {
@@ -43,15 +45,17 @@ export async function POST(req: Request) {
   if (!user) return fail("Unauthorized", 401);
 
   const body = await req.json().catch(() => ({}));
-  const { title, message, type, category, link, userId: targetUserId } = body;
+  const { title, titleAr, message, messageAr, type, category, link, userId: targetUserId } = body;
 
-  if (!title || !message) return fail("title and message are required", 400);
+  if (!title || !message) return fail("title and message are required", 422, "VALIDATION_ERROR");
 
   const notif = await db.notification.create({
     data: {
       userId: targetUserId ?? user.id,
       title,
+      titleAr: titleAr ?? null,
       message,
+      messageAr: messageAr ?? null,
       type: type ?? "INFO",
       category: category ?? "SYSTEM",
       link: link ?? null,
@@ -71,7 +75,7 @@ export async function PATCH(req: Request) {
       OR: [{ userId: user.id }, { userId: null }],
       isRead: false,
     },
-    data: { isRead: true },
+    data: { isRead: true, readAt: new Date() },
   });
 
   return ok({ success: true });

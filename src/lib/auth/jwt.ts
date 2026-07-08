@@ -67,7 +67,6 @@ export async function hashPassword(password: string): Promise<string> {
     keyMaterial,
     KEY_LENGTH * 8
   );
-  // Format: pbkdf2$iterations$saltHex$hashHex
   return `pbkdf2$${PBKDF2_ITERATIONS}$${bufToHex(salt)}$${bufToHex(new Uint8Array(derived))}`;
 }
 
@@ -107,7 +106,10 @@ function hexToBuf(hex: string): Uint8Array {
   return arr;
 }
 
-// Helper: get-or-create demo user for a role (development convenience)
+// Helper: get-or-create demo user for a role (development convenience only)
+// NOTE: The clean seed only creates Super Admin. Demo role-login auto-creates
+// the other roles' demo accounts on first use so the design-exploration flow
+// still works without seeding fake business data.
 export async function getOrCreateDemoUser(role: UserRole): Promise<JwtPayload & { id: string }> {
   const demoConfig: Record<UserRole, { email: string; fullName: string }> = {
     SUPER_ADMIN: { email: "admin@trainflow.io", fullName: "System Administrator" },
@@ -118,7 +120,7 @@ export async function getOrCreateDemoUser(role: UserRole): Promise<JwtPayload & 
   const cfg = demoConfig[role];
 
   let user = await db.user.findUnique({ where: { email: cfg.email } });
-  if (!user) {
+  if (!user || user.deletedAt) {
     const passwordHash = await hashPassword("trainflow123");
     user = await db.user.create({
       data: {

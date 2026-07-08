@@ -1,43 +1,47 @@
 // /api/trainer-qualifications — list + create
 import { db } from "@/lib/db";
-import { withModuleAction, ok, created, fail, auditLog } from "@/lib/auth/api";
-import { parseListParams, listResponse } from "@/lib/api/query";
+import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
+import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
+import { list } from "@/lib/api/response";
+
+const ALLOWED_SORT_FIELDS = ["title", "createdAt", "updatedAt", "status", "issueDate", "expiryDate"];
 
 export const GET = withModuleAction("trainer-qualifications", "view", async ({ req }) => {
-  const params = parseListParams(req);
-  const where: Record<string, unknown> = {};
-  if (params.search) {
+  const q = parseListQuery(req);
+  const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
+
+  if (q.search) {
     where.OR = [
-      { title: { contains: params.search } },
-      { issuer: { contains: params.search } },
-      { credentialNumber: { contains: params.search } },
+      { title: { contains: q.search } },
+      { issuer: { contains: q.search } },
+      { credentialNumber: { contains: q.search } },
     ];
   }
-  if (params.status) where.status = params.status;
-  const url = new URL(req.url);
-  const trainerId = url.searchParams.get("trainerId");
-  if (trainerId) where.trainerId = trainerId;
+  if (q.filters.status) where.status = q.filters.status;
+  if (q.filters.trainerId) where.trainerId = q.filters.trainerId;
+
+  const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS);
 
   const [rows, total] = await Promise.all([
     db.trainerQualification.findMany({
       where,
-      include: { trainer: { select: { id: true, fullName: true } } },
-      orderBy: { createdAt: "desc" },
-      skip: (params.page - 1) * params.pageSize,
-      take: params.pageSize,
+      include: { trainer: { select: { id: true, fullName: true, refNumber: true } } },
+      orderBy,
+      skip: (q.page - 1) * q.pageSize,
+      take: q.pageSize,
     }),
     db.trainerQualification.count({ where }),
   ]);
 
-  return ok(listResponse(rows, total, params));
+  return list(rows, buildListMeta(total, q));
 });
 
 export const POST = withModuleAction("trainer-qualifications", "create", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
   const { trainerId, title, issuer, credentialNumber, issueDate, expiryDate, documentUrl, status } = body;
-  if (!trainerId || !title) return fail("trainerId and title are required", 400);
+  if (!trainerId || !title) return fail("trainerId and title are required", 422, "VALIDATION_ERROR");
 
-  const trainer = await db.trainer.findUnique({ where: { id: trainerId } });
+  const trainer = await db.trainer.findFirst({ where: { id: trainerId, deletedAt: null } });
   if (!trainer) return fail("Trainer not found", 404);
 
   const computedStatus = status ?? (expiryDate && new Date(expiryDate) < new Date() ? "EXPIRED" : "VALID");
@@ -52,15 +56,19 @@ export const POST = withModuleAction("trainer-qualifications", "create", async (
       expiryDate: expiryDate ? new Date(expiryDate) : null,
       documentUrl: documentUrl ?? null,
       status: computedStatus,
+      createdBy: user.id,
+      updatedBy: user.id,
     },
   });
 
-  await auditLog({
-    userId: user.id,
+  await audit({
+    user,
     action: "CREATE",
     entity: "TRAINER",
     entityId: trainerId,
+    entityRef: trainer.refNumber,
     description: `Added qualification "${title}" to ${trainer.fullName}`,
+    descriptionAr: `تمت إضافة مؤهل "${title}" إلى ${trainer.fullName}`,
     req,
   });
 

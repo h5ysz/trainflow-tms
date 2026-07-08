@@ -19,6 +19,7 @@ import { canPerformAction } from "@/lib/auth/permissions";
 
 interface Trainer {
   id: string;
+  refNumber: string;
   fullName: string;
   fullNameAr?: string | null;
   email?: string | null;
@@ -56,7 +57,7 @@ export function TrainersRoute() {
           </div>
           <div>
             <div className="text-sm font-medium">{r.fullName}</div>
-            <div className="text-xs text-muted-foreground">{r.nationality || "—"}</div>
+            <div className="text-[10px] text-muted-foreground font-mono">{r.refNumber}</div>
           </div>
         </div>
       ),

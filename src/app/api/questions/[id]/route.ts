@@ -1,6 +1,6 @@
-// /api/questions/[id] — get / update / delete
+// /api/questions/[id] — get / update / soft-delete
 import { db } from "@/lib/db";
-import { withModuleAction, ok, notFound, auditLog } from "@/lib/auth/api";
+import { withModuleAction, ok, notFound, audit } from "@/lib/auth/api";
 
 function parseQuestion(q: any) {
   return {
@@ -13,7 +13,7 @@ function parseQuestion(q: any) {
 export const GET = withModuleAction("pre-test", "view", async ({ params }) => {
   const id = params.id as string;
   const q = await db.question.findUnique({ where: { id }, include: { course: true } });
-  if (!q) return notFound("Question not found");
+  if (!q || q.deletedAt) return notFound("Question not found");
   return ok(parseQuestion(q));
 });
 
@@ -21,9 +21,9 @@ export const PUT = withModuleAction("pre-test", "edit", async ({ req, params, us
   const id = params.id as string;
   const body = await req.json().catch(() => ({}));
   const existing = await db.question.findUnique({ where: { id } });
-  if (!existing) return notFound("Question not found");
+  if (!existing || existing.deletedAt) return notFound("Question not found");
 
-  const { type, testType, text, textAr, options, correctAnswers, points, order, isActive } = body;
+  const { type, testType, text, textAr, options, correctAnswers, points, order, isActive, category, difficulty, tags } = body;
 
   const updated = await db.question.update({
     where: { id },
@@ -37,15 +37,20 @@ export const PUT = withModuleAction("pre-test", "edit", async ({ req, params, us
       ...(points !== undefined && { points }),
       ...(order !== undefined && { order }),
       ...(isActive !== undefined && { isActive }),
+      ...(category !== undefined && { category }),
+      ...(difficulty !== undefined && { difficulty }),
+      ...(tags !== undefined && { tags: JSON.stringify(tags) }),
+      updatedBy: user.id,
     },
   });
 
-  await auditLog({
-    userId: user.id,
+  await audit({
+    user,
     action: "UPDATE",
     entity: "COURSE",
-    entityId: existing.courseId,
+    entityId: existing.courseId ?? id,
     description: `Updated question ${id}`,
+    descriptionAr: `تم تحديث سؤال ${id}`,
     req,
   });
 
@@ -55,15 +60,22 @@ export const PUT = withModuleAction("pre-test", "edit", async ({ req, params, us
 export const DELETE = withModuleAction("pre-test", "delete", async ({ params, user, req }) => {
   const id = params.id as string;
   const existing = await db.question.findUnique({ where: { id } });
-  if (!existing) return notFound("Question not found");
-  await db.question.delete({ where: { id } });
-  await auditLog({
-    userId: user.id,
+  if (!existing || existing.deletedAt) return notFound("Question not found");
+
+  await db.question.update({
+    where: { id },
+    data: { deletedAt: new Date(), updatedBy: user.id },
+  });
+
+  await audit({
+    user,
     action: "DELETE",
     entity: "COURSE",
-    entityId: existing.courseId,
+    entityId: existing.courseId ?? id,
     description: `Deleted question ${id}`,
+    descriptionAr: `تم حذف سؤال ${id}`,
     req,
   });
+
   return ok({ success: true });
 });

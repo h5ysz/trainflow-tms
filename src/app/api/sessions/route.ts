@@ -1,43 +1,35 @@
-// /api/sessions — list + create training sessions
+// /api/sessions — list + create (UUID, SES-000001 ref number, soft delete, audit)
 import { db } from "@/lib/db";
-import { withModuleAction, ok, created, fail, auditLog } from "@/lib/auth/api";
-import { parseListParams, listResponse } from "@/lib/api/query";
+import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
+import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
+import { nextRefNumber } from "@/lib/api/ref-number";
+import { list } from "@/lib/api/response";
 import { randomBytes } from "crypto";
 
-function genSessionCode(): string {
-  const d = new Date();
-  const yy = d.getFullYear().toString().slice(-2);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const rand = Math.random().toString(36).slice(2, 7).toUpperCase();
-  return `TS-${yy}${mm}-${rand}`;
-}
+const ALLOWED_SORT_FIELDS = ["refNumber", "title", "startDate", "endDate", "createdAt", "status", "location"];
 
 function genQrToken(): string {
   return randomBytes(16).toString("hex");
 }
 
 export const GET = withModuleAction("sessions", "view", async ({ req, user }) => {
-  const params = parseListParams(req);
-  const where: Record<string, unknown> = {};
-  if (params.search) {
+  const q = parseListQuery(req);
+  const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
+
+  if (q.search) {
     where.OR = [
-      { sessionCode: { contains: params.search } },
-      { title: { contains: params.search } },
-      { location: { contains: params.search } },
+      { refNumber: { contains: q.search } },
+      { title: { contains: q.search } },
+      { location: { contains: q.search } },
     ];
   }
-  if (params.status) where.status = params.status;
-  const url = new URL(req.url);
-  const trainerId = url.searchParams.get("trainerId");
-  const courseId = url.searchParams.get("courseId");
-  const from = url.searchParams.get("from");
-  const to = url.searchParams.get("to");
-  if (trainerId) where.trainerId = trainerId;
-  if (courseId) where.courseId = courseId;
-  if (from || to) {
+  if (q.filters.status) where.status = q.filters.status;
+  if (q.filters.trainerId) where.trainerId = q.filters.trainerId;
+  if (q.filters.courseId) where.courseId = q.filters.courseId;
+  if (q.filters.from || q.filters.to) {
     where.startDate = {};
-    if (from) (where.startDate as any).gte = new Date(from);
-    if (to) (where.startDate as any).lte = new Date(to);
+    if (q.filters.from) (where.startDate as any).gte = new Date(q.filters.from);
+    if (q.filters.to) (where.startDate as any).lte = new Date(q.filters.to);
   }
 
   // Trainers see only their own sessions
@@ -45,53 +37,55 @@ export const GET = withModuleAction("sessions", "view", async ({ req, user }) =>
     where.trainerId = user.trainerId;
   }
 
+  const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS);
+
   const [rows, total] = await Promise.all([
     db.trainingSession.findMany({
       where,
       include: {
-        course: { select: { id: true, title: true, code: true } },
-        trainer: { select: { id: true, fullName: true } },
-        request: { select: { id: true, requestNumber: true } },
+        course: { select: { id: true, title: true, code: true, refNumber: true } },
+        trainer: { select: { id: true, fullName: true, refNumber: true } },
+        request: { select: { id: true, refNumber: true } },
         _count: { select: { attendance: true, certificates: true } },
       },
-      orderBy: { startDate: "desc" },
-      skip: (params.page - 1) * params.pageSize,
-      take: params.pageSize,
+      orderBy,
+      skip: (q.page - 1) * q.pageSize,
+      take: q.pageSize,
     }),
     db.trainingSession.count({ where }),
   ]);
 
-  return ok(
-    listResponse(
-      rows.map((s) => ({
-        id: s.id,
-        sessionCode: s.sessionCode,
-        courseId: s.courseId,
-        courseTitle: s.course?.title ?? null,
-        courseCode: s.course?.code ?? null,
-        requestId: s.requestId,
-        requestNumber: s.request?.requestNumber ?? null,
-        trainerId: s.trainerId,
-        trainerName: s.trainer?.fullName ?? null,
-        title: s.title,
-        location: s.location,
-        venue: s.venue,
-        language: s.language,
-        startDate: s.startDate,
-        endDate: s.endDate,
-        expectedTrainees: s.expectedTrainees,
-        actualTrainees: s.actualTrainees,
-        status: s.status,
-        notes: s.notes,
-        qrCodeToken: s.qrCodeToken,
-        createdAt: s.createdAt,
-        updatedAt: s.updatedAt,
-        attendanceCount: s._count.attendance,
-        certificatesCount: s._count.certificates,
-      })),
-      total,
-      params
-    )
+  return list(
+    rows.map((s) => ({
+      id: s.id,
+      refNumber: s.refNumber,
+      courseId: s.courseId,
+      courseTitle: s.course?.title ?? null,
+      courseCode: s.course?.code ?? null,
+      courseRef: s.course?.refNumber ?? null,
+      requestId: s.requestId,
+      requestRef: s.request?.refNumber ?? null,
+      trainerId: s.trainerId,
+      trainerName: s.trainer?.fullName ?? null,
+      trainerRef: s.trainer?.refNumber ?? null,
+      title: s.title,
+      location: s.location,
+      venue: s.venue,
+      language: s.language,
+      startDate: s.startDate,
+      endDate: s.endDate,
+      expectedTrainees: s.expectedTrainees,
+      actualTrainees: s.actualTrainees,
+      status: s.status,
+      notes: s.notes,
+      qrCodeToken: s.qrCodeToken,
+      qrCodeGeneratedAt: s.qrCodeGeneratedAt,
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt,
+      attendanceCount: s._count.attendance,
+      certificatesCount: s._count.certificates,
+    })),
+    buildListMeta(total, q)
   );
 });
 
@@ -103,26 +97,23 @@ export const POST = withModuleAction("sessions", "create", async ({ req, user })
   } = body;
 
   if (!courseId || !title || !startDate || !endDate) {
-    return fail("courseId, title, startDate, endDate are required", 400);
+    return fail("courseId, title, startDate, endDate are required", 422, "VALIDATION_ERROR");
   }
 
-  const course = await db.course.findUnique({ where: { id: courseId } });
+  const course = await db.course.findFirst({ where: { id: courseId, deletedAt: null } });
   if (!course) return fail("Course not found", 404);
 
   if (trainerId) {
-    const trainer = await db.trainer.findUnique({ where: { id: trainerId } });
+    const trainer = await db.trainer.findFirst({ where: { id: trainerId, deletedAt: null } });
     if (!trainer) return fail("Trainer not found", 404);
   }
 
-  // Unique session code
-  let sessionCode = genSessionCode();
-  while (await db.trainingSession.findUnique({ where: { sessionCode } })) {
-    sessionCode = genSessionCode();
-  }
+  const refNumber = await nextRefNumber("SESSION");
+  const qrToken = genQrToken();
 
   const session = await db.trainingSession.create({
     data: {
-      sessionCode,
+      refNumber,
       courseId,
       requestId: requestId ?? null,
       trainerId: trainerId ?? null,
@@ -136,24 +127,32 @@ export const POST = withModuleAction("sessions", "create", async ({ req, user })
       actualTrainees: 0,
       status: "SCHEDULED",
       notes: notes ?? null,
-      qrCodeToken: genQrToken(),
+      qrCodeToken: qrToken,
+      qrCodeGeneratedAt: new Date(),
+      createdBy: user.id,
+      updatedBy: user.id,
     },
   });
 
-  // If linked to a request, mark it SCHEDULED
+  // If linked to a request, mark it SCHEDULED (workflow transition)
   if (requestId) {
-    await db.trainingRequest.update({
-      where: { id: requestId },
-      data: { status: "SCHEDULED" },
-    });
+    const req = await db.trainingRequest.findUnique({ where: { id: requestId } });
+    if (req && req.status === "APPROVED") {
+      await db.trainingRequest.update({
+        where: { id: requestId },
+        data: { status: "SCHEDULED", scheduledAt: new Date(), updatedBy: user.id },
+      });
+    }
   }
 
-  await auditLog({
-    userId: user.id,
+  await audit({
+    user,
     action: "CREATE",
     entity: "SESSION",
     entityId: session.id,
-    description: `Created session ${sessionCode} (${course.title})`,
+    entityRef: session.refNumber,
+    description: `Created session ${session.refNumber} (${course.title})`,
+    descriptionAr: `تم إنشاء جلسة ${session.refNumber} (${course.title})`,
     req,
   });
 

@@ -10,7 +10,7 @@ export async function GET() {
     where: { id: user.id },
     include: { company: true, trainer: true },
   });
-  if (!dbUser) return fail("User not found", 404);
+  if (!dbUser || dbUser.deletedAt) return fail("User not found", 404);
 
   return ok({
     id: dbUser.id,
