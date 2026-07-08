@@ -148,11 +148,57 @@ async function main() {
     console.log(`   → Super Admin already exists: ${adminEmail}`);
   }
 
+  // ─────────────────────────────────────────────────────────────────
+  // 6) DEFAULT REPORT SCHEDULES
+  // ─────────────────────────────────────────────────────────────────
+  console.log("→ Default report schedules");
+  const defaultSchedules = [
+    {
+      name: "Weekly Scheduled Training Report",
+      nameAr: "التقرير الأسبوعي للجلسات المجدولة",
+      description: "Every Thursday — sends all training sessions scheduled for the following week.",
+      templateCode: "GCCLAB_MONTHLY",
+      scheduleType: "WEEKLY",
+      cronExpression: "0 9 * * 4",
+      executionTime: "09:00",
+      timezone: "Asia/Riyadh",
+      dayOfWeek: 4,
+      filters: JSON.stringify({}),
+      exportFormats: JSON.stringify(["xlsx", "pdf"]),
+      recipients: JSON.stringify([]),
+      maxRetries: 3,
+      retryDelayMin: 10,
+    },
+    {
+      name: "Monthly Training Completion Report",
+      nameAr: "التقرير الشهري لإنجازات التدريب",
+      description: "1st of every month — sends completed training results for the previous month.",
+      templateCode: "GCCLAB_MONTHLY",
+      scheduleType: "MONTHLY",
+      cronExpression: "0 9 1 * *",
+      executionTime: "09:00",
+      timezone: "Asia/Riyadh",
+      dayOfMonth: 1,
+      filters: JSON.stringify({}),
+      exportFormats: JSON.stringify(["xlsx", "pdf"]),
+      recipients: JSON.stringify([]),
+      maxRetries: 3,
+      retryDelayMin: 10,
+    },
+  ];
+  for (const s of defaultSchedules) {
+    const existing = await db.reportSchedule.findFirst({ where: { name: s.name, deletedAt: null } });
+    if (!existing) {
+      await db.reportSchedule.create({ data: s as any });
+    }
+  }
+
   console.log(`\n✅ Clean seed completed`);
   console.log(`   - Languages: ${languages.length} (English, Arabic)`);
   console.log(`   - Roles: ${roles.length} (Super Admin, Coordinator, Trainer, Contractor)`);
   console.log(`   - Permissions: ${permCount}`);
   console.log(`   - Settings: ${defaultSettings.length}`);
+  console.log(`   - Report Schedules: ${defaultSchedules.length}`);
   console.log(`   - Super Admin: 1 (no other business data seeded)`);
 }
 

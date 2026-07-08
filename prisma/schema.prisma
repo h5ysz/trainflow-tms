@@ -1039,3 +1039,101 @@ model AuditLog {
   @@index([action])
   @@index([createdAt])
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHEDULED REPORTS — automated report generation + email delivery
+// =====================================================================
+// ReportSchedule defines what report to generate, when, for whom, and
+// where to email it. ReportExecution logs every run with delivery status.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ReportSchedule {
+  id              String   @id @default(uuid())
+  name            String
+  nameAr          String?
+  description     String?
+  // Template
+  templateCode    String   // e.g. "GCCLAB_MONTHLY"
+  // Schedule type
+  scheduleType    String   // WEEKLY | MONTHLY | DAILY | CUSTOM
+  // Cron expression for flexible scheduling (e.g. "0 9 * * 4" = every Thursday 9am)
+  cronExpression  String   // standard 5-field cron
+  // Configurable execution time
+  executionTime   String?  // "HH:mm" (24h, e.g. "09:00") — used for display + default
+  timezone        String   @default("Asia/Riyadh")
+  // Day of week (0=Sun, 4=Thu) — for WEEKLY type
+  dayOfWeek       Int?     // 0-6
+  // Day of month (1-31) — for MONTHLY type
+  dayOfMonth      Int?     // 1-31
+  // Filters — JSON object passed to the template query
+  filters         String?  // JSON: { month, companyId, region, city, ... }
+  // Export format
+  exportFormats   String   @default("xlsx") // JSON: ["xlsx", "pdf"]
+  // Email recipients — JSON array of email addresses
+  recipients      String   // JSON: ["email1@example.com", "email2@example.com"]
+  ccRecipients    String?  // JSON: ["cc1@example.com"]
+  bccRecipients   String?  // JSON: ["bcc1@example.com"]
+  emailSubject    String?
+  emailBody       String?
+  // Status
+  isActive        Boolean  @default(true)
+  // Tracking
+  lastRunAt       DateTime?
+  nextRunAt       DateTime?
+  lastExecutionId String?
+  // Retry config
+  maxRetries      Int      @default(3)
+  retryDelayMin   Int      @default(10) // minutes between retries
+  // Audit
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+
+  executions      ReportExecution[]
+
+  @@index([isActive])
+  @@index([nextRunAt])
+  @@index([scheduleType])
+}
+
+model ReportExecution {
+  id              String   @id @default(uuid())
+  scheduleId      String
+  schedule        ReportSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  // Execution details
+  status          String   @default("PENDING")
+    // PENDING | RUNNING | GENERATING | SENDING | SENT | FAILED | RETRYING | CANCELLED
+  triggerType     String   @default("SCHEDULED") // SCHEDULED | MANUAL
+  triggeredBy     String?  // user id (for MANUAL)
+  // Report data
+  templateCode    String
+  rowCount        Int?
+  filterSummary   String?  // JSON: actual filter used
+  // Export files — JSON: [{ format, filename, sizeBytes }]
+  exportedFiles   String?
+  // Email delivery
+  emailStatus     String?  // PENDING | SENT | FAILED | SKIPPED
+  emailSentAt     DateTime?
+  emailError      String?
+  emailRecipients String?  // actual recipients used
+  // Retry tracking
+  attemptNumber   Int      @default(1)
+  maxRetries      Int      @default(3)
+  nextRetryAt     DateTime?
+  // Timing
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  durationMs      Int?
+  // Error
+  errorMessage    String?
+  errorStack      String?
+  // Audit
+  createdAt       DateTime @default(now())
+
+  @@index([scheduleId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([emailStatus])
+}

@@ -168,21 +168,27 @@ export async function exportToExcel(
 
 // ── PDF Exporter ─────────────────────────────────────────────────────
 
-// Monkey-patch pdfkit's font loading to resolve from the correct path
+// Monkey-patch pdfkit's font loading to resolve from the correct path.
 // In Turbopack/Next.js bundled environments, __dirname resolves to /ROOT
 // instead of the actual node_modules path, causing ENOENT errors.
-import * as nodeFs from "fs";
-import * as nodePath from "path";
-
+// We patch the GLOBAL fs module so pdfkit's internal require('fs') picks it up.
+/* eslint-disable @typescript-eslint/no-require-imports */
 try {
+  const nodePath = require("path");
   const realDataDir = nodePath.join(process.cwd(), "node_modules", "pdfkit", "js", "data");
-  if (nodeFs.existsSync(realDataDir)) {
-    const originalReadFileSync = nodeFs.readFileSync;
-    (nodeFs as any).readFileSync = function (filePath: string, ...args: any[]) {
-      if (typeof filePath === "string" && filePath.includes("/data/") && filePath.endsWith(".afm") && !nodeFs.existsSync(filePath)) {
+  const fsModule = require("fs");
+  if (fsModule.existsSync(realDataDir)) {
+    const originalReadFileSync = fsModule.readFileSync;
+    fsModule.readFileSync = function (filePath: string, ...args: any[]) {
+      if (
+        typeof filePath === "string" &&
+        filePath.includes("/data/") &&
+        filePath.endsWith(".afm") &&
+        !fsModule.existsSync(filePath)
+      ) {
         const filename = nodePath.basename(filePath);
         const correctedPath = nodePath.join(realDataDir, filename);
-        if (nodeFs.existsSync(correctedPath)) {
+        if (fsModule.existsSync(correctedPath)) {
           return originalReadFileSync(correctedPath, ...args);
         }
       }
@@ -192,6 +198,7 @@ try {
 } catch {
   // ignore — will fall back to default
 }
+/* eslint-enable @typescript-eslint/no-require-imports */
 
 export async function exportToPdf(
   template: ReportTemplate,
