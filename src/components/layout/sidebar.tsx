@@ -4,6 +4,7 @@ import { useI18n } from "@/lib/i18n/context";
 import { useAppStore } from "@/lib/store/app-store";
 import { getNavForRole, type NavItem } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
+import Image from "next/image";
 import {
   LayoutDashboard, Building2, Contact, Users, Award, UserSquare, BookOpen,
   ClipboardList, CalendarDays, UserCheck, QrCode,
@@ -30,7 +31,7 @@ const GROUP_LABELS: Record<NavItem["group"], string> = {
 };
 
 export function Sidebar() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { currentRoute, navigate, user } = useAppStore();
 
   if (!user) return null;
@@ -44,14 +45,20 @@ export function Sidebar() {
 
   return (
     <aside className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
-      {/* Brand */}
+      {/* Brand — Official GCCLAB Logo */}
       <div className="flex h-16 items-center gap-3 px-5 border-b border-sidebar-border shrink-0">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-sm shadow-sm">
-          GC
-        </div>
+        <Image
+          src="/gcclab-icon.svg"
+          alt="GCCLAB"
+          width={36}
+          height={36}
+          className="rounded-lg shrink-0"
+        />
         <div className="min-w-0">
           <div className="text-sm font-bold leading-tight tracking-tight">GCCLAB</div>
-          <div className="text-[10px] text-muted-foreground leading-tight font-medium">Training Management</div>
+          <div className="text-[10px] text-muted-foreground leading-tight font-medium">
+            {locale === "en" ? "Training Management" : "إدارة التدريب"}
+          </div>
         </div>
       </div>
 
@@ -60,7 +67,7 @@ export function Sidebar() {
         {grouped.map(({ group, label, items: groupItems }) => (
           <div key={group} className="mb-5">
             {label && (
-              <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+              <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
                 {label}
               </div>
             )}
@@ -76,7 +83,7 @@ export function Sidebar() {
                         "relative flex items-center gap-3 w-full rounded-lg px-3 py-2 text-[13px] transition-all",
                         active
                           ? "tf-nav-active"
-                          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground font-medium"
+                          : "text-sidebar-foreground/65 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground font-medium"
                       )}
                     >
                       <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={active ? 2.2 : 1.8} />
@@ -92,7 +99,7 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="border-t border-sidebar-border px-4 py-3 shrink-0">
-        <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60">
+        <div className="flex items-center gap-2 text-[10px] text-muted-foreground/50">
           <div className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
           <span className="font-medium">GCCLAB v1.0 RC1</span>
         </div>

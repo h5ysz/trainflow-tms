@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import { Cairo } from "next/font/google";
+import { IBM_Plex_Sans_Arabic } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 
@@ -10,18 +10,19 @@ const inter = Inter({
   display: "swap",
 });
 
-const cairo = Cairo({
-  variable: "--font-cairo",
+const plexArabic = IBM_Plex_Sans_Arabic({
+  variable: "--font-plex-arabic",
   subsets: ["arabic", "latin"],
+  weight: ["300", "400", "500", "600", "700"],
   display: "swap",
 });
 
 export const metadata: Metadata = {
   title: "GCCLAB — Training Management System",
-  description: "GCCLAB Enterprise Training Management System — Gulf Calibration Laboratory",
-  keywords: ["GCCLAB", "TMS", "Training", "Safety", "Certification", "Calibration"],
+  description: "GCCLAB Enterprise Training Management System — Gulf Calibration Laboratory — المختبر الخليجي",
+  keywords: ["GCCLAB", "TMS", "Training", "Safety", "Certification", "Calibration", "المختبر الخليجي"],
   authors: [{ name: "GCCLAB" }],
-  icons: { icon: "/logo.svg" },
+  icons: { icon: "/gcclab-icon.svg" },
 };
 
 export default function RootLayout({
@@ -32,8 +33,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${inter.variable} ${cairo.variable} antialiased bg-background text-foreground`}
-        style={{ fontFamily: "var(--font-inter), var(--font-cairo), system-ui, sans-serif" }}
+        className={`${inter.variable} ${plexArabic.variable} antialiased bg-background text-foreground`}
       >
         {children}
         <Toaster />

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 60" fill="none">
+  <!-- GCCLAB Official Logo -->
+  <rect x="2" y="8" width="44" height="44" rx="6" fill="#7B1E2B"/>
+  <path d="M14 22h14c4 0 7 3 7 7v0c0 4-3 7-7 7h-14" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <circle cx="14" cy="30" r="3" fill="#fff"/>
+  <text x="54" y="28" font-family="Inter, sans-serif" font-size="20" font-weight="800" fill="#7B1E2B" letter-spacing="0.5">GCCLAB</text>
+  <text x="54" y="44" font-family="Inter, sans-serif" font-size="9" font-weight="500" fill="#3a3a3a" letter-spacing="2">GULF CALIBRATION LAB</text>
+</svg>
