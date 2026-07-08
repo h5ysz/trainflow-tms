@@ -46,14 +46,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   doc
     .rect(30, 30, doc.page.width - 60, doc.page.height - 60)
     .lineWidth(3)
-    .strokeColor("#0d9488")
+    .strokeColor("#7B1E2B")
     .stroke();
 
   // Inner border
   doc
     .rect(40, 40, doc.page.width - 80, doc.page.height - 80)
     .lineWidth(1)
-    .strokeColor("#0d9488")
+    .strokeColor("#7B1E2B")
     .opacity(0.3)
     .stroke()
     .opacity(1);
@@ -61,13 +61,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // Header
   doc
     .fontSize(14)
-    .fillColor("#0d9488")
+    .fillColor("#7B1E2B")
     .font("Helvetica-Bold")
-    .text("TRAINFLOW TMS", 0, 70, { align: "center" })
+    .text("GCCLAB — Gulf Calibration Laboratory", 0, 70, { align: "center" })
     .fontSize(10)
     .fillColor("#666")
     .font("Helvetica")
-    .text("Training Management System", { align: "center" });
+    .text("Training & Certification Management System — المختبر الخليجي", { align: "center" });
 
   // Title
   doc
@@ -86,7 +86,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // Trainee name
   doc
     .fontSize(28)
-    .fillColor("#0d9488")
+    .fillColor("#7B1E2B")
     .font("Helvetica-Bold")
     .text(cert.traineeName, 0, 200, { align: "center" });
 
@@ -171,7 +171,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     .moveTo(doc.page.width - 350, doc.page.height - 100)
     .lineTo(doc.page.width - 150, doc.page.height - 100)
     .stroke()
-    .text("GCCLAB TMS", doc.page.width - 320, doc.page.height - 90, { align: "left" });
+    .text("GCCLAB — المختبر الخليجي", doc.page.width - 320, doc.page.height - 90, { align: "left" });
 
   doc.end();
 
