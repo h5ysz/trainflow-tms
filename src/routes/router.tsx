@@ -25,6 +25,9 @@ import { ReportsRoute } from "./reports";
 import { NotificationsRoute } from "./notifications";
 import { AuditLogRoute } from "./audit-log";
 import { SettingsRoute } from "./settings-page";
+import { UserApprovalsRoute } from "./user-approvals";
+import { UserManagementRoute } from "./user-management";
+import { RolesRoute } from "./roles";
 import type { RouteKey } from "@/lib/auth/permissions";
 
 const ROUTES: Record<RouteKey, () => JSX.Element> = {
@@ -47,6 +50,9 @@ const ROUTES: Record<RouteKey, () => JSX.Element> = {
   reports: ReportsRoute,
   notifications: NotificationsRoute,
   "audit-log": AuditLogRoute,
+  "user-approvals": UserApprovalsRoute,
+  "user-management": UserManagementRoute,
+  roles: RolesRoute,
   settings: SettingsRoute,
 };
 
@@ -69,5 +75,14 @@ export function RouteRouter() {
   }
 
   const Component = ROUTES[currentRoute];
+  if (!Component) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <p className="text-sm text-muted-foreground">
+          Route &quot;{currentRoute}&quot; is not registered.
+        </p>
+      </div>
+    );
+  }
   return <Component />;
 }

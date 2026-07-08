@@ -18,6 +18,7 @@ import { canAccessModule } from "@/lib/auth/permissions";
 import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
 import { useList } from "@/lib/api/hooks";
+import { useAppStore } from "@/lib/store/app-store";
 
 interface UserRow {
   id: string;
@@ -35,6 +36,7 @@ function bool(v?: string) { return v === "true" || v === "1"; }
 export function SettingsRoute() {
   const { t } = useI18n();
   const { toast } = useToast();
+  const { user } = useAppStore();
   const [tab, setTab] = useState("general");
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -67,7 +69,7 @@ export function SettingsRoute() {
     }
   };
 
-  const canAccess = canAccessModule(useAppStoreUserRole(), "settings");
+  const canAccess = canAccessModule(user?.role ?? "CONTRACTOR", "settings");
 
   if (!canAccess) {
     return (
@@ -292,10 +294,4 @@ export function SettingsRoute() {
       </Tabs>
     </div>
   );
-}
-
-// Helper to avoid importing the store directly
-import { useAppStore } from "@/lib/store/app-store";
-function useAppStoreUserRole() {
-  return useAppStore((s) => s.user?.role ?? "CONTRACTOR");
 }
