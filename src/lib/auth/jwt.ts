@@ -54,20 +54,10 @@ const SALT_LENGTH = 16;
 const KEY_LENGTH = 32;
 
 export async function hashPassword(password: string): Promise<string> {
-  const salt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(password),
-    { name: "PBKDF2" },
-    false,
-    ["deriveBits"]
-  );
-  const derived = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
-    keyMaterial,
-    KEY_LENGTH * 8
-  );
-  return `pbkdf2$${PBKDF2_ITERATIONS}$${bufToHex(salt)}$${bufToHex(new Uint8Array(derived))}`;
+  const { randomBytes, pbkdf2Sync } = await import("node:crypto");
+  const salt = randomBytes(SALT_LENGTH);
+  const derived = pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, KEY_LENGTH, "sha256");
+  return `pbkdf2$${PBKDF2_ITERATIONS}$${salt.toString("hex")}$${derived.toString("hex")}`;
 }
 
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
@@ -75,22 +65,17 @@ export async function verifyPassword(password: string, stored: string): Promise<
     const parts = stored.split("$");
     if (parts.length !== 4 || parts[0] !== "pbkdf2") return false;
     const iterations = parseInt(parts[1], 10);
-    const salt = hexToBuf(parts[2]);
+    const saltHex = parts[2];
     const expected = parts[3];
-    const keyMaterial = await crypto.subtle.importKey(
-      "raw",
-      new TextEncoder().encode(password),
-      { name: "PBKDF2" },
-      false,
-      ["deriveBits"]
-    );
-    const derived = await crypto.subtle.deriveBits(
-      { name: "PBKDF2", salt, iterations, hash: "SHA-256" },
-      keyMaterial,
-      KEY_LENGTH * 8
-    );
-    return bufToHex(new Uint8Array(derived)) === expected;
-  } catch {
+
+    const { pbkdf2Sync } = await import("node:crypto");
+    const saltBuffer = Buffer.from(saltHex, "hex");
+    const derived = pbkdf2Sync(password, saltBuffer, iterations, KEY_LENGTH, "sha256");
+    const derivedHex = derived.toString("hex");
+
+    return derivedHex === expected;
+  } catch (e) {
+    console.error("[verifyPassword error]", e);
     return false;
   }
 }
