@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { requireRole, ok, created, fail, audit } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
-import { buildCronExpression, getNextRunTime } from "@/lib/reports/scheduler";
+import { buildCronExpression, getNextRunTime, getScheduleSettings } from "@/lib/reports/scheduler";
 
 const ALLOWED_SORT_FIELDS = ["name", "createdAt", "updatedAt", "nextRunAt", "lastRunAt", "scheduleType"];
 
@@ -63,12 +63,21 @@ export async function POST(req: Request) {
     return fail("name, templateCode, scheduleType, recipients are required", 422, "VALIDATION_ERROR");
   }
 
-  // Build cron expression
+  // Read timing defaults from Settings (configurable by Super Admin)
+  const settings = await getScheduleSettings();
+
+  // Use provided values or fall back to Settings
+  const effectiveTime = executionTime ?? (scheduleType === "WEEKLY" ? settings.weekly.executionTime : scheduleType === "MONTHLY" ? settings.monthly.executionTime : "09:00");
+  const effectiveDayOfWeek = dayOfWeek ?? (scheduleType === "WEEKLY" ? settings.weekly.dayOfWeek : undefined);
+  const effectiveDayOfMonth = dayOfMonth ?? (scheduleType === "MONTHLY" ? settings.monthly.dayOfMonth : undefined);
+  const effectiveTimezone = "Asia/Riyadh"; // from Settings, but we don't have a timezone field in the body
+
+  // Build cron expression from effective values
   const cronExpression = buildCronExpression({
     scheduleType,
-    executionTime,
-    dayOfWeek,
-    dayOfMonth,
+    executionTime: effectiveTime,
+    dayOfWeek: effectiveDayOfWeek,
+    dayOfMonth: effectiveDayOfMonth,
     customCron,
   });
 
@@ -82,9 +91,10 @@ export async function POST(req: Request) {
       templateCode,
       scheduleType,
       cronExpression,
-      executionTime: executionTime ?? "09:00",
-      dayOfWeek: dayOfWeek ?? null,
-      dayOfMonth: dayOfMonth ?? null,
+      executionTime: effectiveTime,
+      timezone: settings.timezone,
+      dayOfWeek: effectiveDayOfWeek ?? null,
+      dayOfMonth: effectiveDayOfMonth ?? null,
       filters: filters ? JSON.stringify(filters) : null,
       exportFormats: exportFormats ? JSON.stringify(exportFormats) : '["xlsx"]',
       recipients: JSON.stringify(recipients),

@@ -311,8 +311,27 @@ export async function retryExecution(executionId: string): Promise<void> {
 /**
  * Scheduler tick — called periodically to find and execute due schedules.
  * Also handles retries for failed executions.
+ *
+ * Before checking for due schedules, this function syncs all WEEKLY and
+ * MONTHLY schedules with the current Settings values, so that Super Admin
+ * configuration changes (time, day, timezone, enabled/disabled) take
+ * effect immediately without code changes.
  */
 export async function schedulerTick(): Promise<void> {
+  // ── 0. Sync schedules from Settings (configurable timing) ──
+  const { syncScheduleFromSettings } = await import("./scheduler");
+  const allActiveSchedules = await db.reportSchedule.findMany({
+    where: { deletedAt: null, scheduleType: { in: ["WEEKLY", "MONTHLY"] } },
+    select: { id: true },
+  });
+  for (const s of allActiveSchedules) {
+    try {
+      await syncScheduleFromSettings(s.id);
+    } catch (e) {
+      console.error(`[Scheduler] Failed to sync schedule ${s.id} from settings:`, e);
+    }
+  }
+
   // ── 1. Execute due schedules ──
   const { getDueSchedules } = await import("./scheduler");
   const dueSchedules = await getDueSchedules();
@@ -334,9 +353,9 @@ export async function schedulerTick(): Promise<void> {
     where: {
       status: "FAILED",
       nextRetryAt: { lte: now },
-      attemptNumber: { lt: db.reportExecution.fields.maxRetries?.name ? 3 : 3 },
+      attemptNumber: { lt: 3 },
     },
-    take: 5, // limit retries per tick
+    take: 5,
   });
 
   for (const exec of failedExecutions) {

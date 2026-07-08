@@ -103,6 +103,14 @@ async function main() {
     { key: "email.smtpPort", value: "587", category: "EMAIL", description: "SMTP port", isPublic: false },
     { key: "email.smtpUser", value: "", category: "EMAIL", description: "SMTP username", isPublic: false },
     { key: "email.smtpFrom", value: "noreply@trainflow.io", category: "EMAIL", description: "From email", isPublic: false },
+    // Schedule — Weekly Report timing (configurable by Super Admin)
+    { key: "schedule.weekly.enabled", value: "true", category: "NOTIFICATION", description: "Enable weekly scheduled training report", isPublic: false },
+    { key: "schedule.weekly.executionTime", value: "09:00", category: "NOTIFICATION", description: "Weekly report execution time (HH:mm, 24h)", isPublic: false },
+    { key: "schedule.weekly.dayOfWeek", value: "4", category: "NOTIFICATION", description: "Weekly report day of week (0=Sunday, 4=Thursday)", isPublic: false },
+    { key: "schedule.monthly.enabled", value: "true", category: "NOTIFICATION", description: "Enable monthly training completion report", isPublic: false },
+    { key: "schedule.monthly.executionTime", value: "09:00", category: "NOTIFICATION", description: "Monthly report execution time (HH:mm, 24h)", isPublic: false },
+    { key: "schedule.monthly.dayOfMonth", value: "1", category: "NOTIFICATION", description: "Monthly report day of month (1-31)", isPublic: false },
+    { key: "schedule.timezone", value: "Asia/Riyadh", category: "NOTIFICATION", description: "Default timezone for scheduled reports", isPublic: false },
     // Notifications
     { key: "notif.newRequest", value: "true", category: "NOTIFICATION", description: "Notify on new training request", isPublic: false },
     { key: "notif.sessionScheduled", value: "true", category: "NOTIFICATION", description: "Notify when session scheduled", isPublic: false },
@@ -151,18 +159,42 @@ async function main() {
   // ─────────────────────────────────────────────────────────────────
   // 6) DEFAULT REPORT SCHEDULES
   // ─────────────────────────────────────────────────────────────────
-  console.log("→ Default report schedules");
+  console.log("→ Default report schedules (timing from Settings)");
+  // Read timing from Settings — configurable by Super Admin without code changes
+  const weeklyEnabled = await db.setting.findUnique({ where: { key: "schedule.weekly.enabled" } });
+  const weeklyTime = await db.setting.findUnique({ where: { key: "schedule.weekly.executionTime" } });
+  const weeklyDay = await db.setting.findUnique({ where: { key: "schedule.weekly.dayOfWeek" } });
+  const monthlyEnabled = await db.setting.findUnique({ where: { key: "schedule.monthly.enabled" } });
+  const monthlyTime = await db.setting.findUnique({ where: { key: "schedule.monthly.executionTime" } });
+  const monthlyDay = await db.setting.findUnique({ where: { key: "schedule.monthly.dayOfMonth" } });
+  const timezoneSetting = await db.setting.findUnique({ where: { key: "schedule.timezone" } });
+
+  const wEnabled = weeklyEnabled?.value !== "false";
+  const wTime = weeklyTime?.value ?? "09:00";
+  const wDay = parseInt(weeklyDay?.value ?? "4", 10);
+  const mEnabled = monthlyEnabled?.value !== "false";
+  const mTime = monthlyTime?.value ?? "09:00";
+  const mDay = parseInt(monthlyDay?.value ?? "1", 10);
+  const tz = timezoneSetting?.value ?? "Asia/Riyadh";
+
+  // Build cron expressions from settings
+  const [wHour, wMin] = wTime.split(":").map(Number);
+  const [mHour, mMin] = mTime.split(":").map(Number);
+  const weeklyCron = `${wMin} ${wHour} * * ${wDay}`;
+  const monthlyCron = `${mMin} ${mHour} ${mDay} * *`;
+
   const defaultSchedules = [
     {
       name: "Weekly Scheduled Training Report",
       nameAr: "التقرير الأسبوعي للجلسات المجدولة",
-      description: "Every Thursday — sends all training sessions scheduled for the following week.",
+      description: `Every ${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][wDay]} at ${wTime} (${tz}) — sends all training sessions scheduled for the following week.`,
       templateCode: "GCCLAB_MONTHLY",
       scheduleType: "WEEKLY",
-      cronExpression: "0 9 * * 4",
-      executionTime: "09:00",
-      timezone: "Asia/Riyadh",
-      dayOfWeek: 4,
+      cronExpression: weeklyCron,
+      executionTime: wTime,
+      timezone: tz,
+      dayOfWeek: wDay,
+      isActive: wEnabled,
       filters: JSON.stringify({}),
       exportFormats: JSON.stringify(["xlsx", "pdf"]),
       recipients: JSON.stringify([]),
@@ -172,13 +204,14 @@ async function main() {
     {
       name: "Monthly Training Completion Report",
       nameAr: "التقرير الشهري لإنجازات التدريب",
-      description: "1st of every month — sends completed training results for the previous month.",
+      description: `Day ${mDay} of every month at ${mTime} (${tz}) — sends completed training results for the previous month.`,
       templateCode: "GCCLAB_MONTHLY",
       scheduleType: "MONTHLY",
-      cronExpression: "0 9 1 * *",
-      executionTime: "09:00",
-      timezone: "Asia/Riyadh",
-      dayOfMonth: 1,
+      cronExpression: monthlyCron,
+      executionTime: mTime,
+      timezone: tz,
+      dayOfMonth: mDay,
+      isActive: mEnabled,
       filters: JSON.stringify({}),
       exportFormats: JSON.stringify(["xlsx", "pdf"]),
       recipients: JSON.stringify([]),

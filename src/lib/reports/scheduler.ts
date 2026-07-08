@@ -82,6 +82,7 @@ export function getNextRunTime(cronExpr: string, after: Date = new Date()): Date
 
 /**
  * Build a cron expression from schedule type + time + day params.
+ * No hardcoded defaults — callers must provide the values (from Settings or schedule config).
  */
 export function buildCronExpression(opts: {
   scheduleType: "WEEKLY" | "MONTHLY" | "DAILY" | "CUSTOM";
@@ -90,20 +91,136 @@ export function buildCronExpression(opts: {
   dayOfMonth?: number;     // 1-31 (for MONTHLY)
   customCron?: string;     // full cron expression (for CUSTOM)
 }): string {
-  const time = opts.executionTime ?? "09:00";
+  const time = opts.executionTime ?? "00:00";
   const [hour, min] = time.split(":").map(Number);
 
   switch (opts.scheduleType) {
     case "WEEKLY":
-      return `${min} ${hour} * * ${opts.dayOfWeek ?? 4}`; // default Thursday
+      return `${min} ${hour} * * ${opts.dayOfWeek ?? 0}`;
     case "MONTHLY":
-      return `${min} ${hour} ${opts.dayOfMonth ?? 1} * *`; // default 1st
+      return `${min} ${hour} ${opts.dayOfMonth ?? 1} * *`;
     case "DAILY":
       return `${min} ${hour} * * *`;
     case "CUSTOM":
-      return opts.customCron ?? "0 9 * * *";
+      return opts.customCron ?? "0 0 * * *";
     default:
-      return "0 9 * * *";
+      return "0 0 * * *";
+  }
+}
+
+/**
+ * Read schedule timing configuration from the Settings table.
+ * This allows Super Admins to change execution time, day, timezone,
+ * and enabled/disabled status without changing code.
+ */
+export async function getScheduleSettings(): Promise<{
+  weekly: {
+    enabled: boolean;
+    executionTime: string;
+    dayOfWeek: number;
+    cronExpression: string;
+  };
+  monthly: {
+    enabled: boolean;
+    executionTime: string;
+    dayOfMonth: number;
+    cronExpression: string;
+  };
+  timezone: string;
+}> {
+  const { db } = await import("@/lib/db");
+  const settings = await db.setting.findMany({
+    where: { key: { startsWith: "schedule." } },
+  });
+  const map: Record<string, string> = {};
+  for (const s of settings) map[s.key] = s.value;
+
+  const wTime = map["schedule.weekly.executionTime"] ?? "09:00";
+  const wDay = parseInt(map["schedule.weekly.dayOfWeek"] ?? "4", 10);
+  const wEnabled = map["schedule.weekly.enabled"] !== "false";
+
+  const mTime = map["schedule.monthly.executionTime"] ?? "09:00";
+  const mDay = parseInt(map["schedule.monthly.dayOfMonth"] ?? "1", 10);
+  const mEnabled = map["schedule.monthly.enabled"] !== "false";
+
+  const tz = map["schedule.timezone"] ?? "Asia/Riyadh";
+
+  const [wHour, wMin] = wTime.split(":").map(Number);
+  const [mHour, mMin] = mTime.split(":").map(Number);
+
+  return {
+    weekly: {
+      enabled: wEnabled,
+      executionTime: wTime,
+      dayOfWeek: wDay,
+      cronExpression: `${wMin} ${wHour} * * ${wDay}`,
+    },
+    monthly: {
+      enabled: mEnabled,
+      executionTime: mTime,
+      dayOfMonth: mDay,
+      cronExpression: `${mMin} ${mHour} ${mDay} * *`,
+    },
+    timezone: tz,
+  };
+}
+
+/**
+ * Sync a ReportSchedule's cron expression + timing fields with the
+ * current Settings values. Called before each scheduler tick to ensure
+ * schedules always use the latest Settings configuration.
+ */
+export async function syncScheduleFromSettings(scheduleId: string): Promise<void> {
+  const { db } = await import("@/lib/db");
+  const schedule = await db.reportSchedule.findUnique({ where: { id: scheduleId } });
+  if (!schedule || schedule.deletedAt) return;
+
+  const settings = await getScheduleSettings();
+
+  let newCron = schedule.cronExpression;
+  let newTime = schedule.executionTime;
+  let newDayOfWeek = schedule.dayOfWeek;
+  let newDayOfMonth = schedule.dayOfMonth;
+  let newTimezone = schedule.timezone;
+  let newIsActive = schedule.isActive;
+
+  if (schedule.scheduleType === "WEEKLY") {
+    newTime = settings.weekly.executionTime;
+    newDayOfWeek = settings.weekly.dayOfWeek;
+    newCron = settings.weekly.cronExpression;
+    newIsActive = settings.weekly.enabled;
+    newTimezone = settings.timezone;
+  } else if (schedule.scheduleType === "MONTHLY") {
+    newTime = settings.monthly.executionTime;
+    newDayOfMonth = settings.monthly.dayOfMonth;
+    newCron = settings.monthly.cronExpression;
+    newIsActive = settings.monthly.enabled;
+    newTimezone = settings.timezone;
+  }
+
+  // Only update if something changed
+  if (
+    newCron !== schedule.cronExpression ||
+    newTime !== schedule.executionTime ||
+    newDayOfWeek !== schedule.dayOfWeek ||
+    newDayOfMonth !== schedule.dayOfMonth ||
+    newTimezone !== schedule.timezone ||
+    newIsActive !== schedule.isActive
+  ) {
+    const nextRun = getNextRunTime(newCron);
+    await db.reportSchedule.update({
+      where: { id: scheduleId },
+      data: {
+        cronExpression: newCron,
+        executionTime: newTime,
+        dayOfWeek: newDayOfWeek,
+        dayOfMonth: newDayOfMonth,
+        timezone: newTimezone,
+        isActive: newIsActive,
+        nextRunAt: nextRun,
+        updatedAt: new Date(),
+      },
+    });
   }
 }
 
