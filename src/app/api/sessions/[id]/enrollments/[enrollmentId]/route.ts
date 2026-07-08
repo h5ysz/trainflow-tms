@@ -14,12 +14,12 @@ export const PUT = withModuleAction("sessions", "edit", async ({ req, params, us
   }
 
   const body = await req.json().catch(() => ({}));
-  const { status, notes } = body;
+  const { enrollmentStatus, notes } = body;
 
   const updated = await db.sessionEnrollment.update({
     where: { id: enrollmentId },
     data: {
-      ...(status !== undefined && { status }),
+      ...(enrollmentStatus !== undefined && { enrollmentStatus }),
       ...(notes !== undefined && { notes }),
       updatedBy: user.id,
     },
@@ -52,7 +52,7 @@ export const DELETE = withModuleAction("sessions", "edit", async ({ params, user
     // Soft-delete the enrollment
     await tx.sessionEnrollment.update({
       where: { id: enrollmentId },
-      data: { deletedAt: new Date(), status: "CANCELLED", updatedBy: user.id },
+      data: { deletedAt: new Date(), enrollmentStatus: "CANCELLED", updatedBy: user.id },
     });
 
     // Decrement the SessionCompany trainee count

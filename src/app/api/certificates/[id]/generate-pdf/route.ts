@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser, fail, audit } from "@/lib/auth/api";
 import { recordAudit } from "@/lib/auth/audit";
+import { syncCertificateStatus } from "@/lib/api/enrollment-sync";
 import PDFDocument from "pdfkit";
 import { randomBytes } from "crypto";
 
@@ -183,6 +184,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       pdfGeneratedAt: new Date(),
       updatedBy: user.id,
     },
+  });
+
+  // ── Sync SessionEnrollment: certificate ISSUED ──
+  await syncCertificateStatus({
+    sessionId: cert.sessionId,
+    traineeName: cert.traineeName,
+    traineeIdNational: cert.traineeIdNational ?? undefined,
+    attendanceId: cert.attendanceId ?? undefined,
+    status: "ISSUED",
+    userId: user.id,
   });
 
   // Audit

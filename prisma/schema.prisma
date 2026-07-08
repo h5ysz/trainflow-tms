@@ -571,12 +571,18 @@ model TrainingRequestCourseTrainee {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MULTI-COMPANY SESSION ENROLLMENT
+// MULTI-COMPANY SESSION ENROLLMENT — CENTRAL WORKFLOW ENTITY
 // =====================================================================
-// A Training Session can contain trainees from MULTIPLE companies.
-// This junction allows direct enrollment of any trainee (from any company)
-// into a session, independent of the original Training Request's company.
+// SessionEnrollment is the single source of truth for every trainee's
+// progress inside a Training Session. It tracks the complete lifecycle:
 //
+//   Enrollment → Attendance → Pre-Test → Session Lifecycle → Final-Test
+//     → Evaluation → Certificate
+//
+// All downstream modules (Attendance, ExamAttempt, CourseEvaluation,
+// Certificate) automatically update these status fields via sync functions.
+//
+// A Training Session can contain trainees from MULTIPLE companies.
 // The trainee's original company is always preserved via Trainee.companyId.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -589,10 +595,38 @@ model SessionEnrollment {
   // The trainee's company at time of enrollment (snapshot — preserves original company)
   companyId       String   // trainee's original company (NOT the session's company)
   company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  enrolledAt      DateTime @default(now())
+
+  // ── Enrollment lifecycle ──
+  enrollmentStatus String  @default("PENDING")
+    // PENDING | CONFIRMED | CHECKED_IN | TRAINING | COMPLETED | CANCELLED | NO_SHOW
   enrolledBy      String?
-  status          String   @default("ENROLLED") // ENROLLED | ATTENDED | COMPLETED | CANCELLED
+  enrollmentDate  DateTime @default(now())
+  completedDate   DateTime?
   notes           String?
+
+  // ── Attendance status ──
+  attendanceStatus String @default("NOT_STARTED")
+    // NOT_STARTED | PRESENT | LATE | ABSENT
+
+  // ── Pre-Test status ──
+  preTestStatus   String  @default("PENDING")
+    // NOT_REQUIRED | PENDING | IN_PROGRESS | COMPLETED
+
+  // ── Final Test status ──
+  finalTestStatus String  @default("PENDING")
+    // NOT_REQUIRED | PENDING | IN_PROGRESS | PASSED | FAILED
+
+  // ── Evaluation status ──
+  evaluationStatus String @default("PENDING")
+    // NOT_REQUIRED | PENDING | COMPLETED
+
+  // ── Certificate status ──
+  certificateStatus String @default("NOT_ELIGIBLE")
+    // NOT_ELIGIBLE | ELIGIBLE | GENERATED | ISSUED
+
+  // ── Links to related records (for quick lookup) ──
+  attendanceId    String?  // FK to Attendance record (set at check-in)
+
   // Audit
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -604,6 +638,12 @@ model SessionEnrollment {
   @@index([sessionId])
   @@index([traineeId])
   @@index([companyId])
+  @@index([enrollmentStatus])
+  @@index([attendanceStatus])
+  @@index([preTestStatus])
+  @@index([finalTestStatus])
+  @@index([evaluationStatus])
+  @@index([certificateStatus])
 }
 
 // Tracks which companies have trainees enrolled in a session (for multi-company reporting)

@@ -4,6 +4,7 @@
 import { db } from "@/lib/db";
 import { withModuleAction, ok, fail, audit } from "@/lib/auth/api";
 import { recordStatusChange } from "@/lib/auth/audit";
+import { syncFinalTestStatus } from "@/lib/api/enrollment-sync";
 
 const VALID_EVENTS = ["STARTED", "BREAK", "RESUMED", "COMPLETED"];
 
@@ -120,10 +121,30 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
             data: { finalTestAssignedAt: now },
           });
 
+          // ── Sync SessionEnrollment: final-test PENDING ──
+          await syncFinalTestStatus({
+            sessionId: id,
+            traineeName: trainee.traineeName,
+            traineeIdNational: trainee.traineeIdNational ?? undefined,
+            attendanceId: trainee.id,
+            status: "PENDING",
+            userId: user.id,
+          });
+
           finalTestsAssigned++;
         } catch (e) {
           // Skip if no questions in bank
           console.error(`[Final test auto-assign error for ${trainee.traineeName}]`, e);
+
+          // If final-test can't be assigned (no questions), mark as NOT_REQUIRED
+          await syncFinalTestStatus({
+            sessionId: id,
+            traineeName: trainee.traineeName,
+            traineeIdNational: trainee.traineeIdNational ?? undefined,
+            attendanceId: trainee.id,
+            status: "NOT_REQUIRED",
+            userId: user.id,
+          });
         }
       }
     }

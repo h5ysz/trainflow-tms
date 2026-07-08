@@ -6,7 +6,7 @@ import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
 
-const ALLOWED_SORT_FIELDS = ["enrolledAt", "createdAt", "status", "traineeName"];
+const ALLOWED_SORT_FIELDS = ["enrollmentDate", "createdAt", "enrollmentStatus", "traineeName"];
 
 export const GET = withModuleAction("sessions", "view", async ({ req, params }) => {
   const sessionId = params.id as string;
@@ -16,9 +16,10 @@ export const GET = withModuleAction("sessions", "view", async ({ req, params }) 
     sessionId,
   };
   if (q.filters.companyId) where.companyId = q.filters.companyId;
-  if (q.filters.status) where.status = q.filters.status;
+  if (q.filters.enrollmentStatus) where.enrollmentStatus = q.filters.enrollmentStatus;
+  if (q.filters.attendanceStatus) where.attendanceStatus = q.filters.attendanceStatus;
 
-  const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS, "enrolledAt");
+  const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS, "enrollmentDate");
 
   const [rows, total] = await Promise.all([
     db.sessionEnrollment.findMany({
@@ -123,7 +124,8 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
             traineeId: trainee.id,
             companyId: trainee.companyId, // trainee's ORIGINAL company — preserved
             enrolledBy: user.id,
-            status: "ENROLLED",
+            enrollmentStatus: "PENDING",
+            enrollmentDate: new Date(),
             notes: notes ?? null,
             createdBy: user.id,
             updatedBy: user.id,

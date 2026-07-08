@@ -9,6 +9,7 @@ import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
 import { checkCertificateEligibility } from "@/lib/api/certificate-eligibility";
+import { syncCertificateStatus } from "@/lib/api/enrollment-sync";
 import { randomBytes } from "crypto";
 
 const ALLOWED_SORT_FIELDS = ["refNumber", "traineeName", "issuedAt", "validUntil", "status", "finalScore"];
@@ -199,6 +200,16 @@ export const POST = withModuleAction("certificates", "create", async ({ req, use
       data: { certificateId: cert.id, updatedBy: user.id },
     });
   }
+
+  // ── Sync SessionEnrollment: certificate GENERATED ──
+  await syncCertificateStatus({
+    sessionId,
+    traineeName,
+    traineeIdNational: traineeIdNational ?? undefined,
+    attendanceId: eligibility.attendanceId ?? undefined,
+    status: "GENERATED",
+    userId: user.id,
+  });
 
   // Audit: CERTIFICATE_GENERATE
   await audit({

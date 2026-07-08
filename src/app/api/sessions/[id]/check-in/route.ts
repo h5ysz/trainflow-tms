@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { getCurrentUser, ok, created, fail, audit } from "@/lib/auth/api";
 import { createExamAttempt } from "@/lib/api/exam-engine";
 import { recordAudit } from "@/lib/auth/audit";
+import { syncAttendanceCheckedIn, syncPreTestStatus } from "@/lib/api/enrollment-sync";
 
 interface CheckInBody {
   qrCodeToken: string;
@@ -181,6 +182,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     data: { actualTrainees: { increment: 1 }, updatedBy: user.id },
   });
 
+  // ── Sync SessionEnrollment: attendance checked in ──
+  await syncAttendanceCheckedIn({
+    sessionId,
+    traineeName: body.traineeName,
+    traineeIdNational: body.traineeIdNational,
+    attendanceId: attendance.id,
+    attendanceStatus: "PRESENT",
+    userId: user.id,
+  });
+
   // 7. Auto-assign Pre-Test if course has pre-test enabled
   let preTestAttempt = null;
   if (session.course?.hasPreTest) {
@@ -202,6 +213,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         data: { preTestAssignedAt: now },
       });
 
+      // ── Sync SessionEnrollment: pre-test PENDING ──
+      await syncPreTestStatus({
+        sessionId,
+        traineeName: body.traineeName,
+        traineeIdNational: body.traineeIdNational,
+        attendanceId: attendance.id,
+        status: "PENDING",
+        userId: user.id,
+      });
+
       preTestAttempt = {
         attemptId: examAttempt.attemptId,
         refNumber: examAttempt.refNumber,
@@ -221,7 +242,27 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     } catch (e) {
       // If no questions in bank, log but don't fail the check-in
       console.error("[Pre-Test auto-assign error]", e);
+
+      // If pre-test can't be assigned (no questions), mark as NOT_REQUIRED
+      await syncPreTestStatus({
+        sessionId,
+        traineeName: body.traineeName,
+        traineeIdNational: body.traineeIdNational,
+        attendanceId: attendance.id,
+        status: "NOT_REQUIRED",
+        userId: user.id,
+      });
     }
+  } else {
+    // Course doesn't have pre-test → mark as NOT_REQUIRED
+    await syncPreTestStatus({
+      sessionId,
+      traineeName: body.traineeName,
+      traineeIdNational: body.traineeIdNational,
+      attendanceId: attendance.id,
+      status: "NOT_REQUIRED",
+      userId: user.id,
+    });
   }
 
   await audit({

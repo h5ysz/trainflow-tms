@@ -5,6 +5,11 @@ import { gradeExamAttempt } from "@/lib/api/exam-engine";
 import { recordAudit } from "@/lib/auth/audit";
 import { updateAttendanceProgress } from "@/lib/api/certificate-eligibility";
 import { nextRefNumber } from "@/lib/api/ref-number";
+import {
+  syncPreTestStatus,
+  syncFinalTestStatus,
+  recalcCertificateEligibility,
+} from "@/lib/api/enrollment-sync";
 
 export const POST = withModuleAction("pre-test", "view", async ({ req, params, user }) => {
   const id = params.id as string;
@@ -80,6 +85,36 @@ export const POST = withModuleAction("pre-test", "view", async ({ req, params, u
       userId: user.id,
     });
   }
+
+  // ── Sync SessionEnrollment: exam completed/graded ──
+  if (attempt.testType === "PRE_TEST") {
+    await syncPreTestStatus({
+      sessionId: attempt.sessionId,
+      traineeName: attempt.traineeName,
+      traineeIdNational: attempt.traineeIdNational ?? undefined,
+      attendanceId: attempt.attendanceId ?? undefined,
+      status: "COMPLETED",
+      userId: user.id,
+    });
+  } else {
+    await syncFinalTestStatus({
+      sessionId: attempt.sessionId,
+      traineeName: attempt.traineeName,
+      traineeIdNational: attempt.traineeIdNational ?? undefined,
+      attendanceId: attempt.attendanceId ?? undefined,
+      status: grading.passed ? "PASSED" : "FAILED",
+      userId: user.id,
+    });
+  }
+
+  // ── Recalculate certificate eligibility on SessionEnrollment ──
+  await recalcCertificateEligibility({
+    sessionId: attempt.sessionId,
+    traineeName: attempt.traineeName,
+    traineeIdNational: attempt.traineeIdNational ?? undefined,
+    attendanceId: attempt.attendanceId ?? undefined,
+    userId: user.id,
+  });
 
   // Audit: EXAM_SUBMIT
   await recordAudit({

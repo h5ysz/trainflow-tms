@@ -234,10 +234,18 @@ erDiagram
         string id PK
         string sessionId FK
         string traineeId FK
-        string companyId FK
-        datetime enrolledAt
+        string companyId FK "trainee original company"
+        string enrollmentStatus "PENDING|CONFIRMED|CHECKED_IN|TRAINING|COMPLETED|CANCELLED|NO_SHOW"
+        string attendanceStatus "NOT_STARTED|PRESENT|LATE|ABSENT"
+        string preTestStatus "NOT_REQUIRED|PENDING|IN_PROGRESS|COMPLETED"
+        string finalTestStatus "NOT_REQUIRED|PENDING|IN_PROGRESS|PASSED|FAILED"
+        string evaluationStatus "NOT_REQUIRED|PENDING|COMPLETED"
+        string certificateStatus "NOT_ELIGIBLE|ELIGIBLE|GENERATED|ISSUED"
         string enrolledBy
-        string status
+        datetime enrollmentDate
+        datetime completedDate
+        string attendanceId FK "nullable"
+        string notes
         datetime deletedAt
     }
 

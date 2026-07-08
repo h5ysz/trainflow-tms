@@ -2,6 +2,7 @@
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { resolveExamVersion } from "@/lib/api/exam-engine";
+import { syncPreTestStatus, syncFinalTestStatus } from "@/lib/api/enrollment-sync";
 
 export const POST = withModuleAction("pre-test", "view", async ({ req, params, user }) => {
   const id = params.id as string;
@@ -55,6 +56,27 @@ export const POST = withModuleAction("pre-test", "view", async ({ req, params, u
       req,
       metadata: { testType: attempt.testType, startedAt: now },
     });
+
+    // ── Sync SessionEnrollment: exam IN_PROGRESS ──
+    if (attempt.testType === "PRE_TEST") {
+      await syncPreTestStatus({
+        sessionId: attempt.sessionId,
+        traineeName: attempt.traineeName,
+        traineeIdNational: attempt.traineeIdNational ?? undefined,
+        attendanceId: attempt.attendanceId ?? undefined,
+        status: "IN_PROGRESS",
+        userId: user.id,
+      });
+    } else {
+      await syncFinalTestStatus({
+        sessionId: attempt.sessionId,
+        traineeName: attempt.traineeName,
+        traineeIdNational: attempt.traineeIdNational ?? undefined,
+        attendanceId: attempt.attendanceId ?? undefined,
+        status: "IN_PROGRESS",
+        userId: user.id,
+      });
+    }
   }
 
   // Resolve the exam version (randomized questions + shuffled options)

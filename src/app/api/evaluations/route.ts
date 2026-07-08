@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
+import { syncEvaluationStatus, recalcCertificateEligibility } from "@/lib/api/enrollment-sync";
 
 const ALLOWED_SORT_FIELDS = ["submittedAt", "traineeName", "overallRating", "trainerRating"];
 
@@ -120,6 +121,25 @@ export const POST = withModuleAction("evaluation", "create", async ({ req, user 
       userId: user.id,
     });
   }
+
+  // ── Sync SessionEnrollment: evaluation COMPLETED ──
+  await syncEvaluationStatus({
+    sessionId,
+    traineeName,
+    traineeIdNational: traineeIdNational ?? undefined,
+    attendanceId: attendanceId ?? undefined,
+    status: "COMPLETED",
+    userId: user.id,
+  });
+
+  // ── Recalculate certificate eligibility ──
+  await recalcCertificateEligibility({
+    sessionId,
+    traineeName,
+    traineeIdNational: traineeIdNational ?? undefined,
+    attendanceId: attendanceId ?? undefined,
+    userId: user.id,
+  });
 
   return created(evaluation);
 });
