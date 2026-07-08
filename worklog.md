@@ -107,3 +107,47 @@ Stage Summary:
   - download/official-logo-verification.png (initial 3-asset preview)
   - download/official-logo-final-verification.png (comprehensive UI mockups)
 - Scripts saved for reuse: scripts/process-official-logo.py, scripts/final-verification.py
+
+---
+Task ID: 9
+Agent: Super Z (main)
+Task: Fix runtime error "Element type is invalid... Check the render method of RouteRouter" caused by clicking on nav items user-approvals / user-management / roles.
+
+Root cause analysis:
+1. The RouteKey type in src/lib/auth/permissions.ts included three nav items:
+   - "user-approvals" (nav.userApprovals, UserPlus icon)
+   - "user-management" (nav.userManagement, ShieldCheck icon)
+   - "roles" (nav.roles, ShieldCheck icon)
+2. The navItems array in permissions.ts listed all three, so Super Admins/Coordinators could SEE them in the sidebar.
+3. But src/routes/router.tsx only registered 20 routes — NOT these three. So clicking any of them made `ROUTES[currentRoute]` return undefined, crashing React with "Element type is invalid... got: undefined".
+4. Secondary issue: settings-page.tsx had an `import { useAppStore }` placed at the BOTTOM of the file (line 298) instead of at the top — unusual pattern that may have caused Turbopack hoisting issues, plus the helper function `useAppStoreUserRole()` was called inside the component body.
+
+Work Log:
+- Audited all 20 existing route files: every named import resolves correctly to a real export. No circular imports. (Sub-agent Task ID: agent-e6905ef2-58d3-4e01-99f5-6895c947b8d1)
+- Identified settings-page.tsx as a structural anomaly (bottom-of-file import) and fixed:
+  - Moved `import { useAppStore }` to the top import block (line 21).
+  - Replaced the bespoke `useAppStoreUserRole()` selector helper with the standard `const { user } = useAppStore()` pattern used by every other route.
+  - Replaced `canAccessModule(useAppStoreUserRole(), "settings")` with `canAccessModule(user?.role ?? "CONTRACTOR", "settings")`.
+  - Removed the orphan helper at the bottom of the file.
+- Added a defensive null-check in router.tsx: if `ROUTES[currentRoute]` is undefined, render a "Route not registered" message instead of crashing React.
+- Created three new route component files backed by the existing APIs:
+  - src/routes/user-approvals.tsx — UserApprovalsRoute: lists pending/suspended/rejected registrations with approve/reject/suspend/activate buttons. Calls POST /api/user-approvals/[id]/{approve,reject,suspend,activate}. Filter tabs for status.
+  - src/routes/user-management.tsx — UserManagementRoute: lists all system users with search box. Calls GET /api/users.
+  - src/routes/roles.tsx — RolesRoute: lists system + custom roles with their permissions. Calls GET /api/roles.
+- Registered the three new routes in router.tsx ROUTES map:
+  - "user-approvals": UserApprovalsRoute
+  - "user-management": UserManagementRoute
+  - roles: RolesRoute
+- Matched the DataTable API conventions used elsewhere:
+  - Used `cell:` (not `render:`) for column renderers
+  - Used `data` / `loading` / `error` (not `rows` / `isLoading`) from useList hook
+  - Added required `rowKey={(r) => r.id}` prop
+- All three new files pass type-checking cleanly (verified with `npx tsc --noEmit`).
+- Verified dev server recompiled successfully — log shows "✓ Compiled" with no errors, and the /api/user-approvals endpoint was successfully called from the running app.
+
+Stage Summary:
+- Root cause of the user-facing runtime crash was missing route components for three sidebar nav items that were already in the permission matrix and visible to admins.
+- All three nav items now have functional route components that use the existing /api/user-approvals, /api/users, and /api/roles endpoints.
+- settings-page.tsx is also more robust now (proper top-of-file imports, standard hook pattern).
+- The router has a defensive null-check so future missing routes display a friendly message instead of crashing React.
+- User can now click on "User Approvals" / "User Management" / "Roles & Permissions" in the sidebar (System group) without crashing the app.
