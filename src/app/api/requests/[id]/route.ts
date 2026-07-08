@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { recordStatusChange } from "@/lib/auth/audit";
 import { canTransition } from "../route";
+import { validateRequestForApproval, MIN_TRAINEES_PER_COURSE, MAX_TRAINEES_PER_COURSE } from "@/lib/api/request-validation";
 import type { TrainingRequestStatus } from "@prisma/client";
 
 export const GET = withModuleAction("requests", "view", async ({ params, user }) => {
@@ -12,8 +13,28 @@ export const GET = withModuleAction("requests", "view", async ({ params, user })
     include: {
       company: true,
       course: true,
-      session: {
-        include: { trainer: { select: { id: true, fullName: true, refNumber: true } } },
+      requestCourses: {
+        where: { deletedAt: null },
+        include: {
+          course: { select: { id: true, title: true, code: true, refNumber: true } },
+          trainees: {
+            where: { deletedAt: null },
+            include: {
+              trainee: {
+                select: {
+                  id: true, refNumber: true, fullName: true, nationalId: true,
+                  nationality: true, jobTitle: true, mobile: true, email: true,
+                  company: { select: { id: true, name: true } },
+                },
+              },
+            },
+          },
+          _count: { select: { sessions: true } },
+        },
+      },
+      sessions: {
+        where: { deletedAt: null },
+        select: { id: true, refNumber: true, title: true, startDate: true, endDate: true, shift: true, status: true },
       },
     },
   });
@@ -33,7 +54,7 @@ export const PUT = withModuleAction("requests", "edit", async ({ req, params, us
   const existing = await db.trainingRequest.findUnique({ where: { id } });
   if (!existing || existing.deletedAt) return notFound("Request not found");
 
-  // Contractors can edit only their own DRAFT/SUBMITTED requests
+  // Contractors can edit only their own DRAFT/SUBMITTED/REJECTED requests
   if (user.role === "CONTRACTOR") {
     if (existing.companyId !== user.companyId) return fail("Forbidden", 403);
     if (!["DRAFT", "SUBMITTED", "REJECTED"].includes(existing.status)) {
@@ -56,6 +77,23 @@ export const PUT = withModuleAction("requests", "edit", async ({ req, params, us
         "INVALID_TRANSITION",
         { from: existing.status, to: newStatus }
       );
+    }
+
+    // Business rule: block APPROVED transition if any course fails min/max trainees validation
+    if (newStatus === "APPROVED") {
+      const validation = await validateRequestForApproval(id);
+      if (!validation.valid) {
+        return fail(
+          `Cannot approve: ${validation.failingCourses.length} course(s) fail the trainee count rule (min ${MIN_TRAINEES_PER_COURSE}, max ${MAX_TRAINEES_PER_COURSE})`,
+          422,
+          "APPROVAL_VALIDATION_FAILED",
+          {
+            failingCourses: validation.failingCourses,
+            totalTrainees: validation.totalTrainees,
+            rule: { min: MIN_TRAINEES_PER_COURSE, max: MAX_TRAINEES_PER_COURSE },
+          }
+        );
+      }
     }
   }
 
@@ -133,19 +171,22 @@ export const DELETE = withModuleAction("requests", "delete", async ({ params, us
   const existing = await db.trainingRequest.findUnique({ where: { id } });
   if (!existing || existing.deletedAt) return notFound("Request not found");
 
-  if (existing.sessionId) {
-    return fail("Cannot delete a request already linked to a session", 400);
-  }
-
   // Only allow deletion of DRAFT or CANCELLED requests
   if (!["DRAFT", "CANCELLED"].includes(existing.status)) {
     return fail("Cannot delete a request in progress. Cancel it first.", 400);
   }
 
-  await db.trainingRequest.update({
-    where: { id },
-    data: { deletedAt: now(), updatedBy: user.id },
-  });
+  // Soft delete the request and all its courses
+  await db.$transaction([
+    db.trainingRequest.update({
+      where: { id },
+      data: { deletedAt: new Date(), updatedBy: user.id },
+    }),
+    db.trainingRequestCourse.updateMany({
+      where: { requestId: id, deletedAt: null },
+      data: { deletedAt: new Date(), updatedBy: user.id },
+    }),
+  ]);
 
   await audit({
     user,
@@ -160,5 +201,3 @@ export const DELETE = withModuleAction("requests", "delete", async ({ params, us
 
   return ok({ success: true });
 });
-
-function now() { return new Date(); }

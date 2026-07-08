@@ -4,13 +4,16 @@ import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
+import { validateTrainerAssignment, validationErrorToResponse } from "@/lib/api/trainer-assignment";
 import { randomBytes } from "crypto";
 
-const ALLOWED_SORT_FIELDS = ["refNumber", "title", "startDate", "endDate", "createdAt", "status", "location"];
+const ALLOWED_SORT_FIELDS = ["refNumber", "title", "startDate", "endDate", "createdAt", "status", "location", "city", "shift"];
 
 function genQrToken(): string {
   return randomBytes(16).toString("hex");
 }
+
+const SHIFT_DURATION_HOURS = 6; // Morning/Evening = 6 hours each
 
 export const GET = withModuleAction("sessions", "view", async ({ req, user }) => {
   const q = parseListQuery(req);
@@ -21,11 +24,17 @@ export const GET = withModuleAction("sessions", "view", async ({ req, user }) =>
       { refNumber: { contains: q.search } },
       { title: { contains: q.search } },
       { location: { contains: q.search } },
+      { city: { contains: q.search } },
+      { venue: { contains: q.search } },
     ];
   }
   if (q.filters.status) where.status = q.filters.status;
   if (q.filters.trainerId) where.trainerId = q.filters.trainerId;
   if (q.filters.courseId) where.courseId = q.filters.courseId;
+  if (q.filters.shift) where.shift = q.filters.shift;
+  if (q.filters.city) where.city = q.filters.city;
+  if (q.filters.region) where.region = q.filters.region;
+  if (q.filters.requestCourseId) where.requestCourseId = q.filters.requestCourseId;
   if (q.filters.from || q.filters.to) {
     where.startDate = {};
     if (q.filters.from) (where.startDate as any).gte = new Date(q.filters.from);
@@ -46,6 +55,7 @@ export const GET = withModuleAction("sessions", "view", async ({ req, user }) =>
         course: { select: { id: true, title: true, code: true, refNumber: true } },
         trainer: { select: { id: true, fullName: true, refNumber: true } },
         request: { select: { id: true, refNumber: true } },
+        requestCourse: { select: { id: true, course: { select: { title: true, code: true } } } },
         _count: { select: { attendance: true, certificates: true } },
       },
       orderBy,
@@ -65,12 +75,18 @@ export const GET = withModuleAction("sessions", "view", async ({ req, user }) =>
       courseRef: s.course?.refNumber ?? null,
       requestId: s.requestId,
       requestRef: s.request?.refNumber ?? null,
+      requestCourseId: s.requestCourseId,
       trainerId: s.trainerId,
       trainerName: s.trainer?.fullName ?? null,
       trainerRef: s.trainer?.refNumber ?? null,
       title: s.title,
       location: s.location,
+      city: s.city,
+      region: s.region,
       venue: s.venue,
+      shift: s.shift,
+      durationHours: s.durationHours,
+      capacity: s.capacity,
       language: s.language,
       startDate: s.startDate,
       endDate: s.endDate,
@@ -92,7 +108,8 @@ export const GET = withModuleAction("sessions", "view", async ({ req, user }) =>
 export const POST = withModuleAction("sessions", "create", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
   const {
-    courseId, requestId, trainerId, title, location, venue, language,
+    courseId, requestId, requestCourseId, trainerId, title, location, city, region, venue,
+    shift, durationHours, capacity, language,
     startDate, endDate, expectedTrainees, notes,
   } = body;
 
@@ -108,6 +125,23 @@ export const POST = withModuleAction("sessions", "create", async ({ req, user })
     if (!trainer) return fail("Trainer not found", 404);
   }
 
+  // Validate trainer assignment (certification + conflict + role)
+  if (trainerId) {
+    const validation = await validateTrainerAssignment({
+      user,
+      trainerId,
+      courseId,
+      startDate: new Date(startDate),
+      endDate: new Date(endDate),
+    });
+    if (!validation.valid) {
+      return validationErrorToResponse(validation);
+    }
+  }
+
+  // Compute duration based on shift (Morning/Evening = 6 hours)
+  const finalDuration = durationHours ?? (shift ? SHIFT_DURATION_HOURS : course.durationHours);
+
   const refNumber = await nextRefNumber("SESSION");
   const qrToken = genQrToken();
 
@@ -116,10 +150,16 @@ export const POST = withModuleAction("sessions", "create", async ({ req, user })
       refNumber,
       courseId,
       requestId: requestId ?? null,
+      requestCourseId: requestCourseId ?? null,
       trainerId: trainerId ?? null,
       title,
       location: location ?? null,
+      city: city ?? null,
+      region: region ?? null,
       venue: venue ?? null,
+      shift: shift ?? null,
+      durationHours: finalDuration,
+      capacity: capacity ?? course.maxTrainees,
       language: language ?? course.language,
       startDate: new Date(startDate),
       endDate: new Date(endDate),
@@ -136,8 +176,8 @@ export const POST = withModuleAction("sessions", "create", async ({ req, user })
 
   // If linked to a request, mark it SCHEDULED (workflow transition)
   if (requestId) {
-    const req = await db.trainingRequest.findUnique({ where: { id: requestId } });
-    if (req && req.status === "APPROVED") {
+    const requestRec = await db.trainingRequest.findUnique({ where: { id: requestId } });
+    if (requestRec && requestRec.status === "APPROVED") {
       await db.trainingRequest.update({
         where: { id: requestId },
         data: { status: "SCHEDULED", scheduledAt: new Date(), updatedBy: user.id },
@@ -154,6 +194,7 @@ export const POST = withModuleAction("sessions", "create", async ({ req, user })
     description: `Created session ${session.refNumber} (${course.title})`,
     descriptionAr: `تم إنشاء جلسة ${session.refNumber} (${course.title})`,
     req,
+    metadata: { shift, durationHours: finalDuration, capacity: session.capacity, trainerId },
   });
 
   return created(session);

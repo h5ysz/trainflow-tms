@@ -24,9 +24,11 @@ interface Contact {
   fullName: string;
   jobTitle?: string | null;
   companyName?: string | null;
+  companyRef?: string | null;
   email?: string | null;
   phone?: string | null;
   mobile?: string | null;
+  preferredContact?: string | null;
   isPrimary: boolean;
   isActive: boolean;
 }
@@ -199,6 +201,17 @@ export function CompanyContactsRoute() {
             </Field>
             <Field label={t("contacts.mobile")}>
               <Input placeholder="+966 5X XXX XXXX" value={(formData.mobile as string) ?? ""} onChange={(e) => setField("mobile", e.target.value)} />
+            </Field>
+            <Field label="Preferred Contact">
+              <Select value={(formData.preferredContact as string) ?? ""} onValueChange={(v) => setField("preferredContact", v)}>
+                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="PHONE">Phone</SelectItem>
+                  <SelectItem value="MOBILE">Mobile</SelectItem>
+                  <SelectItem value="EMAIL">Email</SelectItem>
+                  <SelectItem value="WHATSAPP">WhatsApp</SelectItem>
+                </SelectContent>
+              </Select>
             </Field>
           </FormGrid>
           <Field label={t("contacts.notes")}>

@@ -10,6 +10,7 @@ import { CompaniesRoute } from "./companies";
 import { CompanyContactsRoute } from "./company-contacts";
 import { TrainersRoute } from "./trainers";
 import { TrainerQualificationsRoute } from "./trainer-qualifications";
+import { TraineesRoute } from "./trainees";
 import { CoursesRoute } from "./courses";
 import { TrainingRequestsRoute } from "./training-requests";
 import { TrainingSessionsRoute } from "./training-sessions";
@@ -32,6 +33,7 @@ const ROUTES: Record<RouteKey, () => JSX.Element> = {
   "company-contacts": CompanyContactsRoute,
   trainers: TrainersRoute,
   "trainer-qualifications": TrainerQualificationsRoute,
+  trainees: TraineesRoute,
   courses: CoursesRoute,
   requests: TrainingRequestsRoute,
   sessions: TrainingSessionsRoute,

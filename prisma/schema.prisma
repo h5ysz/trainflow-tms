@@ -236,6 +236,7 @@ model Company {
 
   tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   contacts        CompanyContact[]
+  trainees        Trainee[]
   users           User[]
   trainingRequests TrainingRequest[]
   certificates    Certificate[]
@@ -244,25 +245,57 @@ model Company {
   @@index([tenantId])
 }
 
-model CompanyContact {
-  id          String   @id @default(uuid())
-  companyId   String
-  fullName    String
-  jobTitle    String?
-  email       String?
-  phone       String?
-  mobile      String?
-  isPrimary   Boolean  @default(false)
-  isActive    Boolean  @default(true)
-  notes       String?
-  // Audit
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  createdBy   String?
-  updatedBy   String?
-  deletedAt   DateTime?
+// ─────────────────────────────────────────────────────────────────────────────
+// TRAINEES (each belongs to one company)
+// ─────────────────────────────────────────────────────────────────────────────
 
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+model Trainee {
+  id              String   @id @default(uuid())
+  refNumber       String   @unique // TRA-000001
+  fullName        String
+  nationalId      String   // National ID / Iqama — unique (duplicates prevented at app level)
+  nationality     String?
+  jobTitle        String?
+  mobile          String?
+  email           String?
+  companyId       String
+  status          String   @default("ACTIVE") // ACTIVE | INACTIVE
+  notes           String?
+  // Audit
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  requestCourses  TrainingRequestCourseTrainee[]
+
+  @@index([companyId])
+  @@index([nationalId])
+  @@index([status])
+}
+
+model CompanyContact {
+  id                String   @id @default(uuid())
+  companyId         String
+  fullName          String
+  jobTitle          String?  // Position
+  email             String?
+  phone             String?
+  mobile            String?
+  preferredContact  String?  // PHONE | MOBILE | EMAIL | WHATSAPP
+  isPrimary         Boolean  @default(false)
+  isActive          Boolean  @default(true)
+  notes             String?
+  // Audit
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  createdBy         String?
+  updatedBy         String?
+  deletedAt         DateTime?
+
+  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
 }
@@ -299,6 +332,7 @@ model Trainer {
 
   tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   qualifications  TrainerQualification[]
+  certifications  TrainerCertification[]
   user            User?
   sessions        TrainingSession[]
   evaluations     CourseEvaluation[]
@@ -325,8 +359,36 @@ model TrainerQualification {
   deletedAt       DateTime?
 
   trainer         Trainer  @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+  certifications  TrainerCertification[]
 
   @@index([trainerId])
+  @@index([status])
+}
+
+// Trainer-Course certification link — a trainer can only teach courses they're certified for
+model TrainerCertification {
+  id              String   @id @default(uuid())
+  trainerId       String
+  courseId        String
+  qualificationId String? // optional link to source qualification
+  validFrom       DateTime @default(now())
+  validUntil      DateTime?
+  status          String   @default("VALID") // VALID | EXPIRED | REVOKED
+  notes           String?
+  // Audit
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+
+  trainer         Trainer  @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+  course          Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  qualification   TrainerQualification? @relation(fields: [qualificationId], references: [id], onDelete: SetNull)
+
+  @@unique([trainerId, courseId, deletedAt])
+  @@index([trainerId])
+  @@index([courseId])
   @@index([status])
 }
 
@@ -364,9 +426,11 @@ model Course {
 
   tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   requests        TrainingRequest[]
+  requestCourses  TrainingRequestCourse[]
   sessions        TrainingSession[]
   questions       Question[]
   certificates    Certificate[]
+  trainerCertifications TrainerCertification[]
 
   @@index([status])
   @@index([category])
@@ -416,9 +480,9 @@ model TrainingRequest {
   id                  String   @id @default(uuid())
   refNumber           String   @unique // TR-YYYY-000001
   companyId           String
-  courseId            String
+  courseId            String?  // optional primary course (legacy single-course field)
   requestedBy         String?  // user id
-  traineeCount        Int      @default(1)
+  traineeCount        Int      @default(0) // total across all courses
   preferredDateFrom   DateTime?
   preferredDateTo     DateTime?
   preferredLocation   String?
@@ -444,12 +508,60 @@ model TrainingRequest {
   deletedAt           DateTime?
 
   company             Company  @relation(fields: [companyId], references: [id])
-  course              Course   @relation(fields: [courseId], references: [id])
-  session             TrainingSession?
+  course              Course?  @relation(fields: [courseId], references: [id])
+  sessions            TrainingSession[]
+  requestCourses      TrainingRequestCourse[]
 
   @@index([status])
   @@index([companyId])
   @@index([courseId])
+}
+
+// Junction: a Training Request contains multiple courses, each with its own trainee list
+// Business rules: minTrainees=10, maxTrainees=20 per course
+model TrainingRequestCourse {
+  id              String   @id @default(uuid())
+  requestId       String
+  courseId        String
+  traineeCount    Int      @default(0)
+  minTrainees     Int      @default(10) // business rule: minimum 10
+  maxTrainees     Int      @default(20) // business rule: maximum 20
+  notes           String?
+  // Audit
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+
+  request         TrainingRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  course          Course   @relation(fields: [courseId], references: [id])
+  trainees        TrainingRequestCourseTrainee[]
+  sessions        TrainingSession[]
+
+  @@unique([requestId, courseId, deletedAt])
+  @@index([requestId])
+  @@index([courseId])
+}
+
+// Junction: trainees assigned to a specific course within a training request
+model TrainingRequestCourseTrainee {
+  id              String   @id @default(uuid())
+  requestCourseId String
+  traineeId       String
+  // Audit
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+
+  requestCourse   TrainingRequestCourse @relation(fields: [requestCourseId], references: [id], onDelete: Cascade)
+  trainee         Trainee  @relation(fields: [traineeId], references: [id], onDelete: Cascade)
+
+  @@unique([requestCourseId, traineeId])
+  @@index([requestCourseId])
+  @@index([traineeId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -461,13 +573,20 @@ model TrainingSession {
   refNumber       String   @unique // SES-000001
   courseId        String
   course          Course   @relation(fields: [courseId], references: [id])
-  requestId       String?  @unique
+  requestId       String?
   request         TrainingRequest? @relation(fields: [requestId], references: [id])
+  requestCourseId String? // link to specific course-in-request (multi-course support)
+  requestCourse   TrainingRequestCourse? @relation(fields: [requestCourseId], references: [id], onDelete: SetNull)
   trainerId       String?
   trainer         Trainer? @relation(fields: [trainerId], references: [id])
   title           String
   location        String?
+  city            String?  // NEW
+  region          String?  // NEW
   venue           String?
+  shift           String?  // NEW — MORNING | EVENING
+  durationHours   Int      @default(6) // NEW — Morning/Evening = 6 hours each
+  capacity        Int      @default(20) // NEW — max trainees per session
   language        String   @default("en")
   startDate       DateTime
   endDate         DateTime
@@ -493,6 +612,9 @@ model TrainingSession {
   @@index([status])
   @@index([trainerId])
   @@index([startDate])
+  @@index([shift])
+  @@index([city])
+  @@index([requestCourseId])
 }
 
 model Attendance {

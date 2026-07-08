@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   BarChart3, FileText, Download, FileSpreadsheet, TrendingUp,
   Building2, BookOpen, GraduationCap, CalendarRange, ShieldCheck, UserCheck, Award,
-  AlertCircle, Loader2,
+  AlertCircle, AlertTriangle, Loader2, Users, CalendarDays,
   type LucideIcon,
 } from "lucide-react";
 import { api } from "@/lib/api/client";
@@ -48,6 +48,10 @@ export function ReportsRoute() {
     { key: "compliance", title: t("reports.compliance"), desc: t("misc.pageUnderConstruction"), icon: ShieldCheck, accent: "bg-destructive/10 text-destructive" },
     { key: "attendance", title: t("reports.attendance"), desc: t("misc.pageUnderConstruction"), icon: UserCheck, accent: "bg-info/10 text-info" },
     { key: "scores", title: t("reports.scores"), desc: t("misc.pageUnderConstruction"), icon: Award, accent: "bg-success/10 text-success" },
+    // Sprint 2 new report types
+    { key: "trainees", title: t("dashboard.kpi.trainees"), desc: t("misc.pageUnderConstruction"), icon: Users, accent: "bg-success/10 text-success" },
+    { key: "conflicts", title: t("dashboard.kpi.trainerConflicts"), desc: t("misc.pageUnderConstruction"), icon: AlertTriangle, accent: "bg-destructive/10 text-destructive" },
+    { key: "todaySessions", title: t("dashboard.kpi.todaySessions"), desc: t("misc.pageUnderConstruction"), icon: CalendarDays, accent: "bg-info/10 text-info" },
   ];
 
   useEffect(() => {

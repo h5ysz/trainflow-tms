@@ -48,6 +48,7 @@ export const GET = withModuleAction("company-contacts", "view", async ({ req, us
       email: c.email,
       phone: c.phone,
       mobile: c.mobile,
+      preferredContact: c.preferredContact,
       isPrimary: c.isPrimary,
       isActive: c.isActive,
       notes: c.notes,
@@ -60,7 +61,7 @@ export const GET = withModuleAction("company-contacts", "view", async ({ req, us
 
 export const POST = withModuleAction("company-contacts", "create", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
-  const { companyId, fullName, jobTitle, email, phone, mobile, isPrimary, isActive, notes } = body;
+  const { companyId, fullName, jobTitle, email, phone, mobile, preferredContact, isPrimary, isActive, notes } = body;
   if (!companyId || !fullName) return fail("companyId and fullName are required", 422, "VALIDATION_ERROR");
 
   const company = await db.company.findFirst({ where: { id: companyId, deletedAt: null } });
@@ -74,6 +75,7 @@ export const POST = withModuleAction("company-contacts", "create", async ({ req,
       email: email ?? null,
       phone: phone ?? null,
       mobile: mobile ?? null,
+      preferredContact: preferredContact ?? null, // PHONE | MOBILE | EMAIL | WHATSAPP
       isPrimary: isPrimary ?? false,
       isActive: isActive ?? true,
       notes: notes ?? null,

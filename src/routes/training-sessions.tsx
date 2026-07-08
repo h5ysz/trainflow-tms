@@ -29,6 +29,12 @@ interface Session {
   trainerName?: string | null;
   trainerRef?: string | null;
   location?: string | null;
+  city?: string | null;
+  region?: string | null;
+  venue?: string | null;
+  shift?: string | null;
+  durationHours?: number;
+  capacity?: number;
   startDate: string;
   endDate: string;
   expectedTrainees: number;
@@ -44,7 +50,13 @@ export function TrainingSessionsRoute() {
   const { user } = useAppStore();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [formData, setFormData] = useState<Record<string, unknown>>({ language: "en", expectedTrainees: 0 });
+  const [formData, setFormData] = useState<Record<string, unknown>>({
+    language: "en",
+    expectedTrainees: 0,
+    shift: "MORNING",
+    durationHours: 6,
+    capacity: 20,
+  });
   const [courses, setCourses] = useReactState<CourseOption[]>([]);
   const [trainers, setTrainers] = useReactState<TrainerOption[]>([]);
 
@@ -82,8 +94,13 @@ export function TrainingSessionsRoute() {
     },
     {
       key: "location",
-      header: t("sessions.location"),
-      cell: (r) => <div className="text-xs text-muted-foreground flex items-center gap-1.5"><MapPin className="h-3 w-3" />{r.location || "—"}</div>,
+      header: t("sessions.city"),
+      cell: (r) => (
+        <div className="text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5"><MapPin className="h-3 w-3" />{r.city || r.location || "—"}</div>
+          {r.shift && <div className="mt-0.5">{t(`sessions.shift.${r.shift}` as never)} · {r.durationHours ?? 6}h</div>}
+        </div>
+      ),
     },
     {
       key: "dates",
@@ -120,7 +137,7 @@ export function TrainingSessionsRoute() {
       await api.post("/sessions", formData);
       toast({ title: t("misc.success"), description: t("misc.createSuccess") });
       setDialogOpen(false);
-      setFormData({ language: "en", expectedTrainees: 0 });
+      setFormData({ language: "en", expectedTrainees: 0, shift: "MORNING", durationHours: 6, capacity: 20 });
       refetch();
     } catch (e) {
       toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
@@ -196,14 +213,35 @@ export function TrainingSessionsRoute() {
             <Field label={t("sessions.location")}>
               <Input placeholder="Riyadh Training Center" value={(formData.location as string) ?? ""} onChange={(e) => setField("location", e.target.value)} />
             </Field>
+            <Field label={t("sessions.city")}>
+              <Input placeholder="Riyadh" value={(formData.city as string) ?? ""} onChange={(e) => setField("city", e.target.value)} />
+            </Field>
+            <Field label={t("sessions.region")}>
+              <Input placeholder="Riyadh Region" value={(formData.region as string) ?? ""} onChange={(e) => setField("region", e.target.value)} />
+            </Field>
+            <Field label={t("sessions.venue")}>
+              <Input placeholder="Hall A" value={(formData.venue as string) ?? ""} onChange={(e) => setField("venue", e.target.value)} />
+            </Field>
+            <Field label={t("sessions.shift")}>
+              <Select value={(formData.shift as string) ?? "MORNING"} onValueChange={(v) => setField("shift", v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MORNING">{t("sessions.shift.MORNING")}</SelectItem>
+                  <SelectItem value="EVENING">{t("sessions.shift.EVENING")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label={t("sessions.durationHours")}>
+              <Input type="number" min={1} value={formData.durationHours as number} onChange={(e) => setField("durationHours", parseInt(e.target.value, 10) || 6)} />
+            </Field>
+            <Field label={t("sessions.capacity")}>
+              <Input type="number" min={1} value={formData.capacity as number} onChange={(e) => setField("capacity", parseInt(e.target.value, 10) || 20)} />
+            </Field>
             <Field label={t("sessions.startDate")} required>
               <Input type="datetime-local" value={(formData.startDate as string) ?? ""} onChange={(e) => setField("startDate", e.target.value)} />
             </Field>
             <Field label={t("sessions.endDate")} required>
               <Input type="datetime-local" value={(formData.endDate as string) ?? ""} onChange={(e) => setField("endDate", e.target.value)} />
-            </Field>
-            <Field label={t("sessions.venue")}>
-              <Input placeholder="Hall A" value={(formData.venue as string) ?? ""} onChange={(e) => setField("venue", e.target.value)} />
             </Field>
             <Field label={t("sessions.language")}>
               <Select value={formData.language as string} onValueChange={(v) => setField("language", v)}>

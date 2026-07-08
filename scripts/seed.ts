@@ -40,9 +40,9 @@ async function main() {
   console.log("→ System roles");
   const roles = [
     { code: "SUPER_ADMIN", name: "Super Admin", nameAr: "مدير النظام", description: "Full system access including settings", permissions: ["*"], isSystem: true },
-    { code: "COORDINATOR", name: "Coordinator", nameAr: "منسق التدريب", description: "Manage training operations (no settings)", permissions: ["companies.*", "trainers.*", "courses.*", "requests.*", "sessions.*", "attendance.*", "qr-code.*", "pre-test.*", "final-test.*", "evaluation.view", "certificates.*", "reports.view", "notifications.view", "audit-log.view"], isSystem: true },
+    { code: "COORDINATOR", name: "Coordinator", nameAr: "منسق التدريب", description: "Manage training operations (no settings)", permissions: ["companies.*", "company-contacts.*", "trainers.*", "trainer-qualifications.*", "trainees.*", "courses.*", "requests.*", "sessions.*", "scheduling.*", "attendance.*", "qr-code.*", "pre-test.*", "final-test.*", "evaluation.view", "certificates.*", "reports.view", "notifications.view", "audit-log.view"], isSystem: true },
     { code: "TRAINER", name: "Trainer", nameAr: "المدرب", description: "Deliver sessions and grade assessments", permissions: ["courses.view", "sessions.view", "scheduling.view", "attendance.view", "attendance.create", "attendance.edit", "qr-code.view", "qr-code.create", "pre-test.view", "pre-test.create", "pre-test.edit", "final-test.view", "final-test.create", "final-test.edit", "evaluation.view", "certificates.view", "notifications.view"], isSystem: true },
-    { code: "CONTRACTOR", name: "Contractor", nameAr: "المقاول (الشركة)", description: "Submit and track training requests", permissions: ["requests.view", "requests.create", "certificates.view", "notifications.view"], isSystem: true },
+    { code: "CONTRACTOR", name: "Contractor", nameAr: "المقاول (الشركة)", description: "Submit and track training requests", permissions: ["trainees.view", "trainees.create", "trainees.edit", "requests.view", "requests.create", "certificates.view", "notifications.view"], isSystem: true },
   ];
   for (const r of roles) {
     await db.role.upsert({
@@ -58,7 +58,7 @@ async function main() {
   console.log("→ Permissions");
   const MODULES_LIST = [
     "dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
-    "courses", "requests", "sessions", "scheduling", "attendance", "qr-code",
+    "trainees", "courses", "requests", "sessions", "scheduling", "attendance", "qr-code",
     "pre-test", "final-test", "evaluation", "certificates", "reports",
     "notifications", "audit-log", "settings",
   ];

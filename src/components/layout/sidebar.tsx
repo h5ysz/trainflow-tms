@@ -5,7 +5,7 @@ import { useAppStore } from "@/lib/store/app-store";
 import { getNavForRole, type NavItem } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard, Building2, Contact, Users, Award, BookOpen,
+  LayoutDashboard, Building2, Contact, Users, Award, UserSquare, BookOpen,
   ClipboardList, CalendarDays, CalendarRange, UserCheck, QrCode,
   FilePen, FileCheck2, Star, BadgeCheck, BarChart3, ScrollText,
   Bell, Settings, GraduationCap,
@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 const ICONS: Record<string, LucideIcon> = {
-  LayoutDashboard, Building2, Contact, Users, Award, BookOpen,
+  LayoutDashboard, Building2, Contact, Users, Award, UserSquare, BookOpen,
   ClipboardList, CalendarDays, CalendarRange, UserCheck, QrCode,
   FilePen, FileCheck2, Star, BadgeCheck, BarChart3, ScrollText,
   Bell, Settings,

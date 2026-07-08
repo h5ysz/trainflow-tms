@@ -12,7 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { getNavForRole } from "@/lib/auth/permissions";
 import {
-  LayoutDashboard, Building2, Contact, Users, Award, BookOpen,
+  LayoutDashboard, Building2, Contact, Users, Award, UserSquare, BookOpen,
   ClipboardList, CalendarDays, CalendarRange, UserCheck, QrCode,
   FilePen, FileCheck2, Star, BadgeCheck, BarChart3, ScrollText,
   Bell, Settings, Search,
@@ -22,7 +22,7 @@ import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 
 const ICONS: Record<string, LucideIcon> = {
-  LayoutDashboard, Building2, Contact, Users, Award, BookOpen,
+  LayoutDashboard, Building2, Contact, Users, Award, UserSquare, BookOpen,
   ClipboardList, CalendarDays, CalendarRange, UserCheck, QrCode,
   FilePen, FileCheck2, Star, BadgeCheck, BarChart3, ScrollText,
   Bell, Settings,

@@ -18,7 +18,7 @@ export const PUT = withModuleAction("company-contacts", "edit", async ({ req, pa
   const existing = await db.companyContact.findUnique({ where: { id } });
   if (!existing || existing.deletedAt) return notFound("Contact not found");
 
-  const { fullName, jobTitle, email, phone, mobile, isPrimary, isActive, notes, companyId } = body;
+  const { fullName, jobTitle, email, phone, mobile, preferredContact, isPrimary, isActive, notes, companyId } = body;
   const updated = await db.companyContact.update({
     where: { id },
     data: {
@@ -27,6 +27,7 @@ export const PUT = withModuleAction("company-contacts", "edit", async ({ req, pa
       ...(email !== undefined && { email }),
       ...(phone !== undefined && { phone }),
       ...(mobile !== undefined && { mobile }),
+      ...(preferredContact !== undefined && { preferredContact }),
       ...(isPrimary !== undefined && { isPrimary }),
       ...(isActive !== undefined && { isActive }),
       ...(notes !== undefined && { notes }),

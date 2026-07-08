@@ -10,7 +10,7 @@ import { RoleBadge } from "@/components/common/status-badge";
 import {
   LayoutDashboard, CalendarDays, Users, ClipboardList, BadgeCheck,
   AlertTriangle, GraduationCap, TrendingUp, Award, ArrowRight,
-  Building2, BookOpen, QrCode, Plus, Loader2,
+  Building2, BookOpen, QrCode, Plus, Loader2, Check,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -23,10 +23,20 @@ import {
 
 interface DashboardData {
   kpis: {
+    // Sprint 2 new
+    pendingRequests: number;
+    underReviewRequests: number;
+    approvedRequests: number;
+    scheduledSessions: number;
+    todaySessions: number;
+    availableTrainers: number;
+    trainerConflicts: number;
+    companies: number;
+    trainees: number;
+    // Existing
     totalSessions: number;
     sessionsThisYear: number;
     activeTrainees: number;
-    pendingRequests: number;
     issuedCertificates: number;
     certsThisYear: number;
     expiringCerts: number;
@@ -40,7 +50,7 @@ interface DashboardData {
     certificatesByCourse: { course: string; count: number }[];
   };
   upcomingSessions: Array<{
-    id: string; sessionCode: string; title: string;
+    id: string; sessionCode?: string; refNumber?: string; title: string;
     courseTitle?: string | null; courseCode?: string | null;
     trainerName?: string | null; startDate: string; endDate: string; status: string;
   }>;
@@ -159,11 +169,20 @@ export function DashboardRoute() {
         <Card className="p-4 text-sm text-destructive">{error}</Card>
       ) : (
         <>
-          {/* KPI grid */}
+          {/* KPI grid — Sprint 2 expanded */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            <KpiCard label={t("dashboard.kpi.totalSessions")} value={kpis?.totalSessions ?? 0} icon={CalendarDays} accent="bg-info/10 text-info" hint={`${kpis?.sessionsThisYear ?? 0} this year`} />
-            <KpiCard label={t("dashboard.kpi.activeTrainees")} value={kpis?.activeTrainees ?? 0} icon={Users} accent="bg-success/10 text-success" />
+            {/* Sprint 2 new KPIs */}
             <KpiCard label={t("dashboard.kpi.pendingRequests")} value={kpis?.pendingRequests ?? 0} icon={ClipboardList} accent="bg-warning/10 text-warning" />
+            <KpiCard label={t("dashboard.kpi.underReviewRequests")} value={kpis?.underReviewRequests ?? 0} icon={ClipboardList} accent="bg-info/10 text-info" />
+            <KpiCard label={t("dashboard.kpi.approvedRequests")} value={kpis?.approvedRequests ?? 0} icon={Check} accent="bg-success/10 text-success" />
+            <KpiCard label={t("dashboard.kpi.scheduledSessions")} value={kpis?.scheduledSessions ?? 0} icon={CalendarDays} accent="bg-info/10 text-info" />
+            <KpiCard label={t("dashboard.kpi.todaySessions")} value={kpis?.todaySessions ?? 0} icon={CalendarDays} accent="bg-primary/10 text-primary" />
+            <KpiCard label={t("dashboard.kpi.availableTrainers")} value={kpis?.availableTrainers ?? 0} icon={GraduationCap} accent="bg-success/10 text-success" />
+            <KpiCard label={t("dashboard.kpi.trainerConflicts")} value={kpis?.trainerConflicts ?? 0} icon={AlertTriangle} accent={kpis?.trainerConflicts ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"} />
+            <KpiCard label={t("dashboard.kpi.companies")} value={kpis?.companies ?? 0} icon={Building2} accent="bg-info/10 text-info" />
+            <KpiCard label={t("dashboard.kpi.trainees")} value={kpis?.trainees ?? 0} icon={Users} accent="bg-success/10 text-success" />
+            {/* Existing KPIs */}
+            <KpiCard label={t("dashboard.kpi.totalSessions")} value={kpis?.totalSessions ?? 0} icon={CalendarDays} accent="bg-info/10 text-info" hint={`${kpis?.sessionsThisYear ?? 0} this year`} />
             <KpiCard label={t("dashboard.kpi.issuedCertificates")} value={kpis?.issuedCertificates ?? 0} icon={BadgeCheck} accent="bg-primary/10 text-primary" hint={`${kpis?.certsThisYear ?? 0} this year`} />
             <KpiCard label={t("dashboard.kpi.expiringCerts")} value={kpis?.expiringCerts ?? 0} icon={AlertTriangle} accent="bg-warning/10 text-warning" />
             <KpiCard label={t("dashboard.kpi.activeTrainers")} value={kpis?.activeTrainers ?? 0} icon={GraduationCap} accent="bg-info/10 text-info" />

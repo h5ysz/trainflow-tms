@@ -13,6 +13,7 @@ export type RouteKey =
   | "company-contacts"
   | "trainers"
   | "trainer-qualifications"
+  | "trainees"
   | "courses"
   | "requests"
   | "sessions"
@@ -38,6 +39,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "company-contacts",
     "trainers",
     "trainer-qualifications",
+    "trainees",
     "courses",
     "requests",
     "sessions",
@@ -59,6 +61,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "company-contacts",
     "trainers",
     "trainer-qualifications",
+    "trainees",
     "courses",
     "requests",
     "sessions",
@@ -88,6 +91,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
   ],
   CONTRACTOR: [
     "dashboard",
+    "trainees",
     "requests",
     "certificates",
     "notifications",
@@ -104,6 +108,7 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
     "company-contacts": ["view", "create", "edit", "delete"],
     trainers: ["view", "create", "edit", "delete"],
     "trainer-qualifications": ["view", "create", "edit", "delete"],
+    trainees: ["view", "create", "edit", "delete"],
     courses: ["view", "create", "edit", "delete"],
     requests: ["view", "create", "edit", "delete"],
     sessions: ["view", "create", "edit", "delete"],
@@ -131,6 +136,7 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
     notifications: ["view"],
   },
   CONTRACTOR: {
+    trainees: ["view", "create", "edit"],
     requests: ["view", "create"],
     certificates: ["view"],
     notifications: ["view"],
@@ -169,6 +175,7 @@ export const navItems: NavItem[] = [
   { key: "company-contacts", labelKey: "nav.companyContacts", icon: "Contact", group: "training" },
   { key: "trainers", labelKey: "nav.trainers", icon: "Users", group: "training" },
   { key: "trainer-qualifications", labelKey: "nav.trainerQualifications", icon: "Award", group: "training" },
+  { key: "trainees", labelKey: "nav.trainees", icon: "UserSquare", group: "training" },
   { key: "courses", labelKey: "nav.courses", icon: "BookOpen", group: "training" },
   { key: "requests", labelKey: "nav.requests", icon: "ClipboardList", group: "training" },
   { key: "sessions", labelKey: "nav.sessions", icon: "CalendarDays", group: "training" },

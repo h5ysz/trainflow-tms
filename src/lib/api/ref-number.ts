@@ -20,7 +20,8 @@ export type RefEntityType =
   | "TRAINER"
   | "COMPANY"
   | "COURSE"
-  | "SESSION";
+  | "SESSION"
+  | "TRAINEE";
 
 const PREFIX: Record<RefEntityType, string> = {
   TRAINING_REQUEST: "TR",
@@ -30,6 +31,7 @@ const PREFIX: Record<RefEntityType, string> = {
   COMPANY: "COM",
   COURSE: "CRS",
   SESSION: "SES",
+  TRAINEE: "TRA",
 };
 
 const YEARLY: Set<RefEntityType> = new Set([

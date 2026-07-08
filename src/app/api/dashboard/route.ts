@@ -1,4 +1,6 @@
 // /api/dashboard — aggregated KPIs + chart data
+// Sprint 2 KPIs: pending/under-review/approved requests, scheduled sessions,
+// today's sessions, available trainers, trainer conflicts, companies, trainees
 import { db } from "@/lib/db";
 import { getCurrentUser, ok, fail } from "@/lib/auth/api";
 
@@ -14,13 +16,22 @@ export async function GET() {
     ? { trainerId: user.trainerId }
     : {};
 
+  // ─── KPI counts (parallel for performance) ───────────────────────────
   const [
     totalSessions,
     activeTrainees,
-    pendingRequests,
+    pendingRequests,           // NEW: DRAFT + SUBMITTED
+    underReviewRequests,       // NEW: UNDER_REVIEW
+    approvedRequests,          // NEW: APPROVED (not yet scheduled)
+    scheduledSessions,         // NEW: SCHEDULED status
+    todaySessions,             // NEW: sessions starting today
     issuedCertificates,
     expiringCerts,
     activeTrainers,
+    availableTrainers,         // NEW: trainers with no overlapping sessions today/next 7 days
+    trainerConflicts,          // NEW: count of sessions that have time-overlapping trainer assignments
+    companiesCount,            // NEW
+    traineesCount,             // NEW
     completedSessions,
     sessionsThisYear,
     certsThisYear,
@@ -30,11 +41,43 @@ export async function GET() {
       by: ["traineeEmail"],
       where: { deletedAt: null, session: { ...notDeleted, ...trainerFilter } },
     }).then((r) => r.length),
+    // pendingRequests = DRAFT + SUBMITTED
     db.trainingRequest.count({
       where: {
         deletedAt: null,
-        status: { in: ["DRAFT", "SUBMITTED", "UNDER_REVIEW"] },
+        status: { in: ["DRAFT", "SUBMITTED"] },
         ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+      },
+    }),
+    // underReviewRequests = UNDER_REVIEW
+    db.trainingRequest.count({
+      where: {
+        deletedAt: null,
+        status: "UNDER_REVIEW",
+        ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+      },
+    }),
+    // approvedRequests = APPROVED (ready for scheduling)
+    db.trainingRequest.count({
+      where: {
+        deletedAt: null,
+        status: "APPROVED",
+        ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+      },
+    }),
+    // scheduledSessions
+    db.trainingSession.count({
+      where: { ...notDeleted, status: "SCHEDULED", ...trainerFilter },
+    }),
+    // todaySessions — sessions starting today
+    db.trainingSession.count({
+      where: {
+        ...notDeleted,
+        ...trainerFilter,
+        startDate: {
+          gte: new Date(new Date().setHours(0, 0, 0, 0)),
+          lt: new Date(new Date().setHours(23, 59, 59, 999)),
+        },
       },
     }),
     db.certificate.count({ where: { deletedAt: null, ...companyFilter } }),
@@ -47,6 +90,67 @@ export async function GET() {
       },
     }),
     db.trainer.count({ where: { ...notDeleted, status: "ACTIVE" } }),
+    // availableTrainers = ACTIVE trainers with no sessions starting in next 7 days
+    (async () => {
+      const now = new Date();
+      const sevenDaysLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const busyTrainerIds = await db.trainingSession.findMany({
+        where: {
+          deletedAt: null,
+          status: { in: ["SCHEDULED", "IN_PROGRESS"] },
+          startDate: { gte: now, lte: sevenDaysLater },
+        },
+        select: { trainerId: true },
+        distinct: ["trainerId"],
+      });
+      const busySet = new Set(busyTrainerIds.map((s) => s.trainerId).filter(Boolean) as string[]);
+      const activeTrainersList = await db.trainer.findMany({
+        where: { deletedAt: null, status: "ACTIVE" },
+        select: { id: true },
+      });
+      return activeTrainersList.filter((t) => !busySet.has(t.id)).length;
+    })(),
+    // trainerConflicts — count of overlapping session pairs per trainer
+    (async () => {
+      // Get all scheduled/in-progress sessions with trainer assigned
+      const sessions = await db.trainingSession.findMany({
+        where: {
+          deletedAt: null,
+          trainerId: { not: null },
+          status: { in: ["SCHEDULED", "IN_PROGRESS"] },
+        },
+        select: { id: true, trainerId: true, startDate: true, endDate: true },
+        orderBy: { startDate: "asc" },
+      });
+      // Group by trainer, count overlaps
+      const byTrainer = new Map<string, typeof sessions>();
+      for (const s of sessions) {
+        if (!s.trainerId) continue;
+        const arr = byTrainer.get(s.trainerId) ?? [];
+        arr.push(s);
+        byTrainer.set(s.trainerId, arr);
+      }
+      let conflictPairs = 0;
+      for (const [, arr] of byTrainer) {
+        for (let i = 0; i < arr.length; i++) {
+          for (let j = i + 1; j < arr.length; j++) {
+            if (arr[i].startDate < arr[j].endDate && arr[j].startDate < arr[i].endDate) {
+              conflictPairs++;
+            }
+          }
+        }
+      }
+      return conflictPairs;
+    })(),
+    // companiesCount
+    db.company.count({ where: notDeleted }),
+    // traineesCount
+    db.trainee.count({
+      where: {
+        ...notDeleted,
+        ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+      },
+    }),
     db.trainingSession.count({ where: { ...notDeleted, status: "COMPLETED", ...trainerFilter } }),
     db.trainingSession.count({
       where: {
@@ -64,6 +168,7 @@ export async function GET() {
     }),
   ]);
 
+  // ─── Charts ──────────────────────────────────────────────────────────
   // Sessions by month (last 12 months)
   const twelveMonthsAgo = new Date();
   twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 11);
@@ -156,10 +261,21 @@ export async function GET() {
 
   return ok({
     kpis: {
+      // Sprint 2 new KPIs
+      pendingRequests,
+      underReviewRequests,
+      approvedRequests,
+      scheduledSessions,
+      todaySessions,
+      availableTrainers,
+      trainerConflicts,
+      companies: companiesCount,
+      trainees: traineesCount,
+
+      // Existing KPIs
       totalSessions,
       sessionsThisYear,
       activeTrainees,
-      pendingRequests,
       issuedCertificates,
       certsThisYear,
       expiringCerts,

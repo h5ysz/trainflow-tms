@@ -2,6 +2,7 @@
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { recordStatusChange } from "@/lib/auth/audit";
+import { validateTrainerAssignment, validationErrorToResponse } from "@/lib/api/trainer-assignment";
 
 export const GET = withModuleAction("sessions", "view", async ({ params, user }) => {
   const id = params.id as string;
@@ -11,6 +12,7 @@ export const GET = withModuleAction("sessions", "view", async ({ params, user })
       course: true,
       trainer: true,
       request: { include: { company: true } },
+      requestCourse: { include: { course: true } },
       attendance: { where: { deletedAt: null }, orderBy: { createdAt: "asc" } },
       _count: { select: { attendance: true, certificates: true, testResults: true, evaluations: true } },
     },
@@ -35,9 +37,35 @@ export const PUT = withModuleAction("sessions", "edit", async ({ req, params, us
   }
 
   const {
-    trainerId, title, location, venue, language, startDate, endDate,
-    expectedTrainees, actualTrainees, status, notes,
+    trainerId, title, location, city, region, venue, shift, durationHours, capacity, language,
+    startDate, endDate, expectedTrainees, actualTrainees, status, notes,
   } = body;
+
+  // If trainer is being changed (or dates changing with a trainer set), validate assignment
+  const newTrainerId = trainerId !== undefined ? trainerId : existing.trainerId;
+  const newStartDate = startDate ? new Date(startDate) : existing.startDate;
+  const newEndDate = endDate ? new Date(endDate) : existing.endDate;
+
+  if (newTrainerId && (trainerId !== undefined || startDate !== undefined || endDate !== undefined)) {
+    // Skip conflict check if trainer is unchanged AND dates unchanged
+    const isTrainerChanging = trainerId !== undefined && trainerId !== existing.trainerId;
+    const areDatesChanging = (startDate !== undefined && newStartDate.getTime() !== existing.startDate.getTime())
+                          || (endDate !== undefined && newEndDate.getTime() !== existing.endDate.getTime());
+
+    if (isTrainerChanging || areDatesChanging) {
+      const validation = await validateTrainerAssignment({
+        user,
+        trainerId: newTrainerId,
+        courseId: existing.courseId,
+        startDate: newStartDate,
+        endDate: newEndDate,
+        excludeSessionId: id,
+      });
+      if (!validation.valid) {
+        return validationErrorToResponse(validation);
+      }
+    }
+  }
 
   const updated = await db.trainingSession.update({
     where: { id },
@@ -45,7 +73,12 @@ export const PUT = withModuleAction("sessions", "edit", async ({ req, params, us
       ...(trainerId !== undefined && { trainerId }),
       ...(title !== undefined && { title }),
       ...(location !== undefined && { location }),
+      ...(city !== undefined && { city }),
+      ...(region !== undefined && { region }),
       ...(venue !== undefined && { venue }),
+      ...(shift !== undefined && { shift }),
+      ...(durationHours !== undefined && { durationHours }),
+      ...(capacity !== undefined && { capacity }),
       ...(language !== undefined && { language }),
       ...(startDate !== undefined && { startDate: new Date(startDate) }),
       ...(endDate !== undefined && { endDate: new Date(endDate) }),
