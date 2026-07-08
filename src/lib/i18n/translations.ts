@@ -5,7 +5,7 @@ export type Locale = "en" | "ar";
 export const dict = {
   en: {
     // App
-    "app.name": "GCCLAB",
+    "app.name": "GCC Lab",
     "app.tagline": "Training Management System",
     "app.shortcut": "Search or jump to...",
 
@@ -672,7 +672,7 @@ export const dict = {
 
   ar: {
     // App
-    "app.name": "GCCLAB",
+    "app.name": "المختبر العربي",
     "app.tagline": "نظام إدارة التدريب",
     "app.shortcut": "ابحث أو انتقل إلى...",
 

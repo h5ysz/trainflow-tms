@@ -18,11 +18,11 @@ const plexArabic = IBM_Plex_Sans_Arabic({
 });
 
 export const metadata: Metadata = {
-  title: "GCCLAB — Training Management System",
-  description: "GCCLAB Enterprise Training Management System — Gulf Calibration Laboratory — المختبر الخليجي",
-  keywords: ["GCCLAB", "TMS", "Training", "Safety", "Certification", "Calibration", "المختبر الخليجي"],
-  authors: [{ name: "GCCLAB" }],
-  icons: { icon: "/gcclab-icon.svg" },
+  title: "GCC Lab — Training Management System",
+  description: "GCC Lab Enterprise Training & Certification Management System — المختبر العربي",
+  keywords: ["GCC Lab", "TMS", "Training", "Safety", "Certification", "المختبر العربي"],
+  authors: [{ name: "GCC Lab" }],
+  icons: { icon: "/gcclab-logo-official.png" },
 };
 
 export default function RootLayout({

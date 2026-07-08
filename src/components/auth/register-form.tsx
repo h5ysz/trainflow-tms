@@ -60,7 +60,7 @@ export function RegisterForm() {
       <div className="min-h-screen flex items-center justify-center bg-background p-6">
         <Card className="max-w-md w-full p-8 text-center">
           <div className="flex justify-center mb-4">
-            <Image src="/gcclab-icon.svg" alt="GCCLAB" width={56} height={56} className="rounded-xl" />
+            <Image src="/gcclab-logo-official.png" alt="GCC Lab" width={56} height={56} className="rounded-xl" />
           </div>
           <div className="flex justify-center mb-4">
             <CheckCircle2 className="h-12 w-12 text-success" />
@@ -98,11 +98,11 @@ export function RegisterForm() {
       <div className="hidden lg:flex lg:flex-1 flex-col justify-between p-12 xl:p-16 bg-primary text-primary-foreground relative overflow-hidden tf-industrial-bg">
         <div className="relative z-10">
           <div className="flex items-center gap-4">
-            <Image src="/gcclab-icon.svg" alt="GCCLAB" width={52} height={52} className="rounded-lg" />
+            <Image src="/gcclab-logo-official.png" alt="GCC Lab" width={52} height={52} className="rounded-lg" />
             <div>
-              <div className="text-xl font-bold tracking-tight">GCCLAB</div>
+              <div className="text-xl font-bold tracking-tight">{locale === "en" ? "GCC Lab" : "المختبر العربي"}</div>
               <div className="text-xs text-primary-foreground/70 font-medium">
-                {locale === "en" ? "Gulf Calibration Laboratory" : "المختبر الخليجي"}
+                {locale === "en" ? "Training & Certification Management System" : "المختبر العربي"}
               </div>
             </div>
           </div>
@@ -129,9 +129,9 @@ export function RegisterForm() {
         <div className="w-full max-w-sm space-y-5 py-8">
           {/* Mobile logo */}
           <div className="flex lg:hidden items-center gap-3 mb-6">
-            <Image src="/gcclab-icon.svg" alt="GCCLAB" width={44} height={44} className="rounded-lg" />
+            <Image src="/gcclab-logo-official.png" alt="GCC Lab" width={44} height={44} className="rounded-lg" />
             <div>
-              <div className="text-lg font-bold tracking-tight">GCCLAB</div>
+              <div className="text-lg font-bold tracking-tight">{locale === "en" ? "GCC Lab" : "المختبر العربي"}</div>
               <div className="text-[10px] text-muted-foreground font-medium">
                 {locale === "en" ? "Create Account" : "إنشاء حساب"}
               </div>

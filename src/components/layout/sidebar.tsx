@@ -45,17 +45,19 @@ export function Sidebar() {
 
   return (
     <aside className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
-      {/* Brand — Official GCCLAB Logo */}
+      {/* Brand — Official GCC Lab Logo */}
       <div className="flex h-16 items-center gap-3 px-5 border-b border-sidebar-border shrink-0">
         <Image
-          src="/gcclab-icon.svg"
-          alt="GCCLAB"
-          width={36}
-          height={36}
-          className="rounded-lg shrink-0"
+          src="/gcclab-logo-official.png"
+          alt="GCC Lab"
+          width={40}
+          height={40}
+          className="shrink-0 object-contain"
         />
         <div className="min-w-0">
-          <div className="text-sm font-bold leading-tight tracking-tight">GCCLAB</div>
+          <div className="text-sm font-bold leading-tight tracking-tight">
+            {locale === "en" ? "GCC Lab" : "المختبر العربي"}
+          </div>
           <div className="text-[10px] text-muted-foreground leading-tight font-medium">
             {locale === "en" ? "Training Management" : "إدارة التدريب"}
           </div>
@@ -101,7 +103,7 @@ export function Sidebar() {
       <div className="border-t border-sidebar-border px-4 py-3 shrink-0">
         <div className="flex items-center gap-2 text-[10px] text-muted-foreground/50">
           <div className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-          <span className="font-medium">GCCLAB v1.0 RC1</span>
+          <span className="font-medium">GCC Lab v1.0 RC1</span>
         </div>
       </div>
     </aside>

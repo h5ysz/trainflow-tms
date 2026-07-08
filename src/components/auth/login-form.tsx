@@ -45,16 +45,18 @@ export function LoginForm() {
         <div className="relative z-10">
           <div className="flex items-center gap-4">
             <Image
-              src="/gcclab-icon.svg"
-              alt="GCCLAB"
-              width={52}
-              height={52}
-              className="rounded-lg"
+              src="/gcclab-logo-official.png"
+              alt="GCC Lab"
+              width={56}
+              height={56}
+              className="object-contain"
             />
             <div>
-              <div className="text-xl font-bold tracking-tight">GCCLAB</div>
+              <div className="text-xl font-bold tracking-tight">
+                {locale === "en" ? "GCC Lab" : "المختبر العربي"}
+              </div>
               <div className="text-xs text-primary-foreground/70 font-medium tracking-wide">
-                {locale === "en" ? "Gulf Calibration Laboratory" : "المختبر الخليجي"}
+                {locale === "en" ? "Training & Certification Management System" : "نظام إدارة التدريب والشهادات"}
               </div>
             </div>
           </div>
@@ -106,16 +108,18 @@ export function LoginForm() {
           {/* Mobile logo */}
           <div className="flex lg:hidden items-center gap-3 mb-8">
             <Image
-              src="/gcclab-icon.svg"
-              alt="GCCLAB"
+              src="/gcclab-logo-official.png"
+              alt="GCC Lab"
               width={44}
               height={44}
-              className="rounded-lg"
+              className="object-contain"
             />
             <div>
-              <div className="text-lg font-bold tracking-tight">GCCLAB</div>
+              <div className="text-lg font-bold tracking-tight">
+                {locale === "en" ? "GCC Lab" : "المختبر العربي"}
+              </div>
               <div className="text-[10px] text-muted-foreground font-medium">
-                {locale === "en" ? "Training Management System" : "نظام إدارة التدريب"}
+                {locale === "en" ? "Training Management" : "إدارة التدريب"}
               </div>
             </div>
           </div>
