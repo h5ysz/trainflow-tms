@@ -7,13 +7,22 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { DataTable, type Column } from "@/components/common/data-table";
 import { EmptyState } from "@/components/common/empty-state";
-import { Users, Search, AlertCircle } from "lucide-react";
+import { FormDialog, Field, FormGrid } from "@/components/common/form-dialog";
+import { RowActions } from "@/components/common/row-actions";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { Users, AlertCircle, Plus, KeyRound, Lock, Unlock, CheckCircle2, XCircle } from "lucide-react";
+import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
 import { useList } from "@/lib/api/hooks";
 import { useAppStore } from "@/lib/store/app-store";
 import { canAccessModule } from "@/lib/auth/permissions";
+import { useEntityActions } from "@/hooks/use-entity-actions";
 
 interface UserRow {
   id: string;
@@ -30,13 +39,52 @@ interface UserRow {
   createdAt: string;
 }
 
+interface LoginRow {
+  id: string;
+  email: string;
+  success: boolean;
+  failureReason: string | null;
+  ipAddress: string | null;
+  attemptedAt: string;
+}
+
+// Mirrors VALID_ROLES in src/app/api/users/route.ts.
+const ROLES = ["SUPER_ADMIN", "COORDINATOR", "TRAINER", "CONTRACTOR"];
+const MIN_PASSWORD = 8;
+
 export function UserManagementRoute() {
   const { t, locale } = useI18n();
   const { toast } = useToast();
   const { user } = useAppStore();
-  const canAccess = canAccessModule(user?.role ?? "CONTRACTOR", "user-management");
 
-  const { data, loading, error, search, setSearch } = useList<UserRow>("/users");
+  const canAccess = canAccessModule(user?.role ?? "CONTRACTOR", "user-management");
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
+
+  const users = useList<UserRow>("/users");
+  const logins = useList<LoginRow>("/login-history");
+
+  const [pwTarget, setPwTarget] = useState<UserRow | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [lockTarget, setLockTarget] = useState<UserRow | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const {
+    dialogOpen, isEditing, formData, setField, submitting, submit, requireFields,
+    openCreate, openEdit, closeDialog,
+    deleteTarget, setDeleteTarget, deleting, confirmDelete,
+  } = useEntityActions<UserRow>({
+    resource: "/users",
+    module: "user-management",
+    refetch: users.refetch,
+    fetchOnEdit: true,
+    toForm: (r) => ({
+      email: r.email,
+      fullName: r.fullName,
+      role: r.role,
+      isActive: r.isActive,
+      language: r.language ?? "en",
+    }),
+  });
 
   if (!canAccess) {
     return (
@@ -45,6 +93,56 @@ export function UserManagementRoute() {
       </div>
     );
   }
+
+  const handleSubmit = () =>
+    void submit(() => {
+      const missing = requireFields({
+        [t("users.email")]: "email",
+        [t("users.fullName")]: "fullName",
+        [t("users.role")]: "role",
+      })();
+      if (missing) return missing;
+      // Password is only set at creation; the reset action changes it later.
+      if (!isEditing) {
+        const pw = (formData.password as string) ?? "";
+        if (pw.length < MIN_PASSWORD) return t("users.weakPassword");
+      }
+      return null;
+    });
+
+  const resetPassword = async () => {
+    if (!pwTarget) return;
+    if (newPassword.length < MIN_PASSWORD) {
+      toast({ title: t("misc.error"), description: t("users.weakPassword"), variant: "destructive" });
+      return;
+    }
+    setBusy("pw");
+    try {
+      await api.post(`/users/${pwTarget.id}/reset-password`, { newPassword, forceChange: true });
+      toast({ title: t("misc.success"), description: t("users.passwordReset") });
+      setPwTarget(null);
+      setNewPassword("");
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const toggleLock = async () => {
+    if (!lockTarget) return;
+    setBusy("lock");
+    try {
+      await api.post(`/users/${lockTarget.id}/lock`, { lock: lockTarget.isActive });
+      toast({ title: t("misc.success"), description: t("misc.updateSuccess") });
+      setLockTarget(null);
+      users.refetch();
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const columns: Column<UserRow>[] = [
     {
@@ -60,11 +158,7 @@ export function UserManagementRoute() {
     {
       key: "role",
       header: locale === "en" ? "Role" : "الدور",
-      cell: (row) => (
-        <Badge variant="outline" className="font-mono text-xs">
-          {row.role}
-        </Badge>
-      ),
+      cell: (row) => <Badge variant="outline" className="font-mono text-xs">{row.role}</Badge>,
     },
     {
       key: "company",
@@ -73,9 +167,7 @@ export function UserManagementRoute() {
         row.companyName ? (
           <div>
             <div className="text-sm">{row.companyName}</div>
-            {row.companyRef && (
-              <div className="text-xs text-muted-foreground">{row.companyRef}</div>
-            )}
+            {row.companyRef && <div className="text-xs text-muted-foreground">{row.companyRef}</div>}
           </div>
         ) : (
           <span className="text-xs text-muted-foreground">—</span>
@@ -93,13 +185,7 @@ export function UserManagementRoute() {
               : "bg-gray-100 text-gray-700 border-gray-200"
           }
         >
-          {row.isActive
-            ? locale === "en"
-              ? "Active"
-              : "نشط"
-            : locale === "en"
-            ? "Inactive"
-            : "غير نشط"}
+          {row.isActive ? (locale === "en" ? "Active" : "نشط") : (locale === "en" ? "Inactive" : "غير نشط")}
         </Badge>
       ),
     },
@@ -109,28 +195,85 @@ export function UserManagementRoute() {
       cell: (row) =>
         row.lastLoginAt ? (
           <span className="text-xs text-muted-foreground">
-            {new Date(row.lastLoginAt).toLocaleDateString(
-              locale === "en" ? "en-GB" : "ar-SA",
-              { year: "numeric", month: "short", day: "numeric" }
-            )}
+            {new Date(row.lastLoginAt).toLocaleDateString(locale === "en" ? "en-GB" : "ar-SA", {
+              year: "numeric", month: "short", day: "numeric",
+            })}
           </span>
         ) : (
           <span className="text-xs text-muted-foreground">—</span>
         ),
     },
     {
-      key: "createdAt",
-      header: locale === "en" ? "Created" : "تاريخ الإنشاء",
-      cell: (row) => (
-        <span className="text-xs text-muted-foreground">
-          {new Date(row.createdAt).toLocaleDateString(
-            locale === "en" ? "en-GB" : "ar-SA",
-            { year: "numeric", month: "short", day: "numeric" }
-          )}
-        </span>
-      ),
+      key: "actions",
+      header: t("action.actions"),
+      headerClassName: "text-end",
+      className: "text-end",
+      cell: (row) => {
+        // The API refuses to delete your own account.
+        const isSelf = row.id === user?.id;
+        return (
+          <RowActions
+            canEdit={isSuperAdmin}
+            canDelete={isSuperAdmin && !isSelf}
+            onEdit={() => void openEdit(row)}
+            onDelete={() => setDeleteTarget(row)}
+            extraItems={
+              isSuperAdmin ? (
+                <>
+                  <DropdownMenuItem onSelect={() => { setNewPassword(""); setPwTarget(row); }}>
+                    <KeyRound className="h-3.5 w-3.5 me-2" />
+                    {t("users.resetPassword")}
+                  </DropdownMenuItem>
+                  {!isSelf && (
+                    <DropdownMenuItem onSelect={() => setLockTarget(row)}>
+                      {row.isActive
+                        ? <><Lock className="h-3.5 w-3.5 me-2" />{t("users.lock")}</>
+                        : <><Unlock className="h-3.5 w-3.5 me-2" />{t("users.unlock")}</>}
+                    </DropdownMenuItem>
+                  )}
+                </>
+              ) : null
+            }
+          />
+        );
+      },
     },
   ];
+
+  const loginColumns: Column<LoginRow>[] = [
+    { key: "email", header: t("users.email"), cell: (r) => <span className="text-sm">{r.email}</span> },
+    {
+      key: "success",
+      header: locale === "en" ? "Result" : "النتيجة",
+      cell: (r) =>
+        r.success ? (
+          <span className="inline-flex items-center gap-1.5 text-success text-xs font-medium">
+            <CheckCircle2 className="h-3.5 w-3.5" />{t("users.loginSuccess")}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 text-destructive text-xs font-medium">
+            <XCircle className="h-3.5 w-3.5" />{r.failureReason ?? t("users.loginFailed")}
+          </span>
+        ),
+    },
+    {
+      key: "ip",
+      header: locale === "en" ? "IP Address" : "عنوان IP",
+      cell: (r) => <span className="text-xs font-mono text-muted-foreground">{r.ipAddress ?? "—"}</span>,
+    },
+    {
+      key: "attemptedAt",
+      header: locale === "en" ? "When" : "الوقت",
+      cell: (r) => <span className="text-xs text-muted-foreground">{new Date(r.attemptedAt).toLocaleString()}</span>,
+    },
+  ];
+
+  const newButton = isSuperAdmin && (
+    <Button onClick={() => openCreate({ role: "COORDINATOR", language: "en", isActive: true })}>
+      <Plus className="h-4 w-4 me-1.5" />
+      {t("users.new")}
+    </Button>
+  );
 
   return (
     <div className="space-y-5">
@@ -141,41 +284,160 @@ export function UserManagementRoute() {
             ? "Manage all system users, their roles, and access"
             : "إدارة جميع مستخدمي النظام وأدوارهم وصلاحياتهم"
         }
+        actions={newButton}
       />
 
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder={locale === "en" ? "Search users..." : "بحث عن المستخدمين..."}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="ps-9 h-10"
-          />
-        </div>
-      </div>
+      <Tabs defaultValue="users">
+        <TabsList>
+          <TabsTrigger value="users">{t("nav.userManagement")}</TabsTrigger>
+          <TabsTrigger value="logins">{t("users.loginHistory")}</TabsTrigger>
+        </TabsList>
 
-      <Card className="p-0">
-        {error ? (
-          <div className="p-6">
-            <EmptyState icon={AlertCircle} title={t("misc.error")} subtitle={error} />
-          </div>
-        ) : (
-          <DataTable
-            data={data}
-            columns={columns}
-            loading={loading}
-            rowKey={(r) => r.id}
-            emptyIcon={Users}
-            emptyTitle={locale === "en" ? "No users found" : "لا يوجد مستخدمون"}
-            emptySubtitle={
-              locale === "en"
-                ? "System users will appear here"
-                : "ستظهر مستخدمو النظام هنا"
-            }
-          />
-        )}
-      </Card>
+        <TabsContent value="users" className="mt-4">
+          <Card className="p-0">
+            {users.error ? (
+              <div className="p-6">
+                <EmptyState icon={AlertCircle} title={t("misc.error")} subtitle={users.error} />
+              </div>
+            ) : (
+              <DataTable
+                data={users.data}
+                columns={columns}
+                loading={users.loading}
+                rowKey={(r) => r.id}
+                searchable
+                searchValue={users.search}
+                onSearchChange={users.setSearch}
+                page={users.page}
+                total={users.pagination?.total ?? 0}
+                pageSize={users.pagination?.pageSize ?? 10}
+                onPageChange={users.setPage}
+                emptyIcon={Users}
+                emptyTitle={locale === "en" ? "No users found" : "لا يوجد مستخدمون"}
+                emptySubtitle={locale === "en" ? "System users will appear here" : "ستظهر مستخدمو النظام هنا"}
+              />
+            )}
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="logins" className="mt-4">
+          <Card className="p-0">
+            {logins.error ? (
+              <div className="p-6">
+                <EmptyState icon={AlertCircle} title={t("misc.error")} subtitle={logins.error} />
+              </div>
+            ) : (
+              <DataTable
+                data={logins.data}
+                columns={loginColumns}
+                loading={logins.loading}
+                rowKey={(r) => r.id}
+                searchable
+                searchValue={logins.search}
+                onSearchChange={logins.setSearch}
+                page={logins.page}
+                total={logins.pagination?.total ?? 0}
+                pageSize={logins.pagination?.pageSize ?? 10}
+                onPageChange={logins.setPage}
+                emptyIcon={Users}
+                emptyTitle={t("users.noLogins")}
+                emptySubtitle={t("users.noLoginsSubtitle")}
+              />
+            )}
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      <FormDialog
+        open={dialogOpen}
+        onOpenChange={(o) => !o && closeDialog()}
+        title={isEditing ? t("users.edit") : t("users.new")}
+        icon={Users}
+        size="lg"
+        onSubmit={handleSubmit}
+        isSubmitting={submitting}
+      >
+        <div className="space-y-5">
+          <FormGrid>
+            <Field label={t("users.fullName")} required>
+              <Input value={(formData.fullName as string) ?? ""} onChange={(e) => setField("fullName", e.target.value)} />
+            </Field>
+            <Field label={t("users.email")} required>
+              <Input type="email" value={(formData.email as string) ?? ""} onChange={(e) => setField("email", e.target.value)} />
+            </Field>
+            {!isEditing && (
+              <Field label={t("users.password")} required hint={t("users.weakPassword")}>
+                <Input
+                  type="password"
+                  value={(formData.password as string) ?? ""}
+                  onChange={(e) => setField("password", e.target.value)}
+                />
+              </Field>
+            )}
+            <Field label={t("users.role")} required>
+              <Select value={(formData.role as string) ?? "COORDINATOR"} onValueChange={(v) => setField("role", v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label={t("settings.defaultLanguage")}>
+              <Select value={(formData.language as string) ?? "en"} onValueChange={(v) => setField("language", v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="en">English</SelectItem>
+                  <SelectItem value="ar">العربية</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+          </FormGrid>
+
+          <label className="flex items-center gap-2 text-sm border-t pt-4">
+            <Switch
+              checked={(formData.isActive as boolean) ?? true}
+              onCheckedChange={(v) => setField("isActive", v)}
+            />
+            {locale === "en" ? "Active" : "نشط"}
+          </label>
+        </div>
+      </FormDialog>
+
+      <FormDialog
+        open={pwTarget !== null}
+        onOpenChange={(o) => !o && setPwTarget(null)}
+        title={t("users.resetPassword")}
+        description={pwTarget?.email}
+        icon={KeyRound}
+        size="sm"
+        isSubmitting={busy === "pw"}
+        onSubmit={() => void resetPassword()}
+      >
+        {/* Email is stubbed, so the admin sets the password and passes it on directly. */}
+        <Field label={t("users.newPassword")} required hint={t("users.weakPassword")}>
+          <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+        </Field>
+      </FormDialog>
+
+      <ConfirmDialog
+        open={lockTarget !== null}
+        onOpenChange={(o) => !o && setLockTarget(null)}
+        title={lockTarget?.isActive ? t("users.lock") : t("users.unlock")}
+        description={lockTarget?.email}
+        confirmLabel={lockTarget?.isActive ? t("users.lock") : t("users.unlock")}
+        destructive={lockTarget?.isActive}
+        loading={busy === "lock"}
+        onConfirm={() => void toggleLock()}
+      />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        description={deleteTarget?.email}
+        destructive
+        loading={deleting}
+        onConfirm={() => void confirmDelete()}
+      />
     </div>
   );
 }
