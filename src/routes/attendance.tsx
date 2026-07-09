@@ -5,16 +5,15 @@ import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
 import { FormDialog, Field, FormGrid } from "@/components/common/form-dialog";
+import { RowActions } from "@/components/common/row-actions";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/common/status-badge";
 import { UserCheck, Plus, QrCode, Calendar, Building2, AlertCircle } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
-import { api } from "@/lib/api/client";
-import { useToast } from "@/hooks/use-toast";
-import { useAppStore } from "@/lib/store/app-store";
-import { canPerformAction } from "@/lib/auth/permissions";
+import { useEntityActions } from "@/hooks/use-entity-actions";
 
 interface AttendanceRow {
   id: string;
@@ -30,19 +29,26 @@ interface AttendanceRow {
 
 const STATUSES = ["REGISTERED", "PRESENT", "ABSENT", "LATE", "EXCUSED"];
 
+const NEW_ATTENDANCE = { status: "PRESENT", checkInMethod: "MANUAL" };
+
 export function AttendanceRoute() {
   const { t } = useI18n();
-  const { toast } = useToast();
-  const { user } = useAppStore();
-  const [dialogOpen, setDialogOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [formData, setFormData] = useState<Record<string, unknown>>({ status: "PRESENT" });
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
     useList<AttendanceRow>("/attendance");
 
-  const canCreate = user ? canPerformAction(user.role, "attendance", "create") : false;
+  const {
+    canCreate, canEdit, canDelete,
+    dialogOpen, isEditing, formData, setField, submitting, submit, requireFields,
+    openCreate, openEdit, closeDialog,
+    deleteTarget, setDeleteTarget, deleting, confirmDelete,
+  } = useEntityActions<AttendanceRow>({
+    resource: "/attendance",
+    module: "attendance",
+    refetch,
+    fetchOnEdit: true,
+  });
 
   const columns: Column<AttendanceRow>[] = [
     {
@@ -96,30 +102,22 @@ export function AttendanceRoute() {
       header: t("action.actions"),
       headerClassName: "text-end",
       className: "text-end",
-      cell: () => <Button variant="ghost" size="sm" className="h-8">{t("action.edit")}</Button>,
+      cell: (row) => (
+        <RowActions
+          canEdit={canEdit}
+          canDelete={canDelete}
+          onEdit={() => void openEdit(row)}
+          onDelete={() => setDeleteTarget(row)}
+        />
+      ),
     },
   ];
 
-  const handleSubmit = async () => {
-    if (!formData.sessionId || !formData.traineeName) {
-      toast({ title: t("misc.error"), description: "Session and trainee name are required", variant: "destructive" });
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await api.post("/attendance", { ...formData, checkInMethod: "MANUAL" });
-      toast({ title: t("misc.success"), description: t("misc.createSuccess") });
-      setDialogOpen(false);
-      setFormData({ status: "PRESENT" });
-      refetch();
-    } catch (e) {
-      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const setField = (k: string, v: unknown) => setFormData((p) => ({ ...p, [k]: v }));
+  const handleSubmit = () =>
+    void submit(requireFields({
+      [t("attendance.session")]: "sessionId",
+      [t("attendance.traineeName")]: "traineeName",
+    }));
 
   return (
     <div className="space-y-5">
@@ -133,7 +131,7 @@ export function AttendanceRoute() {
               <Button variant="outline" onClick={() => setScanOpen(true)}>
                 <QrCode className="h-4 w-4 me-1.5" />{t("attendance.scanQR")}
               </Button>
-              <Button onClick={() => setDialogOpen(true)}>
+              <Button onClick={() => openCreate(NEW_ATTENDANCE)}>
                 <Plus className="h-4 w-4 me-1.5" />{t("attendance.manualCheckIn")}
               </Button>
             </div>
@@ -164,8 +162,8 @@ export function AttendanceRoute() {
 
       <FormDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        title={t("attendance.manualCheckIn")}
+        onOpenChange={(o) => !o && closeDialog()}
+        title={isEditing ? t("action.edit") : t("attendance.manualCheckIn")}
         icon={UserCheck}
         onSubmit={handleSubmit}
         isSubmitting={submitting}
@@ -212,6 +210,15 @@ export function AttendanceRoute() {
           <p className="mt-4 text-sm text-muted-foreground">{t("qr.scanInstructions")}</p>
         </div>
       </FormDialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        description={deleteTarget?.traineeName}
+        destructive
+        loading={deleting}
+        onConfirm={() => void confirmDelete()}
+      />
     </div>
   );
 }

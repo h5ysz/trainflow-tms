@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect, useState as useReactState } from "react";
+import { useState, useEffect } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
 import { FormDialog, Field, FormGrid } from "@/components/common/form-dialog";
+import { RowActions } from "@/components/common/row-actions";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,9 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { FilePen, Plus, Check, X, User, AlertCircle } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api } from "@/lib/api/client";
-import { useToast } from "@/hooks/use-toast";
-import { useAppStore } from "@/lib/store/app-store";
-import { canPerformAction } from "@/lib/auth/permissions";
+import { useEntityActions } from "@/hooks/use-entity-actions";
+import { newQuestionDefaults, validateQuestion } from "@/lib/questions";
 
 interface CourseOption { id: string; title: string; code: string; }
 interface Question {
@@ -45,25 +46,22 @@ const TEST_TYPE = "PRE_TEST";
 
 export function PreTestRoute() {
   const { t } = useI18n();
-  const { toast } = useToast();
-  const { user } = useAppStore();
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [formData, setFormData] = useState<Record<string, unknown>>({
-    type: "SINGLE_CHOICE",
-    testType: TEST_TYPE,
-    points: 1,
-    order: 1,
-    isActive: true,
-    options: ["", "", "", ""],
-    correctAnswers: [] as number[],
-  });
-  const [courses, setCourses] = useReactState<CourseOption[]>([]);
+  const [courses, setCourses] = useState<CourseOption[]>([]);
 
   const questionsList = useList<Question>("/questions", { extraParams: { testType: TEST_TYPE } });
   const resultsList = useList<TestResultRow>("/test-results", { extraParams: { testType: TEST_TYPE } });
 
-  const canCreate = user ? canPerformAction(user.role, "pre-test", "create") : false;
+  const {
+    canCreate, canEdit, canDelete,
+    dialogOpen, isEditing, formData, setField, submitting, submit,
+    openCreate, openEdit, closeDialog,
+    deleteTarget, setDeleteTarget, deleting, confirmDelete,
+  } = useEntityActions<Question>({
+    resource: "/questions",
+    module: "pre-test",
+    refetch: questionsList.refetch,
+    fetchOnEdit: true,
+  });
 
   useEffect(() => {
     if (dialogOpen && courses.length === 0) {
@@ -97,7 +95,14 @@ export function PreTestRoute() {
       ),
     },
     { key: "actions", header: t("action.actions"), headerClassName: "text-end", className: "text-end",
-      cell: () => <Button variant="ghost" size="sm" className="h-8">{t("action.edit")}</Button>,
+      cell: (row) => (
+        <RowActions
+          canEdit={canEdit}
+          canDelete={canDelete}
+          onEdit={() => void openEdit(row)}
+          onDelete={() => setDeleteTarget(row)}
+        />
+      ),
     },
   ];
 
@@ -132,35 +137,15 @@ export function PreTestRoute() {
     { key: "attemptedAt", header: t("preTest.attemptedAt"), cell: (r) => <span className="text-xs text-muted-foreground">{new Date(r.attemptedAt).toLocaleString()}</span> },
   ];
 
-  const handleSubmit = async () => {
-    if (!formData.courseId || !formData.text) {
-      toast({ title: t("misc.error"), description: "Course and text are required", variant: "destructive" });
-      return;
-    }
-    const options = (formData.options as string[]).filter((o) => o.trim() !== "");
-    if (options.length < 2) {
-      toast({ title: t("misc.error"), description: "At least 2 options required", variant: "destructive" });
-      return;
-    }
-    if ((formData.correctAnswers as number[]).length === 0) {
-      toast({ title: t("misc.error"), description: "Mark at least 1 correct answer", variant: "destructive" });
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await api.post("/questions", formData);
-      toast({ title: t("misc.success"), description: t("misc.createSuccess") });
-      setDialogOpen(false);
-      setFormData({ type: "SINGLE_CHOICE", testType: TEST_TYPE, points: 1, order: 1, isActive: true, options: ["", "", "", ""], correctAnswers: [] });
-      questionsList.refetch();
-    } catch (e) {
-      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const setField = (k: string, v: unknown) => setFormData((p) => ({ ...p, [k]: v }));
+  const handleSubmit = () =>
+    void submit(() =>
+      validateQuestion(formData, {
+        course: `${t("courses.title2")} — ${t("misc.required")}`,
+        text: `${t("preTest.questionText")} — ${t("misc.required")}`,
+        minOptions: t("questions.minOptions"),
+        minCorrect: t("questions.minCorrect"),
+      })
+    );
 
   const toggleCorrect = (idx: number) => {
     const current = (formData.correctAnswers as number[]) ?? [];
@@ -180,7 +165,7 @@ export function PreTestRoute() {
         title={t("preTest.title")}
         subtitle={t("preTest.subtitle")}
         icon={FilePen}
-        actions={canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("preTest.newQuestion")}</Button>}
+        actions={canCreate && <Button onClick={() => openCreate(newQuestionDefaults(TEST_TYPE))}><Plus className="h-4 w-4 me-1.5" />{t("preTest.newQuestion")}</Button>}
       />
 
       <Tabs defaultValue="questions">
@@ -209,7 +194,7 @@ export function PreTestRoute() {
             emptyIcon={FilePen}
             emptyTitle={t("preTest.empty.title")}
             emptySubtitle={t("preTest.empty.subtitle")}
-            emptyAction={canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("preTest.newQuestion")}</Button>}
+            emptyAction={canCreate && <Button onClick={() => openCreate(newQuestionDefaults(TEST_TYPE))}><Plus className="h-4 w-4 me-1.5" />{t("preTest.newQuestion")}</Button>}
           />
         </TabsContent>
         <TabsContent value="results" className="mt-4">
@@ -236,8 +221,8 @@ export function PreTestRoute() {
 
       <FormDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        title={t("preTest.newQuestion")}
+        onOpenChange={(o) => !o && closeDialog()}
+        title={isEditing ? t("action.edit") : t("preTest.newQuestion")}
         icon={FilePen}
         size="lg"
         onSubmit={handleSubmit}
@@ -246,7 +231,7 @@ export function PreTestRoute() {
         <div className="space-y-4">
           <FormGrid>
             <Field label={t("courses.title2")} required>
-              <Select onValueChange={(v) => setField("courseId", v)}>
+              <Select value={(formData.courseId as string) ?? ""} onValueChange={(v) => setField("courseId", v)}>
                 <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                 <SelectContent>
                   {courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.title} ({c.code})</SelectItem>)}
@@ -308,6 +293,15 @@ export function PreTestRoute() {
           </FormGrid>
         </div>
       </FormDialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        description={deleteTarget?.text}
+        destructive
+        loading={deleting}
+        onConfirm={() => void confirmDelete()}
+      />
     </div>
   );
 }

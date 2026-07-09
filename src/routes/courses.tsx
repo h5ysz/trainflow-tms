@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
 import { FormDialog, Field, FormGrid } from "@/components/common/form-dialog";
+import { RowActions } from "@/components/common/row-actions";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,10 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { StatusBadge } from "@/components/common/status-badge";
 import { BookOpen, Plus, Clock, Users, Award, AlertCircle } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
-import { api } from "@/lib/api/client";
-import { useToast } from "@/hooks/use-toast";
-import { useAppStore } from "@/lib/store/app-store";
-import { canPerformAction } from "@/lib/auth/permissions";
+import { useEntityActions } from "@/hooks/use-entity-actions";
 
 interface Course {
   id: string;
@@ -38,28 +36,35 @@ interface Course {
 
 const STATUSES = ["ACTIVE", "INACTIVE", "DRAFT"];
 
+const NEW_COURSE = {
+  durationHours: 8,
+  validityMonths: 12,
+  passScore: 70,
+  maxTrainees: 20,
+  language: "en",
+  status: "ACTIVE",
+  hasPreTest: true,
+  hasFinalTest: true,
+  hasEvaluation: true,
+};
+
 export function CoursesRoute() {
   const { t } = useI18n();
-  const { toast } = useToast();
-  const { user } = useAppStore();
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [formData, setFormData] = useState<Record<string, unknown>>({
-    durationHours: 8,
-    validityMonths: 12,
-    passScore: 70,
-    maxTrainees: 20,
-    language: "en",
-    status: "ACTIVE",
-    hasPreTest: true,
-    hasFinalTest: true,
-    hasEvaluation: true,
-  });
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
     useList<Course>("/courses");
 
-  const canCreate = user ? canPerformAction(user.role, "courses", "create") : false;
+  const {
+    canCreate, canEdit, canDelete,
+    dialogOpen, isEditing, formData, setField, submitting, submit, requireFields,
+    openCreate, openEdit, closeDialog,
+    deleteTarget, setDeleteTarget, deleting, confirmDelete,
+  } = useEntityActions<Course>({
+    resource: "/courses",
+    module: "courses",
+    refetch,
+    fetchOnEdit: true,
+  });
 
   const columns: Column<Course>[] = [
     {
@@ -114,29 +119,22 @@ export function CoursesRoute() {
       header: t("action.actions"),
       headerClassName: "text-end",
       className: "text-end",
-      cell: () => <Button variant="ghost" size="sm" className="h-8">{t("action.details")}</Button>,
+      cell: (row) => (
+        <RowActions
+          canEdit={canEdit}
+          canDelete={canDelete}
+          onEdit={() => void openEdit(row)}
+          onDelete={() => setDeleteTarget(row)}
+        />
+      ),
     },
   ];
 
-  const handleSubmit = async () => {
-    if (!formData.code || !formData.title) {
-      toast({ title: t("misc.error"), description: "Code and title are required", variant: "destructive" });
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await api.post("/courses", formData);
-      toast({ title: t("misc.success"), description: t("misc.createSuccess") });
-      setDialogOpen(false);
-      refetch();
-    } catch (e) {
-      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const setField = (k: string, v: unknown) => setFormData((p) => ({ ...p, [k]: v }));
+  const handleSubmit = () =>
+    void submit(requireFields({
+      [t("courses.code")]: "code",
+      [t("courses.title2")]: "title",
+    }));
 
   return (
     <div className="space-y-5">
@@ -144,7 +142,7 @@ export function CoursesRoute() {
         title={t("courses.title")}
         subtitle={t("courses.subtitle")}
         icon={BookOpen}
-        actions={canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("courses.new")}</Button>}
+        actions={canCreate && <Button onClick={() => openCreate(NEW_COURSE)}><Plus className="h-4 w-4 me-1.5" />{t("courses.new")}</Button>}
       />
       {error && (
         <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
@@ -166,13 +164,13 @@ export function CoursesRoute() {
         emptyIcon={BookOpen}
         emptyTitle={t("courses.empty.title")}
         emptySubtitle={t("courses.empty.subtitle")}
-        emptyAction={canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("courses.new")}</Button>}
+        emptyAction={canCreate && <Button onClick={() => openCreate(NEW_COURSE)}><Plus className="h-4 w-4 me-1.5" />{t("courses.new")}</Button>}
       />
 
       <FormDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        title={t("courses.new")}
+        onOpenChange={(o) => !o && closeDialog()}
+        title={isEditing ? t("courses.edit") : t("courses.new")}
         description={t("courses.subtitle")}
         icon={BookOpen}
         size="lg"
@@ -241,6 +239,15 @@ export function CoursesRoute() {
           </div>
         </div>
       </FormDialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        description={deleteTarget ? `${deleteTarget.code} — ${deleteTarget.title}` : undefined}
+        destructive
+        loading={deleting}
+        onConfirm={() => void confirmDelete()}
+      />
     </div>
   );
 }

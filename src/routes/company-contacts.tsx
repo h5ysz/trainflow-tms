@@ -1,22 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
 import { FormDialog, Field, FormGrid } from "@/components/common/form-dialog";
+import { RowActions } from "@/components/common/row-actions";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Contact as ContactIcon, Plus, Mail, Phone, Star, Loader2, AlertCircle } from "lucide-react";
+import { Contact as ContactIcon, Plus, Mail, Phone, Star, AlertCircle } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api } from "@/lib/api/client";
-import { useToast } from "@/hooks/use-toast";
-import { useAppStore } from "@/lib/store/app-store";
-import { canPerformAction } from "@/lib/auth/permissions";
-import { useEffect, useState as useReactState } from "react";
+import { useEntityActions } from "@/hooks/use-entity-actions";
 
 interface CompanyOption { id: string; name: string; }
 interface Contact {
@@ -35,17 +34,22 @@ interface Contact {
 
 export function CompanyContactsRoute() {
   const { t } = useI18n();
-  const { toast } = useToast();
-  const { user } = useAppStore();
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [formData, setFormData] = useState<Record<string, unknown>>({});
-  const [companies, setCompanies] = useReactState<CompanyOption[]>([]);
+  const [companies, setCompanies] = useState<CompanyOption[]>([]);
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
     useList<Contact>("/company-contacts");
 
-  const canCreate = user ? canPerformAction(user.role, "company-contacts", "create") : false;
+  const {
+    canCreate, canEdit, canDelete,
+    dialogOpen, isEditing, formData, setField, submitting, submit, requireFields,
+    openCreate, openEdit, closeDialog,
+    deleteTarget, setDeleteTarget, deleting, confirmDelete,
+  } = useEntityActions<Contact>({
+    resource: "/company-contacts",
+    module: "company-contacts",
+    refetch,
+    fetchOnEdit: true,
+  });
 
   // Load companies for the dropdown when dialog opens
   useEffect(() => {
@@ -111,30 +115,22 @@ export function CompanyContactsRoute() {
       header: t("action.actions"),
       headerClassName: "text-end",
       className: "text-end",
-      cell: () => <Button variant="ghost" size="sm" className="h-8">{t("action.details")}</Button>,
+      cell: (row) => (
+        <RowActions
+          canEdit={canEdit}
+          canDelete={canDelete}
+          onEdit={() => void openEdit(row)}
+          onDelete={() => setDeleteTarget(row)}
+        />
+      ),
     },
   ];
 
-  const handleSubmit = async () => {
-    if (!formData.companyId || !formData.fullName) {
-      toast({ title: t("misc.error"), description: "Company and name are required", variant: "destructive" });
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await api.post("/company-contacts", formData);
-      toast({ title: t("misc.success"), description: t("misc.createSuccess") });
-      setDialogOpen(false);
-      setFormData({});
-      refetch();
-    } catch (e) {
-      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const setField = (k: string, v: unknown) => setFormData((p) => ({ ...p, [k]: v }));
+  const handleSubmit = () =>
+    void submit(requireFields({
+      [t("contacts.company")]: "companyId",
+      [t("contacts.fullName")]: "fullName",
+    }));
 
   return (
     <div className="space-y-5">
@@ -142,7 +138,7 @@ export function CompanyContactsRoute() {
         title={t("contacts.title")}
         subtitle={t("contacts.subtitle")}
         icon={ContactIcon}
-        actions={canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("contacts.new")}</Button>}
+        actions={canCreate && <Button onClick={() => openCreate({ isActive: true })}><Plus className="h-4 w-4 me-1.5" />{t("contacts.new")}</Button>}
       />
       {error && (
         <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
@@ -164,13 +160,13 @@ export function CompanyContactsRoute() {
         emptyIcon={ContactIcon}
         emptyTitle={t("contacts.empty.title")}
         emptySubtitle={t("contacts.empty.subtitle")}
-        emptyAction={canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("contacts.new")}</Button>}
+        emptyAction={canCreate && <Button onClick={() => openCreate({ isActive: true })}><Plus className="h-4 w-4 me-1.5" />{t("contacts.new")}</Button>}
       />
 
       <FormDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        title={t("contacts.new")}
+        onOpenChange={(o) => !o && closeDialog()}
+        title={isEditing ? t("contacts.edit") : t("contacts.new")}
         description={t("contacts.subtitle")}
         icon={ContactIcon}
         size="lg"
@@ -180,7 +176,7 @@ export function CompanyContactsRoute() {
         <div className="space-y-5">
           <FormGrid>
             <Field label={t("contacts.company")} required>
-              <Select onValueChange={(v) => setField("companyId", v)}>
+              <Select value={(formData.companyId as string) ?? ""} onValueChange={(v) => setField("companyId", v)}>
                 <SelectTrigger><SelectValue placeholder={t("contacts.company")} /></SelectTrigger>
                 <SelectContent>
                   {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
@@ -222,11 +218,20 @@ export function CompanyContactsRoute() {
               <Switch checked={(formData.isPrimary as boolean) ?? false} onCheckedChange={(v) => setField("isPrimary", v)} /> {t("contacts.isPrimary")}
             </label>
             <label className="flex items-center gap-2 text-sm">
-              <Switch defaultChecked onCheckedChange={(v) => setField("isActive", v)} /> {t("contacts.isActive")}
+              <Switch checked={(formData.isActive as boolean) ?? true} onCheckedChange={(v) => setField("isActive", v)} /> {t("contacts.isActive")}
             </label>
           </div>
         </div>
       </FormDialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        description={deleteTarget?.fullName}
+        destructive
+        loading={deleting}
+        onConfirm={() => void confirmDelete()}
+      />
     </div>
   );
 }

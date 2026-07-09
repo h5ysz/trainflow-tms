@@ -1,22 +1,18 @@
 "use client";
 
-import { useState } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
 import { FormDialog, Field, FormGrid } from "@/components/common/form-dialog";
 import { StatusBadge } from "@/components/common/status-badge";
+import { RowActions } from "@/components/common/row-actions";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { Building2, Plus, Mail, Phone, MapPin, Loader2, AlertCircle } from "lucide-react";
+import { Building2, Plus, Mail, Phone, MapPin, AlertCircle } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
-import { api } from "@/lib/api/client";
-import { useToast } from "@/hooks/use-toast";
-import { useAppStore } from "@/lib/store/app-store";
-import { canPerformAction } from "@/lib/auth/permissions";
+import { useEntityActions } from "@/hooks/use-entity-actions";
 
 interface Company {
   id: string;
@@ -39,16 +35,21 @@ const STATUS_OPTIONS = ["ACTIVE", "INACTIVE", "SUSPENDED"];
 
 export function CompaniesRoute() {
   const { t } = useI18n();
-  const { toast } = useToast();
-  const { user } = useAppStore();
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [formData, setFormData] = useState<Record<string, unknown>>({});
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
     useList<Company>("/companies", { pageSize: 10 });
 
-  const canCreate = user ? canPerformAction(user.role, "companies", "create") : false;
+  const {
+    canCreate, canEdit, canDelete,
+    dialogOpen, isEditing, formData, setField, submitting, submit, requireFields,
+    openCreate, openEdit, closeDialog,
+    deleteTarget, setDeleteTarget, deleting, confirmDelete,
+  } = useEntityActions<Company>({
+    resource: "/companies",
+    module: "companies",
+    refetch,
+    fetchOnEdit: true,
+  });
 
   const columns: Column<Company>[] = [
     {
@@ -120,36 +121,22 @@ export function CompaniesRoute() {
       header: t("action.actions"),
       headerClassName: "text-end",
       className: "text-end",
-      cell: () => (
-        <Button variant="ghost" size="sm" className="h-8">
-          {t("action.details")}
-        </Button>
+      cell: (row) => (
+        <RowActions
+          canEdit={canEdit}
+          canDelete={canDelete}
+          onEdit={() => void openEdit(row)}
+          onDelete={() => setDeleteTarget(row)}
+        />
       ),
     },
   ];
 
-  const handleSubmit = async () => {
-    if (!formData.name) {
-      toast({ title: t("misc.error"), description: "Name is required", variant: "destructive" });
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await api.post("/companies", formData);
-      toast({ title: t("misc.success"), description: t("misc.createSuccess") });
-      setDialogOpen(false);
-      setFormData({});
-      refetch();
-    } catch (e) {
-      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const setField = (key: string, value: unknown) => {
-    setFormData((prev) => ({ ...prev, [key]: value }));
-  };
+  const handleSubmit = () =>
+    void submit(requireFields({
+      [t("companies.name")]: "name",
+      [t("companies.email")]: "email",
+    }));
 
   return (
     <div className="space-y-5">
@@ -159,7 +146,7 @@ export function CompaniesRoute() {
         icon={Building2}
         actions={
           canCreate && (
-            <Button onClick={() => setDialogOpen(true)}>
+            <Button onClick={() => openCreate({ status: "ACTIVE" })}>
               <Plus className="h-4 w-4 me-1.5" />
               {t("companies.new")}
             </Button>
@@ -191,7 +178,7 @@ export function CompaniesRoute() {
         emptySubtitle={t("companies.empty.subtitle")}
         emptyAction={
           canCreate && (
-            <Button onClick={() => setDialogOpen(true)}>
+            <Button onClick={() => openCreate({ status: "ACTIVE" })}>
               <Plus className="h-4 w-4 me-1.5" />
               {t("companies.new")}
             </Button>
@@ -201,8 +188,8 @@ export function CompaniesRoute() {
 
       <FormDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        title={t("companies.new")}
+        onOpenChange={(o) => !o && closeDialog()}
+        title={isEditing ? t("companies.edit") : t("companies.new")}
         description={t("companies.subtitle")}
         icon={Building2}
         size="lg"
@@ -345,7 +332,10 @@ export function CompaniesRoute() {
 
           <div className="border-t pt-4">
             <Field label={t("companies.status")}>
-              <Select defaultValue="ACTIVE" onValueChange={(v) => setField("status", v)}>
+              <Select
+                value={(formData.status as string) ?? "ACTIVE"}
+                onValueChange={(v) => setField("status", v)}
+              >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {STATUS_OPTIONS.map((s) => (
@@ -357,6 +347,15 @@ export function CompaniesRoute() {
           </div>
         </div>
       </FormDialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        description={deleteTarget?.name}
+        destructive
+        loading={deleting}
+        onConfirm={() => void confirmDelete()}
+      />
     </div>
   );
 }

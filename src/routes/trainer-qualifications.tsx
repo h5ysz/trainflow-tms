@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect, useState as useReactState } from "react";
+import { useState, useEffect } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
 import { FormDialog, Field, FormGrid } from "@/components/common/form-dialog";
+import { RowActions } from "@/components/common/row-actions";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -12,9 +14,8 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { Award, Plus, Calendar, FileText, User, AlertCircle } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api } from "@/lib/api/client";
-import { useToast } from "@/hooks/use-toast";
-import { useAppStore } from "@/lib/store/app-store";
-import { canPerformAction } from "@/lib/auth/permissions";
+import { useEntityActions } from "@/hooks/use-entity-actions";
+import { toDateInput } from "@/lib/utils";
 
 interface TrainerOption { id: string; fullName: string; }
 interface Qual {
@@ -30,17 +31,27 @@ interface Qual {
 
 export function TrainerQualificationsRoute() {
   const { t } = useI18n();
-  const { toast } = useToast();
-  const { user } = useAppStore();
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [formData, setFormData] = useState<Record<string, unknown>>({});
-  const [trainers, setTrainers] = useReactState<TrainerOption[]>([]);
+  const [trainers, setTrainers] = useState<TrainerOption[]>([]);
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
     useList<Qual>("/trainer-qualifications");
 
-  const canCreate = user ? canPerformAction(user.role, "trainer-qualifications", "create") : false;
+  const {
+    canCreate, canEdit, canDelete,
+    dialogOpen, isEditing, formData, setField, submitting, submit, requireFields,
+    openCreate, openEdit, closeDialog,
+    deleteTarget, setDeleteTarget, deleting, confirmDelete,
+  } = useEntityActions<Qual>({
+    resource: "/trainer-qualifications",
+    module: "trainer-qualifications",
+    refetch,
+    fetchOnEdit: true,
+    toForm: (r) => ({
+      ...r,
+      issueDate: toDateInput(r.issueDate),
+      expiryDate: toDateInput(r.expiryDate),
+    }),
+  });
 
   useEffect(() => {
     if (dialogOpen && trainers.length === 0) {
@@ -104,30 +115,22 @@ export function TrainerQualificationsRoute() {
       header: t("action.actions"),
       headerClassName: "text-end",
       className: "text-end",
-      cell: () => <Button variant="ghost" size="sm" className="h-8">{t("action.edit")}</Button>,
+      cell: (row) => (
+        <RowActions
+          canEdit={canEdit}
+          canDelete={canDelete}
+          onEdit={() => void openEdit(row)}
+          onDelete={() => setDeleteTarget(row)}
+        />
+      ),
     },
   ];
 
-  const handleSubmit = async () => {
-    if (!formData.trainerId || !formData.title) {
-      toast({ title: t("misc.error"), description: "Trainer and title are required", variant: "destructive" });
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await api.post("/trainer-qualifications", formData);
-      toast({ title: t("misc.success"), description: t("misc.createSuccess") });
-      setDialogOpen(false);
-      setFormData({});
-      refetch();
-    } catch (e) {
-      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const setField = (k: string, v: unknown) => setFormData((p) => ({ ...p, [k]: v }));
+  const handleSubmit = () =>
+    void submit(requireFields({
+      [t("qualifications.trainer")]: "trainerId",
+      [t("qualifications.title2")]: "title",
+    }));
 
   return (
     <div className="space-y-5">
@@ -135,7 +138,7 @@ export function TrainerQualificationsRoute() {
         title={t("qualifications.title")}
         subtitle={t("qualifications.subtitle")}
         icon={Award}
-        actions={canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("qualifications.new")}</Button>}
+        actions={canCreate && <Button onClick={() => openCreate()}><Plus className="h-4 w-4 me-1.5" />{t("qualifications.new")}</Button>}
       />
       {error && (
         <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
@@ -157,13 +160,13 @@ export function TrainerQualificationsRoute() {
         emptyIcon={Award}
         emptyTitle={t("qualifications.empty.title")}
         emptySubtitle={t("qualifications.empty.subtitle")}
-        emptyAction={canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("qualifications.new")}</Button>}
+        emptyAction={canCreate && <Button onClick={() => openCreate()}><Plus className="h-4 w-4 me-1.5" />{t("qualifications.new")}</Button>}
       />
 
       <FormDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        title={t("qualifications.new")}
+        onOpenChange={(o) => !o && closeDialog()}
+        title={isEditing ? t("qualifications.edit") : t("qualifications.new")}
         description={t("qualifications.subtitle")}
         icon={Award}
         onSubmit={handleSubmit}
@@ -172,7 +175,7 @@ export function TrainerQualificationsRoute() {
         <div className="space-y-5">
           <FormGrid>
             <Field label={t("qualifications.trainer")} required>
-              <Select onValueChange={(v) => setField("trainerId", v)}>
+              <Select value={(formData.trainerId as string) ?? ""} onValueChange={(v) => setField("trainerId", v)}>
                 <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                 <SelectContent>
                   {trainers.map((t) => <SelectItem key={t.id} value={t.id}>{t.fullName}</SelectItem>)}
@@ -200,6 +203,15 @@ export function TrainerQualificationsRoute() {
           </Field>
         </div>
       </FormDialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        description={deleteTarget?.title}
+        destructive
+        loading={deleting}
+        onConfirm={() => void confirmDelete()}
+      />
     </div>
   );
 }

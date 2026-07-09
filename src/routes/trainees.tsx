@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect, useState as useReactState } from "react";
+import { useState, useEffect } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
 import { FormDialog, Field, FormGrid } from "@/components/common/form-dialog";
+import { RowActions } from "@/components/common/row-actions";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,9 +15,8 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { UserSquare, Plus, Mail, Phone, Building2, AlertCircle, Fingerprint } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api } from "@/lib/api/client";
-import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/lib/store/app-store";
-import { canPerformAction } from "@/lib/auth/permissions";
+import { useEntityActions } from "@/hooks/use-entity-actions";
 
 interface CompanyOption { id: string; name: string; refNumber: string; }
 interface Trainee {
@@ -37,23 +38,28 @@ interface Trainee {
 
 const STATUSES = ["ACTIVE", "INACTIVE"];
 
+const NEW_TRAINEE = { status: "ACTIVE", nationality: "Saudi" };
+
 export function TraineesRoute() {
   const { t } = useI18n();
-  const { toast } = useToast();
   const { user } = useAppStore();
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [formData, setFormData] = useState<Record<string, unknown>>({
-    status: "ACTIVE",
-    nationality: "Saudi",
-  });
-  const [companies, setCompanies] = useReactState<CompanyOption[]>([]);
+  const [companies, setCompanies] = useState<CompanyOption[]>([]);
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
     useList<Trainee>("/trainees");
 
-  const canCreate = user ? canPerformAction(user.role, "trainees", "create") : false;
-  const canEdit = user ? canPerformAction(user.role, "trainees", "edit") : false;
+  const {
+    canCreate, canEdit, canDelete,
+    dialogOpen, isEditing, formData, setField, submitting, submit, requireFields,
+    openCreate, openEdit, closeDialog,
+    deleteTarget, setDeleteTarget, deleting, confirmDelete,
+  } = useEntityActions<Trainee>({
+    resource: "/trainees",
+    module: "trainees",
+    refetch,
+    fetchOnEdit: true,
+    mapError: (msg) => (msg.includes("already exists") ? t("trainees.duplicate") : msg),
+  });
 
   useEffect(() => {
     if (dialogOpen && companies.length === 0 && user?.role !== "CONTRACTOR") {
@@ -129,40 +135,30 @@ export function TraineesRoute() {
       header: t("action.actions"),
       headerClassName: "text-end",
       className: "text-end",
-      cell: () => canEdit ? <Button variant="ghost" size="sm" className="h-8">{t("action.edit")}</Button> : null,
+      cell: (row) => (
+        <RowActions
+          canEdit={canEdit}
+          canDelete={canDelete}
+          onEdit={() => void openEdit(row)}
+          onDelete={() => setDeleteTarget(row)}
+        />
+      ),
     },
   ];
 
-  const handleSubmit = async () => {
-    if (!formData.fullName || !formData.nationalId) {
-      toast({ title: t("misc.error"), description: "Full Name and National ID are required", variant: "destructive" });
-      return;
-    }
-    // For contractors, companyId is auto-set by backend
-    if (user?.role !== "CONTRACTOR" && !formData.companyId) {
-      toast({ title: t("misc.error"), description: "Company is required", variant: "destructive" });
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await api.post("/trainees", formData);
-      toast({ title: t("misc.success"), description: t("misc.createSuccess") });
-      setDialogOpen(false);
-      setFormData({ status: "ACTIVE", nationality: "Saudi" });
-      refetch();
-    } catch (e) {
-      const msg = (e as Error).message;
-      toast({
-        title: t("misc.error"),
-        description: msg.includes("already exists") ? t("trainees.duplicate") : msg,
-        variant: "destructive",
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const setField = (k: string, v: unknown) => setFormData((p) => ({ ...p, [k]: v }));
+  const handleSubmit = () =>
+    void submit(() => {
+      const missing = requireFields({
+        [t("trainees.fullName")]: "fullName",
+        [t("trainees.nationalId")]: "nationalId",
+      })();
+      if (missing) return missing;
+      // Contractors don't pick a company — the backend sets it from their account.
+      if (user?.role !== "CONTRACTOR" && !formData.companyId) {
+        return `${t("trainees.company")} — ${t("misc.required")}`;
+      }
+      return null;
+    });
 
   return (
     <div className="space-y-5">
@@ -170,7 +166,7 @@ export function TraineesRoute() {
         title={t("trainees.title")}
         subtitle={t("trainees.subtitle")}
         icon={UserSquare}
-        actions={canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("trainees.new")}</Button>}
+        actions={canCreate && <Button onClick={() => openCreate(NEW_TRAINEE)}><Plus className="h-4 w-4 me-1.5" />{t("trainees.new")}</Button>}
       />
       {error && (
         <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
@@ -192,13 +188,13 @@ export function TraineesRoute() {
         emptyIcon={UserSquare}
         emptyTitle={t("trainees.empty.title")}
         emptySubtitle={t("trainees.empty.subtitle")}
-        emptyAction={canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("trainees.new")}</Button>}
+        emptyAction={canCreate && <Button onClick={() => openCreate(NEW_TRAINEE)}><Plus className="h-4 w-4 me-1.5" />{t("trainees.new")}</Button>}
       />
 
       <FormDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        title={t("trainees.new")}
+        onOpenChange={(o) => !o && closeDialog()}
+        title={isEditing ? t("trainees.edit") : t("trainees.new")}
         description={t("trainees.subtitle")}
         icon={UserSquare}
         size="lg"
@@ -229,7 +225,7 @@ export function TraineesRoute() {
 
           {user?.role !== "CONTRACTOR" && (
             <Field label={t("trainees.company")} required>
-              <Select onValueChange={(v) => setField("companyId", v)}>
+              <Select value={(formData.companyId as string) ?? ""} onValueChange={(v) => setField("companyId", v)}>
                 <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                 <SelectContent>
                   {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.name} ({c.refNumber})</SelectItem>)}
@@ -252,6 +248,15 @@ export function TraineesRoute() {
           </Field>
         </div>
       </FormDialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        description={deleteTarget?.fullName}
+        destructive
+        loading={deleting}
+        onConfirm={() => void confirmDelete()}
+      />
     </div>
   );
 }

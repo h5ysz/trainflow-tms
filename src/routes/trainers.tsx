@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
 import { FormDialog, Field, FormGrid } from "@/components/common/form-dialog";
+import { RowActions } from "@/components/common/row-actions";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,10 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { StatusBadge } from "@/components/common/status-badge";
 import { Users, Plus, Mail, Phone, Award, CalendarDays, AlertCircle } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
-import { api } from "@/lib/api/client";
-import { useToast } from "@/hooks/use-toast";
-import { useAppStore } from "@/lib/store/app-store";
-import { canPerformAction } from "@/lib/auth/permissions";
+import { useEntityActions } from "@/hooks/use-entity-actions";
 
 interface Trainer {
   id: string;
@@ -35,16 +33,21 @@ const STATUSES = ["ACTIVE", "INACTIVE", "SUSPENDED"];
 
 export function TrainersRoute() {
   const { t } = useI18n();
-  const { toast } = useToast();
-  const { user } = useAppStore();
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [formData, setFormData] = useState<Record<string, unknown>>({});
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
     useList<Trainer>("/trainers");
 
-  const canCreate = user ? canPerformAction(user.role, "trainers", "create") : false;
+  const {
+    canCreate, canEdit, canDelete,
+    dialogOpen, isEditing, formData, setField, submitting, submit, requireFields,
+    openCreate, openEdit, closeDialog,
+    deleteTarget, setDeleteTarget, deleting, confirmDelete,
+  } = useEntityActions<Trainer>({
+    resource: "/trainers",
+    module: "trainers",
+    refetch,
+    fetchOnEdit: true,
+  });
 
   const columns: Column<Trainer>[] = [
     {
@@ -103,30 +106,22 @@ export function TrainersRoute() {
       header: t("action.actions"),
       headerClassName: "text-end",
       className: "text-end",
-      cell: () => <Button variant="ghost" size="sm" className="h-8">{t("action.details")}</Button>,
+      cell: (row) => (
+        <RowActions
+          canEdit={canEdit}
+          canDelete={canDelete}
+          onEdit={() => void openEdit(row)}
+          onDelete={() => setDeleteTarget(row)}
+        />
+      ),
     },
   ];
 
-  const handleSubmit = async () => {
-    if (!formData.fullName) {
-      toast({ title: t("misc.error"), description: "Name is required", variant: "destructive" });
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await api.post("/trainers", formData);
-      toast({ title: t("misc.success"), description: t("misc.createSuccess") });
-      setDialogOpen(false);
-      setFormData({});
-      refetch();
-    } catch (e) {
-      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const setField = (k: string, v: unknown) => setFormData((p) => ({ ...p, [k]: v }));
+  const handleSubmit = () =>
+    void submit(requireFields({
+      [t("trainers.fullName")]: "fullName",
+      [t("trainers.email")]: "email",
+    }));
 
   return (
     <div className="space-y-5">
@@ -134,7 +129,7 @@ export function TrainersRoute() {
         title={t("trainers.title")}
         subtitle={t("trainers.subtitle")}
         icon={Users}
-        actions={canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("trainers.new")}</Button>}
+        actions={canCreate && <Button onClick={() => openCreate({ status: "ACTIVE" })}><Plus className="h-4 w-4 me-1.5" />{t("trainers.new")}</Button>}
       />
       {error && (
         <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
@@ -156,13 +151,13 @@ export function TrainersRoute() {
         emptyIcon={Users}
         emptyTitle={t("trainers.empty.title")}
         emptySubtitle={t("trainers.empty.subtitle")}
-        emptyAction={canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("trainers.new")}</Button>}
+        emptyAction={canCreate && <Button onClick={() => openCreate({ status: "ACTIVE" })}><Plus className="h-4 w-4 me-1.5" />{t("trainers.new")}</Button>}
       />
 
       <FormDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        title={t("trainers.new")}
+        onOpenChange={(o) => !o && closeDialog()}
+        title={isEditing ? t("trainers.edit") : t("trainers.new")}
         description={t("trainers.subtitle")}
         icon={Users}
         size="lg"
@@ -181,7 +176,7 @@ export function TrainersRoute() {
               <Input placeholder="ID Number" value={(formData.nationalId as string) ?? ""} onChange={(e) => setField("nationalId", e.target.value)} />
             </Field>
             <Field label={t("trainers.gender")}>
-              <Select onValueChange={(v) => setField("gender", v)}>
+              <Select value={(formData.gender as string) ?? ""} onValueChange={(v) => setField("gender", v)}>
                 <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="MALE">{t("misc.yes") === "Yes" ? "Male" : "ذكر"}</SelectItem>
@@ -225,7 +220,7 @@ export function TrainersRoute() {
               <Textarea placeholder={t("trainers.bio")} rows={3} value={(formData.bio as string) ?? ""} onChange={(e) => setField("bio", e.target.value)} />
             </Field>
             <Field label={t("trainers.status")}>
-              <Select defaultValue="ACTIVE" onValueChange={(v) => setField("status", v)}>
+              <Select value={(formData.status as string) ?? "ACTIVE"} onValueChange={(v) => setField("status", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {STATUSES.map((s) => <SelectItem key={s} value={s}>{t(`status.${s}` as never)}</SelectItem>)}
@@ -235,6 +230,15 @@ export function TrainersRoute() {
           </div>
         </div>
       </FormDialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        description={deleteTarget?.fullName}
+        destructive
+        loading={deleting}
+        onConfirm={() => void confirmDelete()}
+      />
     </div>
   );
 }

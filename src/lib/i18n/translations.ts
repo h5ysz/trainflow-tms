@@ -647,6 +647,8 @@ export const dict = {
     // Misc
     "misc.required": "Required",
     "misc.optional": "Optional",
+    "questions.minOptions": "Provide at least 2 answer options",
+    "questions.minCorrect": "Mark at least 1 correct answer",
     "misc.yes": "Yes",
     "misc.no": "No",
     "misc.all": "All",
@@ -1314,6 +1316,8 @@ export const dict = {
     // Misc
     "misc.required": "مطلوب",
     "misc.optional": "اختياري",
+    "questions.minOptions": "أدخل خيارين على الأقل للإجابة",
+    "questions.minCorrect": "حدد إجابة صحيحة واحدة على الأقل",
     "misc.yes": "نعم",
     "misc.no": "لا",
     "misc.all": "الكل",
