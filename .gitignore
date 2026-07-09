@@ -55,3 +55,8 @@ server.log
 /skills/
 # workspace snapshots
 workspace-*.tar
+
+# database backups and sqlite sidecar files (db/custom.db itself is committed)
+*.bak-*
+*.db-wal
+*.db-shm

@@ -1,0 +1,8 @@
+# The seeded SQLite database is committed intentionally; treat it as an opaque
+# binary so git never tries to produce a textual diff or merge it.
+*.db binary
+*.db-wal binary
+*.db-shm binary
+
+# Keep shell scripts LF on every platform.
+*.sh text eol=lf
