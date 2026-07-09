@@ -1,0 +1,47 @@
+services:
+  - type: web
+    name: trainflow-tms
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: main
+
+    # No package-lock.json in the repo (bun.lock only), so `npm install` resolves
+    # fresh rather than `npm ci`. Prisma must generate before `next build`, since
+    # the build imports the client while collecting page data.
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: node .next/standalone/server.js
+
+    # The app has no /login route; the root page is the entry point.
+    healthCheckPath: /
+
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+
+      - key: NODE_ENV
+        value: production
+
+      # Next's standalone server binds to HOSTNAME and PORT. Render supplies PORT
+      # and requires the process to listen on 0.0.0.0, not localhost.
+      - key: HOSTNAME
+        value: 0.0.0.0
+
+      # Absolute path on purpose. Prisma resolves a relative sqlite path against
+      # the generated schema inside node_modules/.prisma/client, not the cwd, so
+      # `file:./db/custom.db` would point somewhere unintended from the
+      # standalone server.
+      #
+      # The free plan has no persistent disk: this file is the seeded copy baked
+      # in from git, and any writes are lost when the instance sleeps or
+      # redeploys. That resets the demo to its seeded state, which is intended.
+      - key: DATABASE_URL
+        value: file:/opt/render/project/src/db/custom.db
+
+      # Set these in the Render dashboard; never commit them. JWT_SECRET must be
+      # at least 32 characters or the process refuses to boot (src/lib/auth/jwt.ts).
+      - key: JWT_SECRET
+        sync: false
+
+      - key: SCHEDULER_SECRET
+        sync: false
