@@ -26,7 +26,7 @@ interface SessionItem {
 type View = "month" | "week" | "day" | "list";
 
 export function SchedulingRoute() {
-  const { t, dir } = useI18n();
+  const { t, dir, locale } = useI18n();
   const [view, setView] = useState<View>("month");
   const [current, setCurrent] = useState(new Date());
   const [sessions, setSessions] = useState<SessionItem[]>([]);
@@ -74,8 +74,8 @@ export function SchedulingRoute() {
   for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
   while (cells.length % 7 !== 0) cells.push(null);
 
-  const monthName = current.toLocaleDateString(dir === "ar" ? "ar" : "en-US", { month: "long", year: "numeric" });
-  const weekDays = dir === "ar"
+  const monthName = current.toLocaleDateString(locale === "ar" ? "ar" : "en-US", { month: "long", year: "numeric" });
+  const weekDays = locale === "ar"
     ? ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"]
     : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const today = new Date();

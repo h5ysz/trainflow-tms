@@ -34,13 +34,9 @@ export function UserManagementRoute() {
   const { t, locale } = useI18n();
   const { toast } = useToast();
   const { user } = useAppStore();
-  const [search, setSearch] = useState("");
-
   const canAccess = canAccessModule(user?.role ?? "CONTRACTOR", "user-management");
 
-  const { data, loading, error } = useList<UserRow>(
-    `/users${search ? `?search=${encodeURIComponent(search)}` : ""}`
-  );
+  const { data, loading, error, search, setSearch } = useList<UserRow>("/users");
 
   if (!canAccess) {
     return (

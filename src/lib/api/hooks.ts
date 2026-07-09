@@ -20,6 +20,9 @@ interface UseListResult<T> {
   pagination: ListResponse<T>["pagination"] | null;
   loading: boolean;
   error: string | null;
+  page: number;
+  search: string;
+  status: string;
   refetch: () => void;
   setPage: (n: number) => void;
   setSearch: (s: string) => void;
@@ -102,6 +105,9 @@ export function useList<T>(path: string, options: UseListOptions = {}): UseListR
     pagination,
     loading,
     error,
+    page,
+    search,
+    status,
     refetch,
     setPage,
     setSearch,

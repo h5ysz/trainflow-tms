@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import Image from "next/image";
 import {
   LayoutDashboard, Building2, Contact, Users, Award, UserSquare, BookOpen,
-  ClipboardList, CalendarDays, UserCheck, QrCode,
+  ClipboardList, CalendarDays, CalendarRange, CalendarClock, UserCheck, QrCode,
   FilePen, FileCheck2, Star, BadgeCheck, BarChart3, ScrollText,
   Bell, Settings, UserPlus, ShieldCheck,
   type LucideIcon,
@@ -15,7 +15,7 @@ import {
 
 const ICONS: Record<string, LucideIcon> = {
   LayoutDashboard, Building2, Contact, Users, Award, UserSquare, BookOpen,
-  ClipboardList, CalendarDays, UserCheck, QrCode,
+  ClipboardList, CalendarDays, CalendarRange, CalendarClock, UserCheck, QrCode,
   FilePen, FileCheck2, Star, BadgeCheck, BarChart3, ScrollText,
   Bell, Settings, UserPlus, ShieldCheck,
 };

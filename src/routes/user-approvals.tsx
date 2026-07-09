@@ -5,9 +5,10 @@ import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/common/data-table";
+import { FormDialog, Field } from "@/components/common/form-dialog";
 import { EmptyState } from "@/components/common/empty-state";
 import { UserPlus, Check, X, Loader2, AlertCircle, Clock, Ban, CheckCircle2 } from "lucide-react";
 import { api } from "@/lib/api/client";
@@ -49,18 +50,29 @@ const STATUS_ICONS: Record<string, typeof Clock> = {
   ACTIVE: CheckCircle2,
 };
 
+// Must match VALID_ACTIONS in src/app/api/user-approvals/[id]/route.ts
+type ApprovalAction = "APPROVE" | "REJECT" | "SUSPEND" | "ACTIVATE";
+
+const ACTION_LABELS: Record<"en" | "ar", Record<ApprovalAction, string>> = {
+  en: { APPROVE: "Approved", REJECT: "Rejected", SUSPEND: "Suspended", ACTIVATE: "Activated" },
+  ar: { APPROVE: "تم الاعتماد", REJECT: "تم الرفض", SUSPEND: "تم الإيقاف", ACTIVATE: "تم التفعيل" },
+};
+
 export function UserApprovalsRoute() {
   const { t, locale } = useI18n();
   const { toast } = useToast();
   const { user } = useAppStore();
   const [filter, setFilter] = useState<string>("PENDING_APPROVAL");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [pending, setPending] = useState<{ row: ApprovalRow; action: ApprovalAction } | null>(null);
+  const [reason, setReason] = useState("");
+  const [createCompany, setCreateCompany] = useState(true);
 
   const canAccess = canAccessModule(user?.role ?? "CONTRACTOR", "user-approvals");
 
-  const { data, loading, error, refetch } = useList<ApprovalRow>(
-    `/user-approvals?filters.accountStatus=${filter}`
-  );
+  const { data, loading, error, refetch } = useList<ApprovalRow>("/user-approvals", {
+    extraParams: { "filters.accountStatus": filter },
+  });
 
   if (!canAccess) {
     return (
@@ -70,13 +82,20 @@ export function UserApprovalsRoute() {
     );
   }
 
-  const handleAction = async (id: string, action: "approve" | "reject" | "suspend" | "activate") => {
-    setActionLoading(id);
+  const runAction = async (row: ApprovalRow, action: ApprovalAction) => {
+    setActionLoading(row.id);
     try {
-      await api.post(`/user-approvals/${id}/${action}`, {});
+      await api.post(`/user-approvals/${row.id}`, {
+        action,
+        ...(reason.trim() ? { reason: reason.trim() } : {}),
+        ...(action === "APPROVE" ? { createCompany } : {}),
+      });
       toast({
         title: t("misc.success"),
-        description: locale === "en" ? `User ${action}d successfully` : `تم تنفيذ الإجراء بنجاح`,
+        description:
+          locale === "en"
+            ? `${ACTION_LABELS.en[action]} — ${row.fullName}`
+            : `${ACTION_LABELS.ar[action]} — ${row.fullName}`,
       });
       refetch();
     } catch (e) {
@@ -87,7 +106,22 @@ export function UserApprovalsRoute() {
       });
     } finally {
       setActionLoading(null);
+      setPending(null);
+      setReason("");
+      setCreateCompany(true);
     }
+  };
+
+  // APPROVE offers a "create company record" option; REJECT/SUSPEND collect a reason.
+  // ACTIVATE needs neither, so it runs straight through.
+  const requestAction = (row: ApprovalRow, action: ApprovalAction) => {
+    if (action === "ACTIVATE") {
+      void runAction(row, action);
+      return;
+    }
+    setReason("");
+    setCreateCompany(true);
+    setPending({ row, action });
   };
 
   const columns: Column<ApprovalRow>[] = [
@@ -173,7 +207,7 @@ export function UserApprovalsRoute() {
               size="sm"
               variant="default"
               disabled={actionLoading === row.id}
-              onClick={() => handleAction(row.id, "approve")}
+              onClick={() => requestAction(row, "APPROVE")}
               className="h-8 gap-1"
             >
               {actionLoading === row.id ? (
@@ -189,7 +223,7 @@ export function UserApprovalsRoute() {
               size="sm"
               variant="outline"
               disabled={actionLoading === row.id}
-              onClick={() => handleAction(row.id, "reject")}
+              onClick={() => requestAction(row, "REJECT")}
               className="h-8 gap-1"
             >
               <X className="h-3 w-3" />
@@ -201,11 +235,23 @@ export function UserApprovalsRoute() {
               size="sm"
               variant="outline"
               disabled={actionLoading === row.id}
-              onClick={() => handleAction(row.id, "suspend")}
+              onClick={() => requestAction(row, "SUSPEND")}
               className="h-8 gap-1"
             >
               <Ban className="h-3 w-3" />
               {locale === "en" ? "Suspend" : "تعليق"}
+            </Button>
+          )}
+          {(row.accountStatus === "SUSPENDED" || row.accountStatus === "REJECTED") && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={actionLoading === row.id}
+              onClick={() => requestAction(row, "ACTIVATE")}
+              className="h-8 gap-1"
+            >
+              <CheckCircle2 className="h-3 w-3" />
+              {locale === "en" ? "Activate" : "تفعيل"}
             </Button>
           )}
         </div>
@@ -267,6 +313,58 @@ export function UserApprovalsRoute() {
           />
         )}
       </Card>
+
+      <FormDialog
+        open={pending !== null}
+        onOpenChange={(o) => !o && setPending(null)}
+        title={
+          pending
+            ? locale === "en"
+              ? `${pending.action.charAt(0)}${pending.action.slice(1).toLowerCase()} ${pending.row.fullName}?`
+              : `${ACTION_LABELS.ar[pending.action]} — ${pending.row.fullName}؟`
+            : ""
+        }
+        icon={UserPlus}
+        size="sm"
+        isSubmitting={actionLoading !== null}
+        submitLabel={locale === "en" ? "Confirm" : "تأكيد"}
+        onSubmit={() => pending && void runAction(pending.row, pending.action)}
+      >
+        <div className="space-y-4">
+          {pending?.action === "APPROVE" ? (
+            <label className="flex items-start gap-2.5 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={createCompany}
+                onChange={(e) => setCreateCompany(e.target.checked)}
+              />
+              <span>
+                {locale === "en"
+                  ? "Create a company record from the registration details"
+                  : "إنشاء سجل شركة من بيانات التسجيل"}
+                <span className="block text-xs text-muted-foreground">
+                  {pending.row.registrationData?.companyName ??
+                    (locale === "en" ? "No company name submitted" : "لم يتم إرسال اسم شركة")}
+                </span>
+              </span>
+            </label>
+          ) : (
+            <Field label={locale === "en" ? "Reason (optional)" : "السبب (اختياري)"}>
+              <Textarea
+                rows={3}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder={
+                  locale === "en"
+                    ? "Recorded in the audit log and sent to the applicant"
+                    : "يُسجَّل في سجل التدقيق ويُرسل إلى مقدم الطلب"
+                }
+              />
+            </Field>
+          )}
+        </div>
+      </FormDialog>
     </div>
   );
 }

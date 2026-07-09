@@ -21,7 +21,7 @@ import { RoleBadge } from "@/components/common/status-badge";
 import {
   Search, Bell, Sun, Moon, Languages, Menu, ChevronDown,
   UserCircle, Settings, LogOut, ShieldCheck, UserCog, GraduationCap, Building2,
-  Loader2,
+  Loader2, Eye,
 } from "lucide-react";
 import { type UserRole } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
@@ -33,6 +33,7 @@ const ROLE_ICONS: Record<UserRole, typeof ShieldCheck> = {
   SUPER_ADMIN: ShieldCheck,
   COORDINATOR: UserCog,
   TRAINER: GraduationCap,
+  VIEWER: Eye,
   CONTRACTOR: Building2,
 };
 

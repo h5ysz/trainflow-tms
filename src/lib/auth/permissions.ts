@@ -248,6 +248,7 @@ export const navItems: NavItem[] = [
   { key: "courses", labelKey: "nav.courses", icon: "BookOpen", group: "training" },
   { key: "requests", labelKey: "nav.requests", icon: "ClipboardList", group: "training" },
   { key: "sessions", labelKey: "nav.sessions", icon: "CalendarDays", group: "training" },
+  { key: "scheduling", labelKey: "nav.scheduling", icon: "CalendarRange", group: "training" },
   { key: "attendance", labelKey: "nav.attendance", icon: "UserCheck", group: "training" },
   { key: "qr-code", labelKey: "nav.qrCode", icon: "QrCode", group: "training" },
 

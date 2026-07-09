@@ -30,7 +30,7 @@ import { UserManagementRoute } from "./user-management";
 import { RolesRoute } from "./roles";
 import type { RouteKey } from "@/lib/auth/permissions";
 
-const ROUTES: Record<RouteKey, () => JSX.Element> = {
+const ROUTES: Record<RouteKey, React.ComponentType> = {
   dashboard: DashboardRoute,
   companies: CompaniesRoute,
   "company-contacts": CompanyContactsRoute,
