@@ -41,7 +41,8 @@ export type AuditEntity =
   | "USER"
   | "SETTING"
   | "EXAM"
-  | "ATTENDANCE";
+  | "ATTENDANCE"
+  | "EVALUATION";
 
 export interface AuditEntry {
   userId?: string | null;

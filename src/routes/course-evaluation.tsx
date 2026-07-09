@@ -3,16 +3,30 @@
 import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
+import { FormDialog, Field, FormGrid } from "@/components/common/form-dialog";
+import { RowActions } from "@/components/common/row-actions";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { Card } from "@/components/ui/card";
-import { Star, Check, X, MessageSquare, GraduationCap, AlertCircle, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Star, Check, X, MessageSquare, GraduationCap, AlertCircle, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api/client";
 import { useList } from "@/lib/api/hooks";
-import { useMemo } from "react";
+import { useEntityActions } from "@/hooks/use-entity-actions";
+import { useMemo, useState, useEffect } from "react";
+
+interface SessionOption { id: string; refNumber: string; title: string; }
+interface TrainerOption { id: string; fullName: string; }
 
 interface Evaluation {
   id: string;
+  sessionId: string;
   sessionCode?: string | null;
+  trainerId?: string | null;
   trainerName?: string | null;
   traineeName: string;
   traineeEmail?: string | null;
@@ -26,6 +40,24 @@ interface Evaluation {
   submittedAt: string;
 }
 
+const RATING_FIELDS = [
+  "trainerRating",
+  "contentRating",
+  "venueRating",
+  "materialsRating",
+  "overallRating",
+] as const;
+
+// The API rejects anything outside 1..5, so a new evaluation starts mid-scale.
+const NEW_EVALUATION = {
+  trainerRating: 3,
+  contentRating: 3,
+  venueRating: 3,
+  materialsRating: 3,
+  overallRating: 3,
+  wouldRecommend: true,
+};
+
 function StarRow({ value, max = 5 }: { value: number; max?: number }) {
   return (
     <div className="flex items-center gap-0.5">
@@ -37,9 +69,74 @@ function StarRow({ value, max = 5 }: { value: number; max?: number }) {
   );
 }
 
+function StarInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  return (
+    <div className="flex items-center gap-1">
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button
+          key={n}
+          type="button"
+          aria-label={`${n}`}
+          onClick={() => onChange(n)}
+          className="p-0.5"
+        >
+          <Star className={cn("h-5 w-5", n <= value ? "text-warning fill-warning" : "text-muted-foreground/30")} />
+        </button>
+      ))}
+      <span className="ms-2 text-xs tabular-nums text-muted-foreground">{value}/5</span>
+    </div>
+  );
+}
+
 export function CourseEvaluationRoute() {
   const { t } = useI18n();
-  const { data, pagination, loading, error, page, setPage, search, setSearch } = useList<Evaluation>("/evaluations");
+  const [sessions, setSessions] = useState<SessionOption[]>([]);
+  const [trainers, setTrainers] = useState<TrainerOption[]>([]);
+
+  const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
+    useList<Evaluation>("/evaluations");
+
+  const {
+    canCreate, canEdit, canDelete,
+    dialogOpen, isEditing, formData, setField, submitting, submit, requireFields,
+    openCreate, openEdit, closeDialog,
+    deleteTarget, setDeleteTarget, deleting, confirmDelete,
+  } = useEntityActions<Evaluation>({
+    resource: "/evaluations",
+    module: "evaluation",
+    refetch,
+    fetchOnEdit: true,
+    mapError: (m) => (m.includes("already submitted") ? t("evaluation.duplicate") : m),
+  });
+
+  useEffect(() => {
+    if (!dialogOpen) return;
+    if (sessions.length === 0) {
+      api.getList<SessionOption>("/sessions", { pageSize: 100 })
+        .then((r) => setSessions(r.rows.map((s) => ({ id: s.id, refNumber: s.refNumber, title: s.title }))))
+        .catch(() => {});
+    }
+    if (trainers.length === 0) {
+      api.getList<TrainerOption>("/trainers", { pageSize: 100 })
+        .then((r) => setTrainers(r.rows.map((x) => ({ id: x.id, fullName: x.fullName }))))
+        .catch(() => {});
+    }
+  }, [dialogOpen, sessions.length, trainers.length]);
+
+  const handleSubmit = () =>
+    void submit(() => {
+      const missing = requireFields({
+        [t("evaluation.session")]: "sessionId",
+        [t("evaluation.trainee")]: "traineeName",
+      })();
+      if (missing) return missing;
+      // Guard client-side; the API 422s on out-of-range ratings.
+      for (const f of RATING_FIELDS) {
+        const v = formData[f];
+        if (typeof v !== "number" || v < 1 || v > 5) return t("evaluation.ratingRange");
+      }
+      return null;
+    });
 
   const avg = useMemo(() => {
     if (data.length === 0) return null;
@@ -94,7 +191,28 @@ export function CourseEvaluationRoute() {
       ),
     },
     { key: "submittedAt", header: t("evaluation.submittedAt"), cell: (r) => <span className="text-xs text-muted-foreground">{new Date(r.submittedAt).toLocaleDateString()}</span> },
+    {
+      key: "actions",
+      header: t("action.actions"),
+      headerClassName: "text-end",
+      className: "text-end",
+      cell: (row) => (
+        <RowActions
+          canEdit={canEdit}
+          canDelete={canDelete}
+          onEdit={() => void openEdit(row)}
+          onDelete={() => setDeleteTarget(row)}
+        />
+      ),
+    },
   ];
+
+  const newButton = canCreate && (
+    <Button onClick={() => openCreate(NEW_EVALUATION)}>
+      <Plus className="h-4 w-4 me-1.5" />
+      {t("evaluation.new")}
+    </Button>
+  );
 
   const summary = [
     { label: t("evaluation.trainerRating"), val: avg?.trainer.toFixed(1) ?? "—" },
@@ -106,7 +224,7 @@ export function CourseEvaluationRoute() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title={t("evaluation.title")} subtitle={t("evaluation.subtitle")} icon={Star} />
+      <PageHeader title={t("evaluation.title")} subtitle={t("evaluation.subtitle")} icon={Star} actions={newButton} />
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {summary.map((s) => (
@@ -141,6 +259,105 @@ export function CourseEvaluationRoute() {
         emptyIcon={MessageSquare}
         emptyTitle={t("evaluation.empty.title")}
         emptySubtitle={t("evaluation.empty.subtitle")}
+        emptyAction={newButton}
+      />
+
+      <FormDialog
+        open={dialogOpen}
+        onOpenChange={(o) => !o && closeDialog()}
+        title={isEditing ? t("evaluation.edit") : t("evaluation.new")}
+        description={t("evaluation.subtitle")}
+        icon={Star}
+        size="lg"
+        onSubmit={handleSubmit}
+        isSubmitting={submitting}
+      >
+        <div className="space-y-5">
+          <FormGrid>
+            {/* The API keys duplicate detection on sessionId + traineeName, so
+                neither can move once the evaluation exists. */}
+            <Field label={t("evaluation.session")} required>
+              <Select
+                disabled={isEditing}
+                value={(formData.sessionId as string) ?? ""}
+                onValueChange={(v) => setField("sessionId", v)}
+              >
+                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>
+                  {sessions.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.refNumber} — {s.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label={t("evaluation.trainer")}>
+              <Select value={(formData.trainerId as string) ?? ""} onValueChange={(v) => setField("trainerId", v)}>
+                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>
+                  {trainers.map((x) => <SelectItem key={x.id} value={x.id}>{x.fullName}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label={t("evaluation.trainee")} required>
+              <Input
+                value={(formData.traineeName as string) ?? ""}
+                onChange={(e) => setField("traineeName", e.target.value)}
+              />
+            </Field>
+            <Field label={t("evaluation.traineeEmail")}>
+              <Input
+                type="email"
+                value={(formData.traineeEmail as string) ?? ""}
+                onChange={(e) => setField("traineeEmail", e.target.value)}
+              />
+            </Field>
+          </FormGrid>
+
+          <div className="border-t pt-4 space-y-3">
+            {RATING_FIELDS.map((f) => (
+              <div key={f} className="flex items-center justify-between gap-4">
+                <span className="text-xs font-medium">{t(`evaluation.${f}` as never)}</span>
+                <StarInput
+                  value={(formData[f] as number) ?? 3}
+                  onChange={(v) => setField(f, v)}
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="border-t pt-4 space-y-4">
+            <Field label={t("evaluation.comments")}>
+              <Textarea
+                rows={2}
+                value={(formData.comments as string) ?? ""}
+                onChange={(e) => setField("comments", e.target.value)}
+              />
+            </Field>
+            <Field label={t("evaluation.suggestions")}>
+              <Textarea
+                rows={2}
+                value={(formData.suggestions as string) ?? ""}
+                onChange={(e) => setField("suggestions", e.target.value)}
+              />
+            </Field>
+            <label className="flex items-center gap-2 text-sm">
+              <Switch
+                checked={(formData.wouldRecommend as boolean) ?? false}
+                onCheckedChange={(v) => setField("wouldRecommend", v)}
+              />
+              {t("evaluation.wouldRecommend")}
+            </label>
+          </div>
+        </div>
+      </FormDialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        description={deleteTarget?.traineeName}
+        destructive
+        loading={deleting}
+        onConfirm={() => void confirmDelete()}
       />
     </div>
   );

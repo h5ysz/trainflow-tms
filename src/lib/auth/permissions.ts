@@ -179,7 +179,7 @@ const OPERATIONAL_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
   "qr-code": ["view", "create", "edit", "delete"],
   "pre-test": ["view", "create", "edit", "delete"],
   "final-test": ["view", "create", "edit", "delete"],
-  evaluation: ["view"],
+  evaluation: ["view", "create", "edit", "delete"],
   certificates: ["view", "create", "edit", "delete"],
   reports: ["view"],
   notifications: ["view"],
