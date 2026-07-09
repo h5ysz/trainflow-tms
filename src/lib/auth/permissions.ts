@@ -25,6 +25,7 @@ export type RouteKey =
   | "evaluation"
   | "certificates"
   | "reports"
+  | "report-schedules"
   | "notifications"
   | "audit-log"
   | "settings"
@@ -44,8 +45,8 @@ export const ACTIONS: Action[] = ["view", "create", "edit", "delete"];
 export const ALL_MODULES: RouteKey[] = [
   "dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
   "trainees", "courses", "requests", "sessions", "scheduling", "attendance", "qr-code",
-  "pre-test", "final-test", "evaluation", "certificates", "reports", "notifications",
-  "audit-log", "settings", "user-approvals", "user-management", "roles",
+  "pre-test", "final-test", "evaluation", "certificates", "reports", "report-schedules",
+  "notifications", "audit-log", "settings", "user-approvals", "user-management", "roles",
 ];
 
 // Module visibility per role
@@ -76,6 +77,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "evaluation",
     "certificates",
     "reports",
+    "report-schedules",
     "notifications",
     "audit-log",
     "settings",
@@ -102,6 +104,8 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "evaluation",
     "certificates",
     "reports",
+    // The report-schedules endpoints are requireRole("SUPER_ADMIN","COORDINATOR").
+    "report-schedules",
     "notifications",
     "audit-log",
     "user-approvals",
@@ -193,6 +197,7 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
   COORDINATOR: {
     ...OPERATIONAL_PERMISSIONS,
     "user-approvals": ["view", "create", "edit"],
+    "report-schedules": ["view", "create", "edit", "delete"],
   },
   TRAINER: {
     ...OPERATIONAL_PERMISSIONS,
@@ -274,6 +279,7 @@ export const navItems: NavItem[] = [
 
   // Reports
   { key: "reports", labelKey: "nav.reports", icon: "BarChart3", group: "reports" },
+  { key: "report-schedules", labelKey: "nav.reportSchedules", icon: "CalendarClock", group: "reports" },
 
   // System
   { key: "audit-log", labelKey: "nav.auditLog", icon: "ScrollText", group: "system" },

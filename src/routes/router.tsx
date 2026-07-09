@@ -22,6 +22,7 @@ import { FinalTestRoute } from "./final-test";
 import { CourseEvaluationRoute } from "./course-evaluation";
 import { CertificatesRoute } from "./certificates";
 import { ReportsRoute } from "./reports";
+import { ReportSchedulesRoute } from "./report-schedules";
 import { NotificationsRoute } from "./notifications";
 import { AuditLogRoute } from "./audit-log";
 import { SettingsRoute } from "./settings-page";
@@ -48,6 +49,7 @@ const ROUTES: Record<RouteKey, React.ComponentType> = {
   evaluation: CourseEvaluationRoute,
   certificates: CertificatesRoute,
   reports: ReportsRoute,
+  "report-schedules": ReportSchedulesRoute,
   notifications: NotificationsRoute,
   "audit-log": AuditLogRoute,
   "user-approvals": UserApprovalsRoute,
