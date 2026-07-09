@@ -4,34 +4,18 @@ import { db } from "@/lib/db";
 import { hashPassword } from "@/lib/auth/jwt";
 import { ok, fail } from "@/lib/auth/api";
 import { recordAudit } from "@/lib/auth/audit";
-
-interface RegisterBody {
-  companyName: string;
-  crNumber?: string;
-  contactPerson: string;
-  nationalId: string;
-  mobileNumber: string;
-  email: string;
-  password: string;
-  confirmPassword: string;
-}
+import { checkRateLimit } from "@/lib/api/rate-limit";
+import { parseBody } from "@/lib/api/validate";
+import { registerSchema } from "@/lib/api/schemas";
 
 export async function POST(req: NextRequest) {
   try {
-    const body: RegisterBody = await req.json().catch(() => ({} as RegisterBody));
+    const rl = checkRateLimit(req, "auth:register", { limit: 10, windowMs: 60_000 });
+    if (!rl.ok) return fail("Too many registration attempts. Please try again shortly.", 429, "RATE_LIMITED");
 
-    // Validate required fields
-    if (!body.companyName || !body.contactPerson || !body.nationalId || !body.mobileNumber || !body.email || !body.password) {
-      return fail("All fields are required except Commercial Registration", 422, "VALIDATION_ERROR");
-    }
-
-    if (body.password !== body.confirmPassword) {
-      return fail("Passwords do not match", 422, "PASSWORD_MISMATCH");
-    }
-
-    if (body.password.length < 8) {
-      return fail("Password must be at least 8 characters", 422, "WEAK_PASSWORD");
-    }
+    const parsed = await parseBody(req, registerSchema);
+    if ("error" in parsed) return parsed.error;
+    const body = parsed.data;
 
     // Check if email already exists
     const existing = await db.user.findUnique({ where: { email: body.email } });

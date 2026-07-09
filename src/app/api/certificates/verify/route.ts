@@ -2,9 +2,13 @@
 // GET /api/certificates/verify?token=... → returns certificate info (no auth required)
 import { db } from "@/lib/db";
 import { ok, fail } from "@/lib/auth/api";
+import { checkRateLimit } from "@/lib/api/rate-limit";
 import { NextRequest } from "next/server";
 
 export async function GET(req: NextRequest) {
+  const rl = checkRateLimit(req, "certificates:verify", { limit: 30, windowMs: 60_000 });
+  if (!rl.ok) return fail("Too many verification requests. Please try again shortly.", 429, "RATE_LIMITED");
+
   const url = new URL(req.url);
   const token = url.searchParams.get("token");
   if (!token) return fail("Verification token is required", 400, "VALIDATION_ERROR");

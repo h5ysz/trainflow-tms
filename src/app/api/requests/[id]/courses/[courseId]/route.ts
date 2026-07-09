@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { MIN_TRAINEES_PER_COURSE, MAX_TRAINEES_PER_COURSE } from "@/lib/api/request-validation";
 
-export const GET = withModuleAction("requests", "view", async ({ params }) => {
+export const GET = withModuleAction("requests", "view", async ({ params, user }) => {
   const requestId = params.id as string;
   const courseParamId = params.courseId as string;
 
@@ -49,6 +49,10 @@ export const GET = withModuleAction("requests", "view", async ({ params }) => {
   }
 
   if (!rc || rc.deletedAt) return notFound("Course not found in this request");
+  // Contractors may only view courses on their own company's requests.
+  if (user.role === "CONTRACTOR" && rc.request?.companyId !== user.companyId) {
+    return notFound("Course not found in this request");
+  }
   return ok(rc);
 });
 

@@ -1,8 +1,10 @@
 // /api/trainees/[id] — get / update / soft-delete
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { parseBody } from "@/lib/api/validate";
+import { traineeUpdateSchema } from "@/lib/api/schemas";
 
-export const GET = withModuleAction("trainees", "view", async ({ params }) => {
+export const GET = withModuleAction("trainees", "view", async ({ params, user }) => {
   const id = params.id as string;
   const trainee = await db.trainee.findUnique({
     where: { id },
@@ -18,16 +20,32 @@ export const GET = withModuleAction("trainees", "view", async ({ params }) => {
     },
   });
   if (!trainee || trainee.deletedAt) return notFound("Trainee not found");
+  // Contractors may only see trainees belonging to their own company.
+  if (user.role === "CONTRACTOR" && trainee.companyId !== user.companyId) {
+    return notFound("Trainee not found");
+  }
   return ok(trainee);
 });
 
 export const PUT = withModuleAction("trainees", "edit", async ({ req, params, user }) => {
   const id = params.id as string;
-  const body = await req.json().catch(() => ({}));
+  const parsed = await parseBody(req, traineeUpdateSchema);
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data;
   const existing = await db.trainee.findUnique({ where: { id } });
   if (!existing || existing.deletedAt) return notFound("Trainee not found");
 
+  // Contractors may only edit their own company's trainees, and may not move a
+  // trainee into or out of their company.
+  if (user.role === "CONTRACTOR" && existing.companyId !== user.companyId) {
+    return notFound("Trainee not found");
+  }
+
   const { fullName, nationalId, nationality, jobTitle, mobile, email, companyId, status, notes } = body;
+
+  if (user.role === "CONTRACTOR" && companyId !== undefined && companyId !== user.companyId) {
+    return fail("Forbidden — cannot reassign trainee to another company", 403);
+  }
 
   // Prevent duplicate National ID on update
   if (nationalId && nationalId !== existing.nationalId) {

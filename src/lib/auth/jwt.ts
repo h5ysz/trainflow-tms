@@ -1,11 +1,18 @@
 // GCCLAB TMS — Auth utilities (JWT via jose, password hashing via WebCrypto)
 import { SignJWT, jwtVerify } from "jose";
-import { db } from "@/lib/db";
 import type { UserRole } from "@/lib/auth/permissions";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "gcclab-tms-dev-secret-change-in-production-32bytes!"
-);
+// JWT_SECRET is required — no insecure fallback. Fail fast at module load
+// so the process refuses to boot rather than silently signing tokens with a
+// well-known key that anyone could forge.
+const RAW_JWT_SECRET = process.env.JWT_SECRET;
+if (!RAW_JWT_SECRET || RAW_JWT_SECRET.length < 32) {
+  throw new Error(
+    "JWT_SECRET environment variable is required and must be at least 32 characters. " +
+      "Generate one with: openssl rand -hex 32"
+  );
+}
+const JWT_SECRET = new TextEncoder().encode(RAW_JWT_SECRET);
 const JWT_ISSUER = "gcclab-tms";
 const JWT_AUDIENCE = "trainflow-users";
 const TOKEN_TTL = "7d";
@@ -17,6 +24,7 @@ export interface JwtPayload {
   fullName: string;
   companyId?: string | null;
   trainerId?: string | null;
+  tokenVersion?: number; // bumped server-side to revoke all outstanding sessions
 }
 
 export async function signToken(payload: JwtPayload): Promise<string> {
@@ -42,6 +50,7 @@ export async function verifyToken(token: string): Promise<JwtPayload | null> {
       fullName: payload.fullName as string,
       companyId: (payload.companyId as string | null) ?? null,
       trainerId: (payload.trainerId as string | null) ?? null,
+      tokenVersion: (payload.tokenVersion as number | undefined) ?? 0,
     };
   } catch {
     return null;
@@ -49,7 +58,7 @@ export async function verifyToken(token: string): Promise<JwtPayload | null> {
 }
 
 // WebCrypto PBKDF2 password hashing (no bcrypt needed)
-const PBKDF2_ITERATIONS = 100_000;
+const PBKDF2_ITERATIONS = 600_000;
 const SALT_LENGTH = 16;
 const KEY_LENGTH = 32;
 
@@ -68,63 +77,17 @@ export async function verifyPassword(password: string, stored: string): Promise<
     const saltHex = parts[2];
     const expected = parts[3];
 
-    const { pbkdf2Sync } = await import("node:crypto");
+    const { pbkdf2Sync, timingSafeEqual } = await import("node:crypto");
     const saltBuffer = Buffer.from(saltHex, "hex");
     const derived = pbkdf2Sync(password, saltBuffer, iterations, KEY_LENGTH, "sha256");
-    const derivedHex = derived.toString("hex");
+    const expectedBuffer = Buffer.from(expected, "hex");
 
-    return derivedHex === expected;
+    // Constant-time comparison to avoid leaking hash bytes via timing.
+    if (derived.length !== expectedBuffer.length) return false;
+    return timingSafeEqual(derived, expectedBuffer);
   } catch (e) {
     console.error("[verifyPassword error]", e);
     return false;
   }
 }
 
-function bufToHex(buf: Uint8Array): string {
-  return Array.from(buf).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-function hexToBuf(hex: string): Uint8Array {
-  const arr = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < arr.length; i++) {
-    arr[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  }
-  return arr;
-}
-
-// Helper: get-or-create demo user for a role (development convenience only)
-// NOTE: The clean seed only creates Super Admin. Demo role-login auto-creates
-// the other roles' demo accounts on first use so the design-exploration flow
-// still works without seeding fake business data.
-export async function getOrCreateDemoUser(role: UserRole): Promise<JwtPayload & { id: string }> {
-  const demoConfig: Record<UserRole, { email: string; fullName: string }> = {
-    SUPER_ADMIN: { email: "admin@gcclab.com", fullName: "System Administrator" },
-    COORDINATOR: { email: "coordinator@gcclab.com", fullName: "Sarah Coordinator" },
-    TRAINER: { email: "trainer@gcclab.com", fullName: "Ahmed Trainer" },
-    CONTRACTOR: { email: "contractor@gcclab.com", fullName: "Khalid Contractor" },
-  };
-  const cfg = demoConfig[role];
-
-  let user = await db.user.findUnique({ where: { email: cfg.email } });
-  if (!user || user.deletedAt) {
-    const passwordHash = await hashPassword("gcclab123");
-    user = await db.user.create({
-      data: {
-        email: cfg.email,
-        fullName: cfg.fullName,
-        role,
-        passwordHash,
-        language: "en",
-        isActive: true,
-      },
-    });
-  }
-  return {
-    id: user.id,
-    sub: user.id,
-    email: user.email,
-    role: user.role,
-    fullName: user.fullName,
-    companyId: user.companyId,
-    trainerId: user.trainerId,
-  };
-}

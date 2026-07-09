@@ -121,9 +121,7 @@ export const api = {
 // Auth API
 export const authApi = {
   login: (email: string, password: string) =>
-    api.post<{ user: AuthUser; token: string }>("/auth/login", { email, password }),
-  loginByRole: (role: string) =>
-    api.post<{ user: AuthUser; token: string }>("/auth/login", { role }),
+    api.post<{ user: AuthUser }>("/auth/login", { email, password }),
   logout: () => api.post<{ success: boolean }>("/auth/logout"),
   me: () => api.get<AuthUser>("/auth/me"),
 };

@@ -1,16 +1,23 @@
-// /api/notifications/[id] — mark-read / delete
+// /api/notifications/[id] — mark-read / delete (own notifications only)
 import { db } from "@/lib/db";
-import { getCurrentUser, ok, notFound, fail } from "@/lib/auth/api";
+import { withModuleAction, ok, notFound } from "@/lib/auth/api";
+import { parseBody } from "@/lib/api/validate";
+import { notificationPatchSchema } from "@/lib/api/schemas";
 
-export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getCurrentUser();
-  if (!user) return fail("Unauthorized", 401);
-  const { id } = await ctx.params;
+export const PATCH = withModuleAction("notifications", "view", async ({ req, params, user }) => {
+  const id = params.id as string;
 
-  const existing = await db.notification.findUnique({ where: { id } });
+  // Scope to the caller's own notifications — prevents touching others' records.
+  // Scope to notifications the caller can see: their own, or broadcast (userId null).
+  const existing = await db.notification.findFirst({
+    where: { id, OR: [{ userId: user.id }, { userId: null }] },
+  });
   if (!existing) return notFound("Notification not found");
 
-  const body = await req.json().catch(() => ({}));
+  const parsed = await parseBody(req, notificationPatchSchema);
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data;
+
   const updated = await db.notification.update({
     where: { id },
     data: {
@@ -19,16 +26,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   });
 
   return ok(updated);
-}
+});
 
-export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getCurrentUser();
-  if (!user) return fail("Unauthorized", 401);
-  const { id } = await ctx.params;
+export const DELETE = withModuleAction("notifications", "view", async ({ params, user }) => {
+  const id = params.id as string;
 
-  const existing = await db.notification.findUnique({ where: { id } });
+  // Scope to notifications the caller can see: their own, or broadcast (userId null).
+  const existing = await db.notification.findFirst({
+    where: { id, OR: [{ userId: user.id }, { userId: null }] },
+  });
   if (!existing) return notFound("Notification not found");
 
   await db.notification.delete({ where: { id } });
   return ok({ success: true });
-}
+});

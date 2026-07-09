@@ -21,7 +21,7 @@ import { RoleBadge } from "@/components/common/status-badge";
 import {
   Search, Bell, Sun, Moon, Languages, Menu, ChevronDown,
   UserCircle, Settings, LogOut, ShieldCheck, UserCog, GraduationCap, Building2,
-  Check, Loader2,
+  Loader2,
 } from "lucide-react";
 import { type UserRole } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
@@ -48,7 +48,7 @@ interface Notification {
 export function Topbar() {
   const { t, locale, setLocale, dir } = useI18n();
   const {
-    user, signOut, switchRole, theme, setTheme,
+    user, signOut, theme, setTheme,
     setSidebarOpen, setCommandOpen,
   } = useAppStore();
   const { toast } = useToast();
@@ -191,22 +191,6 @@ export function Topbar() {
                 <RoleBadge role={user.role} icon={RoleIcon} />
               </div>
             </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-
-            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-              {t("auth.demoTitle")}
-            </DropdownMenuLabel>
-            {(["SUPER_ADMIN", "COORDINATOR", "TRAINER", "CONTRACTOR"] as UserRole[]).map((role) => {
-              const Icon = ROLE_ICONS[role];
-              const active = user.role === role;
-              return (
-                <DropdownMenuItem key={role} onClick={() => switchRole(role)} className="gap-2">
-                  <Icon className="h-4 w-4" />
-                  <span className="flex-1">{t(`role.${role}` as const)}</span>
-                  {active && <Check className="h-4 w-4 text-primary" />}
-                </DropdownMenuItem>
-              );
-            })}
             <DropdownMenuSeparator />
             <DropdownMenuItem className="gap-2"><UserCircle className="h-4 w-4" /> {t("action.details")}</DropdownMenuItem>
             <DropdownMenuItem className="gap-2"><Settings className="h-4 w-4" /> {t("nav.settings")}</DropdownMenuItem>

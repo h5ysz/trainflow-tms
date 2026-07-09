@@ -2,6 +2,7 @@
 // Updated to use standardized response envelope and audit service.
 
 import { cookies } from "next/headers";
+import { db } from "@/lib/db";
 import { verifyToken, type JwtPayload } from "./jwt";
 import { canAccessModule, canPerformAction, type RouteKey, type Action, type UserRole } from "@/lib/auth/permissions";
 import { recordAudit, type AuditAction, type AuditEntity } from "./audit";
@@ -35,12 +36,48 @@ export interface AuthUser extends JwtPayload {
   id: string;
 }
 
+// Account statuses that must never hold a live session.
+const BLOCKED_STATUSES = new Set([
+  "SUSPENDED",
+  "REJECTED",
+  "LOCKED",
+  "PENDING_APPROVAL",
+]);
+
 export async function getCurrentUser(): Promise<AuthUser | null> {
   const token = await getSessionToken();
   if (!token) return null;
   const payload = await verifyToken(token);
   if (!payload) return null;
-  return { ...payload, id: payload.sub };
+
+  // Re-validate against the database so that locking, suspending, deleting, or
+  // rotating a user's tokenVersion revokes outstanding sessions immediately —
+  // stateless JWT verification alone can't do that. Single indexed SQLite read.
+  const dbUser = await db.user.findUnique({
+    where: { id: payload.sub },
+    select: {
+      isActive: true,
+      accountStatus: true,
+      deletedAt: true,
+      tokenVersion: true,
+      role: true,
+      companyId: true,
+      trainerId: true,
+    },
+  });
+
+  if (!dbUser || dbUser.deletedAt || !dbUser.isActive) return null;
+  if (BLOCKED_STATUSES.has(dbUser.accountStatus)) return null;
+  if ((payload.tokenVersion ?? 0) !== dbUser.tokenVersion) return null;
+
+  // Trust the live DB values for authorization-relevant fields.
+  return {
+    ...payload,
+    id: payload.sub,
+    role: dbUser.role,
+    companyId: dbUser.companyId,
+    trainerId: dbUser.trainerId,
+  };
 }
 
 export async function requireAuth(): Promise<AuthUser> {

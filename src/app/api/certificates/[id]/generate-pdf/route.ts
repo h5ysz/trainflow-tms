@@ -1,17 +1,13 @@
 // /api/certificates/[id]/generate-pdf — generate PDF certificate with QR verification
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getCurrentUser, fail, audit } from "@/lib/auth/api";
+import { withModuleAction, fail } from "@/lib/auth/api";
 import { recordAudit } from "@/lib/auth/audit";
 import { syncCertificateStatus } from "@/lib/api/enrollment-sync";
 import PDFDocument from "pdfkit";
-import { randomBytes } from "crypto";
 
-export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getCurrentUser();
-  if (!user) return fail("Unauthorized", 401);
-
-  const { id } = await ctx.params;
+export const POST = withModuleAction("certificates", "view", async ({ req, params, user }) => {
+  const id = params.id as string;
   const cert = await db.certificate.findUnique({
     where: { id },
     include: {
@@ -26,6 +22,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   });
 
   if (!cert || cert.deletedAt) return fail("Certificate not found", 404);
+
+  // Contractors may only generate PDFs for their own company's certificates.
+  if (user.role === "CONTRACTOR" && cert.companyId !== user.companyId) {
+    return fail("Certificate not found", 404);
+  }
 
   // Generate PDF
   const doc = new PDFDocument({
@@ -217,4 +218,4 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       "Content-Length": pdfBuffer.length.toString(),
     },
   });
-}
+});

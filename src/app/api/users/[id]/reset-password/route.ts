@@ -31,6 +31,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       forcePasswordChange: forceChange ?? true,
       failedLoginAttempts: 0,
       lockedUntil: null,
+      // Invalidate any sessions issued before the password was reset.
+      tokenVersion: { increment: 1 },
       updatedBy: admin.id,
     },
   });

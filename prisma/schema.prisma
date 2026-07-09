@@ -157,6 +157,7 @@ model User {
   forcePasswordChange Boolean @default(false)
   failedLoginAttempts Int  @default(0)
   lockedUntil   DateTime?
+  tokenVersion  Int      @default(0) // bump to revoke all outstanding sessions
   tenantId      String?
   // Relations for contractor/trainer users
   companyId     String?

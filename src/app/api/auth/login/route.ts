@@ -1,13 +1,14 @@
-// POST /api/auth/login — email/password OR role-based demo login
+// POST /api/auth/login — email/password login
 // Sprint 6: Added PENDING_APPROVAL check, account locking, login history, failed login tracking
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { signToken, verifyPassword, getOrCreateDemoUser } from "@/lib/auth/jwt";
+import { signToken, verifyPassword } from "@/lib/auth/jwt";
+import { checkRateLimit } from "@/lib/api/rate-limit";
+import { parseBody } from "@/lib/api/validate";
+import { loginSchema } from "@/lib/api/schemas";
 import { setSessionCookie, ok, fail } from "@/lib/auth/api";
 import { recordAudit } from "@/lib/auth/audit";
-import type { UserRole } from "@/lib/auth/permissions";
 
-const VALID_ROLES: UserRole[] = ["SUPER_ADMIN", "COORDINATOR", "TRAINER", "CONTRACTOR"];
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_DURATION_MIN = 15;
 
@@ -36,23 +37,19 @@ async function logLoginAttempt(opts: {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const { email, password, role } = body as {
-      email?: string;
-      password?: string;
-      role?: string;
-    };
+    const rl = checkRateLimit(req, "auth:login", { limit: 10, windowMs: 60_000 });
+    if (!rl.ok) return fail("Too many login attempts. Please try again shortly.", 429, "RATE_LIMITED");
+
+    const parsed = await parseBody(req, loginSchema);
+    if ("error" in parsed) return parsed.error;
+    const { email, password } = parsed.data;
 
     let userId: string;
 
-    // Demo role-based login (for development)
-    if (role && VALID_ROLES.includes(role as UserRole) && !email) {
-      const payload = await getOrCreateDemoUser(role as UserRole);
-      userId = payload.id;
-    } else if (email && password) {
+    {
       const user = await db.user.findUnique({ where: { email } });
-      
-      // User not found
+
+      // User not found — generic message to avoid account enumeration.
       if (!user || user.deletedAt) {
         await logLoginAttempt({ email, success: false, failureReason: "User not found", req });
         return fail("Invalid email or password", 401);
@@ -93,6 +90,8 @@ export async function POST(req: NextRequest) {
             ...(shouldLock && {
               accountStatus: "LOCKED",
               lockedUntil: new Date(Date.now() + LOCK_DURATION_MIN * 60000),
+              // Revoke any outstanding sessions when an account is auto-locked.
+              tokenVersion: { increment: 1 },
             }),
           },
         });
@@ -111,7 +110,9 @@ export async function POST(req: NextRequest) {
           return fail(`Account locked after ${MAX_FAILED_ATTEMPTS} failed attempts. Try again in ${LOCK_DURATION_MIN} minutes.`, 403, "ACCOUNT_LOCKED");
         }
 
-        return fail(`Invalid email or password. ${MAX_FAILED_ATTEMPTS - newFailedCount} attempt(s) remaining.`, 401);
+        // Generic message — no remaining-attempt counter (avoids confirming the
+        // account exists). The counter is preserved in the audit/login history.
+        return fail("Invalid email or password", 401);
       }
 
       // Password valid — reset failed attempts + unlock
@@ -127,8 +128,6 @@ export async function POST(req: NextRequest) {
 
       await logLoginAttempt({ userId: user.id, email, success: true, req });
       userId = user.id;
-    } else {
-      return fail("Provide email+password", 400);
     }
 
     const dbUser = await db.user.findUnique({
@@ -139,7 +138,6 @@ export async function POST(req: NextRequest) {
       return fail("Invalid account", 401);
     }
 
-    // Check account status for demo users too
     if (dbUser.accountStatus === "PENDING_APPROVAL") {
       return fail("Account pending approval", 403, "PENDING_APPROVAL");
     }
@@ -154,6 +152,7 @@ export async function POST(req: NextRequest) {
       fullName: dbUser.fullName,
       companyId: dbUser.companyId,
       trainerId: dbUser.trainerId,
+      tokenVersion: dbUser.tokenVersion,
     });
 
     await setSessionCookie(token);
@@ -182,7 +181,6 @@ export async function POST(req: NextRequest) {
         forcePasswordChange: dbUser.forcePasswordChange,
         accountStatus: dbUser.accountStatus,
       },
-      token,
     });
   } catch (e) {
     console.error("[Login error]", e);

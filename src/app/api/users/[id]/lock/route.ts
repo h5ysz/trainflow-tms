@@ -23,6 +23,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       data: {
         accountStatus: "SUSPENDED",
         isActive: false,
+        // Kill outstanding sessions immediately on lock.
+        tokenVersion: { increment: 1 },
         updatedBy: admin.id,
       },
     });

@@ -3,14 +3,24 @@
 // In production, this would be protected by a secret token.
 import { schedulerTick } from "@/lib/reports/execution-engine";
 import { ok, fail } from "@/lib/auth/api";
+import { timingSafeEqual } from "crypto";
+
+function tokenMatches(provided: string, expected: string): boolean {
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
 
 export async function POST(req: Request) {
-  // In production, verify a secret token from the Authorization header
-  // For now, require authentication
-  const authHeader = req.headers.get("authorization");
-  const expectedToken = process.env.SCHEDULER_SECRET || "gcclab-scheduler-secret";
+  const expectedToken = process.env.SCHEDULER_SECRET;
+  if (!expectedToken) {
+    console.error("[Scheduler Tick] SCHEDULER_SECRET is not configured");
+    return fail("Scheduler is not configured", 503, "SCHEDULER_NOT_CONFIGURED");
+  }
 
-  if (authHeader !== `Bearer ${expectedToken}`) {
+  const authHeader = req.headers.get("authorization") ?? "";
+  if (!tokenMatches(authHeader, `Bearer ${expectedToken}`)) {
     return fail("Unauthorized — invalid scheduler token", 401);
   }
 

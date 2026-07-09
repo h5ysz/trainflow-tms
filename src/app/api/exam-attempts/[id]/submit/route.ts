@@ -1,6 +1,9 @@
 // /api/exam-attempts/[id]/submit — submit answers, grade the exam, record results
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { canPerformAction } from "@/lib/auth/permissions";
+import { parseBody } from "@/lib/api/validate";
+import { examSubmitSchema } from "@/lib/api/schemas";
 import { gradeExamAttempt } from "@/lib/api/exam-engine";
 import { recordAudit } from "@/lib/auth/audit";
 import { updateAttendanceProgress } from "@/lib/api/certificate-eligibility";
@@ -11,10 +14,15 @@ import {
   recalcCertificateEligibility,
 } from "@/lib/api/enrollment-sync";
 
-export const POST = withModuleAction("pre-test", "view", async ({ req, params, user }) => {
+export const POST = withModuleAction("pre-test", "create", async ({ req, params, user }) => {
   const id = params.id as string;
   const attempt = await db.examAttempt.findUnique({ where: { id } });
   if (!attempt || attempt.deletedAt) return notFound("Exam attempt not found");
+
+  // Final-test attempts require the "final-test" module, not "pre-test".
+  if (attempt.testType === "FINAL_TEST" && !canPerformAction(user.role, "final-test", "create")) {
+    return fail("Forbidden — cannot submit a final test", 403);
+  }
 
   // Must be IN_PROGRESS to submit
   if (attempt.status !== "IN_PROGRESS") {
@@ -25,12 +33,9 @@ export const POST = withModuleAction("pre-test", "view", async ({ req, params, u
     );
   }
 
-  const body = await req.json().catch(() => ({}));
-  const { answers } = body as { answers: Array<{ questionId: string; selectedAnswerIndices: number[] }> };
-
-  if (!Array.isArray(answers)) {
-    return fail("answers array is required", 422, "VALIDATION_ERROR");
-  }
+  const parsed = await parseBody(req, examSubmitSchema);
+  if ("error" in parsed) return parsed.error;
+  const { answers } = parsed.data;
 
   // Grade the exam
   const grading = await gradeExamAttempt({ attemptId: id, answers });

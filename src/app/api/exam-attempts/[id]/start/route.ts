@@ -1,13 +1,19 @@
 // /api/exam-attempts/[id]/start — start an exam (returns the randomized question set for display)
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { canPerformAction } from "@/lib/auth/permissions";
 import { resolveExamVersion } from "@/lib/api/exam-engine";
 import { syncPreTestStatus, syncFinalTestStatus } from "@/lib/api/enrollment-sync";
 
-export const POST = withModuleAction("pre-test", "view", async ({ req, params, user }) => {
+export const POST = withModuleAction("pre-test", "create", async ({ req, params, user }) => {
   const id = params.id as string;
   const attempt = await db.examAttempt.findUnique({ where: { id } });
   if (!attempt || attempt.deletedAt) return notFound("Exam attempt not found");
+
+  // Final-test attempts require the "final-test" module, not "pre-test".
+  if (attempt.testType === "FINAL_TEST" && !canPerformAction(user.role, "final-test", "create")) {
+    return fail("Forbidden — cannot start a final test", 403);
+  }
 
   // BUG FIX: Enforce maxAttempts — prevent starting if attempt is already GRADED/SUBMITTED
   // and the trainee has exhausted their max attempts

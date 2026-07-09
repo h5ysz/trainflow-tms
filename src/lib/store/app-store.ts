@@ -3,7 +3,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Locale } from "@/lib/i18n/translations";
-import type { UserRole } from "@/lib/auth/permissions";
 import type { RouteKey } from "@/lib/auth/permissions";
 import { authApi, type AuthUser } from "@/lib/api/client";
 
@@ -14,10 +13,8 @@ interface AppState {
   authLoading: boolean;
   authError: string | null;
   signIn: (email: string, password: string) => Promise<void>;
-  signInByRole: (role: UserRole) => Promise<void>;
   refreshUser: () => Promise<void>;
   signOut: () => Promise<void>;
-  switchRole: (role: UserRole) => Promise<void>;
   clearAuth: () => void;
 
   // Locale
@@ -67,23 +64,6 @@ export const useAppStore = create<AppState>()(
         }
       },
 
-      signInByRole: async (role) => {
-        set({ authLoading: true, authError: null });
-        try {
-          const { user } = await authApi.loginByRole(role);
-          set({
-            user,
-            isAuthenticated: true,
-            locale: (user.language as Locale) ?? "en",
-            currentRoute: "dashboard",
-            authLoading: false,
-          });
-        } catch (e) {
-          set({ authLoading: false, authError: (e as Error).message });
-          throw e;
-        }
-      },
-
       refreshUser: async () => {
         try {
           const user = await authApi.me();
@@ -101,16 +81,6 @@ export const useAppStore = create<AppState>()(
           // ignore — cookie cleared on server anyway
         }
         set({ user: null, isAuthenticated: false, currentRoute: "dashboard", sidebarOpen: false });
-      },
-
-      switchRole: async (role) => {
-        // In production: this would re-login. For demo: switch via role-login
-        try {
-          await get().signInByRole(role);
-        } catch {
-          // Fallback: just clear and let user re-login
-          await get().signOut();
-        }
       },
 
       clearAuth: () => set({ user: null, isAuthenticated: false, currentRoute: "dashboard" }),

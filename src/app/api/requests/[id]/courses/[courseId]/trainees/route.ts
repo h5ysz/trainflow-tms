@@ -6,9 +6,20 @@ import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { MAX_TRAINEES_PER_COURSE } from "@/lib/api/request-validation";
 
-export const GET = withModuleAction("requests", "view", async ({ params }) => {
+export const GET = withModuleAction("requests", "view", async ({ params, user }) => {
   const requestId = params.id as string;
   const courseParamId = params.courseId as string;
+
+  // Contractors may only read their own company's requests.
+  if (user.role === "CONTRACTOR") {
+    const request = await db.trainingRequest.findUnique({
+      where: { id: requestId },
+      select: { companyId: true, deletedAt: true },
+    });
+    if (!request || request.deletedAt || request.companyId !== user.companyId) {
+      return notFound("Course not found in this request");
+    }
+  }
 
   const rc = await db.trainingRequestCourse.findFirst({
     where: { requestId, deletedAt: null, OR: [{ id: courseParamId }, { courseId: courseParamId }] },
