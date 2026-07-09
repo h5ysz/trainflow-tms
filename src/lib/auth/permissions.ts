@@ -34,6 +34,20 @@ export type RouteKey =
 
 export type Action = "view" | "create" | "edit" | "delete";
 
+export const ACTIONS: Action[] = ["view", "create", "edit", "delete"];
+
+/**
+ * Every module, for building permission pickers. Role.permissions stores
+ * "module.action" strings with wildcards — "*", "companies.*", "reports.view"
+ * — matching the vocabulary seeded in scripts/seed.ts.
+ */
+export const ALL_MODULES: RouteKey[] = [
+  "dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
+  "trainees", "courses", "requests", "sessions", "scheduling", "attendance", "qr-code",
+  "pre-test", "final-test", "evaluation", "certificates", "reports", "notifications",
+  "audit-log", "settings", "user-approvals", "user-management", "roles",
+];
+
 // Module visibility per role
 // =====================================================================
 // Coordinator and Trainer have EQUIVALENT operational permissions.
