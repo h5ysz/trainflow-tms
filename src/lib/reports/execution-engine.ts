@@ -63,7 +63,8 @@ function computeDynamicFilters(
 export async function executeReportSchedule(opts: {
   scheduleId: string;
   triggerType: "SCHEDULED" | "MANUAL";
-  triggeredBy?: string;
+  /** Null for scheduled runs, which have no acting user. */
+  triggeredBy?: string | null;
 }): Promise<{ executionId: string; status: string; rowCount: number; emailSent: boolean }> {
   const { scheduleId, triggerType, triggeredBy } = opts;
   const startTime = Date.now();

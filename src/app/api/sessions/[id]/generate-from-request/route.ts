@@ -5,6 +5,7 @@
 // This endpoint is mounted at /api/sessions/[id]/generate-from-request but the [id]
 // here is the REQUEST ID (a small abuse of routing). For clarity, we treat [id] as requestId.
 
+import type { TrainingSession } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { nextRefNumber } from "@/lib/api/ref-number";
@@ -66,7 +67,9 @@ export const POST = withModuleAction("sessions", "create", async ({ req, params,
     );
   }
 
-  const created = [];
+  // Untyped [] infers never[], so pushing a session fails and .refNumber below
+  // reads off never.
+  const created: TrainingSession[] = [];
 
   for (const spec of sessions) {
     if (!spec.requestCourseId || !spec.courseId || !spec.shift || !spec.startDate || !spec.endDate) {

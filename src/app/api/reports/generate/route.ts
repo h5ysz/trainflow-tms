@@ -68,7 +68,9 @@ export async function POST(req: Request) {
     },
   });
 
-  return new NextResponse(result.buffer, {
+  // Node's Buffer is typed over ArrayBufferLike, which doesn't satisfy the web
+  // BodyInit; re-wrap as a plain Uint8Array.
+  return new NextResponse(new Uint8Array(result.buffer), {
     status: 200,
     headers: {
       "Content-Type": result.mimeType,

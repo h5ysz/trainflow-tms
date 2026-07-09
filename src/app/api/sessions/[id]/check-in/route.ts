@@ -193,7 +193,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   });
 
   // 7. Auto-assign Pre-Test if course has pre-test enabled
-  let preTestAttempt = null;
+  let preTestAttempt: { attemptId: string; refNumber: string } | null = null;
   if (session.course?.hasPreTest) {
     try {
       const examAttempt = await createExamAttempt({

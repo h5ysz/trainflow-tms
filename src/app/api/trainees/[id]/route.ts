@@ -10,11 +10,16 @@ export const GET = withModuleAction("trainees", "view", async ({ params, user })
     where: { id },
     include: {
       company: true,
+      // request and course hang off requestCourse, not off the join row itself.
       requestCourses: {
         where: { deletedAt: null },
         include: {
-          request: { select: { id: true, refNumber: true, status: true } },
-          course: { select: { id: true, title: true, code: true, refNumber: true } },
+          requestCourse: {
+            include: {
+              request: { select: { id: true, refNumber: true, status: true } },
+              course: { select: { id: true, title: true, code: true, refNumber: true } },
+            },
+          },
         },
       },
     },

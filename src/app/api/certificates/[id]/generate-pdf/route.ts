@@ -210,7 +210,9 @@ export const POST = withModuleAction("certificates", "view", async ({ req, param
     metadata: { verificationToken: cert.verificationToken },
   });
 
-  return new NextResponse(pdfBuffer, {
+  // Node's Buffer is typed over ArrayBufferLike, which doesn't satisfy the web
+  // BodyInit; re-wrap as a plain Uint8Array.
+  return new NextResponse(new Uint8Array(pdfBuffer), {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",

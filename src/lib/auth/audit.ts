@@ -84,7 +84,9 @@ export async function recordAudit(entry: AuditEntry): Promise<void> {
 
 // Convenience helper for status-change events (workflow transitions)
 export function recordStatusChange(opts: {
-  user: JwtPayload;
+  // Callers pass the request-context user (AuthUser), which carries the db id.
+  // JwtPayload alone only has `sub`.
+  user: JwtPayload & { id: string };
   entity: AuditEntity;
   entityId: string;
   entityRef?: string;

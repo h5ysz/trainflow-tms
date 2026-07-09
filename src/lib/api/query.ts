@@ -2,8 +2,6 @@
 // Supports: pagination, search, status filter, sort, arbitrary filters,
 // and "includeDeleted" toggle for soft-delete aware endpoints.
 
-import { Response } from "next";
-
 export interface ListQuery {
   page: number;
   pageSize: number;
@@ -60,7 +58,7 @@ export function buildListMeta(total: number, q: ListQuery): ListMeta {
 
 // Soft-delete Prisma WHERE clause builder
 // Returns a WHERE fragment that excludes soft-deleted records unless includeDeleted=true
-export function softDeleteWhere(includeDeleted: boolean): { deletedAt: null | undefined } {
+export function softDeleteWhere(includeDeleted: boolean): { deletedAt?: null } {
   return includeDeleted ? {} : { deletedAt: null };
 }
 
