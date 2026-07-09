@@ -27,7 +27,9 @@ interface AppState {
 
   // Routing
   currentRoute: RouteKey;
-  navigate: (route: RouteKey) => void;
+  /** Id carried by detail routes (e.g. session-detail). Null on list routes. */
+  routeParam: string | null;
+  navigate: (route: RouteKey, param?: string) => void;
 
   // Sidebar (mobile)
   sidebarOpen: boolean;
@@ -56,6 +58,7 @@ export const useAppStore = create<AppState>()(
             isAuthenticated: true,
             locale: (user.language as Locale) ?? "en",
             currentRoute: "dashboard",
+            routeParam: null,
             authLoading: false,
           });
         } catch (e) {
@@ -80,10 +83,10 @@ export const useAppStore = create<AppState>()(
         } catch {
           // ignore — cookie cleared on server anyway
         }
-        set({ user: null, isAuthenticated: false, currentRoute: "dashboard", sidebarOpen: false });
+        set({ user: null, isAuthenticated: false, currentRoute: "dashboard", routeParam: null, sidebarOpen: false });
       },
 
-      clearAuth: () => set({ user: null, isAuthenticated: false, currentRoute: "dashboard" }),
+      clearAuth: () => set({ user: null, isAuthenticated: false, currentRoute: "dashboard", routeParam: null }),
 
       // Locale
       locale: "en",
@@ -99,7 +102,9 @@ export const useAppStore = create<AppState>()(
 
       // Routing
       currentRoute: "dashboard",
-      navigate: (route) => set({ currentRoute: route, sidebarOpen: false }),
+      routeParam: null,
+      navigate: (route, param) =>
+        set({ currentRoute: route, routeParam: param ?? null, sidebarOpen: false }),
 
       // Sidebar
       sidebarOpen: false,
@@ -117,6 +122,8 @@ export const useAppStore = create<AppState>()(
         locale: state.locale,
         theme: state.theme,
         currentRoute: state.currentRoute,
+        // Persisted so a refresh on a detail route keeps its subject.
+        routeParam: state.routeParam,
       }),
     }
   )

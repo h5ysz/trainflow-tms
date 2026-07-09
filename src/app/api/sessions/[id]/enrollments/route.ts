@@ -115,11 +115,27 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
 
   // Create enrollments + update SessionCompany tracking in a transaction
   const result = await db.$transaction(async (tx) => {
-    // Create enrollment records
+    // Create enrollment records.
+    //
+    // Upsert, not create: @@unique([sessionId, traineeId]) does not include
+    // deletedAt, while the already-enrolled filter above does. A trainee who
+    // was enrolled and then removed therefore looks absent but still owns the
+    // unique key, and a plain create would violate it. Re-enrolling revives
+    // the soft-deleted row.
     const enrollments = await Promise.all(
       newTrainees.map((trainee) =>
-        tx.sessionEnrollment.create({
-          data: {
+        tx.sessionEnrollment.upsert({
+          where: { sessionId_traineeId: { sessionId, traineeId: trainee.id } },
+          update: {
+            deletedAt: null,
+            companyId: trainee.companyId,
+            enrolledBy: user.id,
+            enrollmentStatus: "PENDING",
+            enrollmentDate: new Date(),
+            notes: notes ?? null,
+            updatedBy: user.id,
+          },
+          create: {
             sessionId,
             traineeId: trainee.id,
             companyId: trainee.companyId, // trainee's ORIGINAL company — preserved

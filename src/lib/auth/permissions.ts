@@ -17,6 +17,7 @@ export type RouteKey =
   | "courses"
   | "requests"
   | "sessions"
+  | "session-detail"
   | "scheduling"
   | "attendance"
   | "qr-code"
@@ -41,6 +42,9 @@ export const ACTIONS: Action[] = ["view", "create", "edit", "delete"];
  * Every module, for building permission pickers. Role.permissions stores
  * "module.action" strings with wildcards — "*", "companies.*", "reports.view"
  * — matching the vocabulary seeded in scripts/seed.ts.
+ *
+ * Excludes "session-detail": it is a detail view reached from the sessions
+ * list, not a module a role is granted separately.
  */
 export const ALL_MODULES: RouteKey[] = [
   "dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
@@ -69,6 +73,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "courses",
     "requests",
     "sessions",
+    "session-detail",
     "scheduling",
     "attendance",
     "qr-code",
@@ -96,6 +101,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "courses",
     "requests",
     "sessions",
+    "session-detail",
     "scheduling",
     "attendance",
     "qr-code",
@@ -120,6 +126,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "courses",
     "requests",
     "sessions",
+    "session-detail",
     "scheduling",
     "attendance",
     "qr-code",
@@ -142,6 +149,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "courses",
     "requests",
     "sessions",
+    "session-detail",
     "scheduling",
     "attendance",
     "qr-code",

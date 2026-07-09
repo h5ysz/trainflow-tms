@@ -15,6 +15,7 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { CalendarDays, Plus, BookOpen, GraduationCap, MapPin, Users, AlertCircle } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api } from "@/lib/api/client";
+import { useAppStore } from "@/lib/store/app-store";
 import { useEntityActions } from "@/hooks/use-entity-actions";
 import { toDateTimeInput } from "@/lib/utils";
 
@@ -55,6 +56,7 @@ const NEW_SESSION = {
 
 export function TrainingSessionsRoute() {
   const { t } = useI18n();
+  const { navigate } = useAppStore();
   const [courses, setCourses] = useState<CourseOption[]>([]);
   const [trainers, setTrainers] = useState<TrainerOption[]>([]);
 
@@ -140,6 +142,7 @@ export function TrainingSessionsRoute() {
         <RowActions
           canEdit={canEdit}
           canDelete={canDelete}
+          onView={() => navigate("session-detail", row.id)}
           onEdit={() => void openEdit(row)}
           onDelete={() => setDeleteTarget(row)}
         />

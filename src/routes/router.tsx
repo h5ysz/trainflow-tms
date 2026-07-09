@@ -14,6 +14,7 @@ import { TraineesRoute } from "./trainees";
 import { CoursesRoute } from "./courses";
 import { TrainingRequestsRoute } from "./training-requests";
 import { TrainingSessionsRoute } from "./training-sessions";
+import { SessionDetailRoute } from "./session-detail";
 import { SchedulingRoute } from "./scheduling";
 import { AttendanceRoute } from "./attendance";
 import { QrCodeRoute } from "./qr-code";
@@ -41,6 +42,8 @@ const ROUTES: Record<RouteKey, React.ComponentType> = {
   courses: CoursesRoute,
   requests: TrainingRequestsRoute,
   sessions: TrainingSessionsRoute,
+  // Reached from the sessions list; intentionally absent from navItems.
+  "session-detail": SessionDetailRoute,
   scheduling: SchedulingRoute,
   attendance: AttendanceRoute,
   "qr-code": QrCodeRoute,

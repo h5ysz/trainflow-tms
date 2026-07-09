@@ -30,7 +30,7 @@ export const PUT = withModuleAction("sessions", "edit", async ({ req, params, us
     action: "UPDATE",
     entity: "SESSION",
     entityId: sessionId,
-    description: `Updated enrollment ${enrollmentId} status to ${status ?? updated.status}`,
+    description: `Updated enrollment ${enrollmentId} status to ${updated.enrollmentStatus}`,
     req,
   });
 
