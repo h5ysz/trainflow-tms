@@ -151,3 +151,109 @@ Stage Summary:
 - settings-page.tsx is also more robust now (proper top-of-file imports, standard hook pattern).
 - The router has a defensive null-check so future missing routes display a friendly message instead of crashing React.
 - User can now click on "User Approvals" / "User Management" / "Roles & Permissions" in the sidebar (System group) without crashing the app.
+
+---
+Task ID: 10
+Agent: Super Z (main)
+Task: Complete Sprint 6 — User Registration, Approval Workflow, User Management, Role Management, Permission Matrix, Branding sweep, Login page finalization, Settings branding tab, and full verification.
+
+Work Log:
+- Audited existing Sprint 6 state via sub-agent (Task ID: agent-7e86ff54). Identified 4 critical issues + 16 major gaps.
+- Fixed public registration (/api/auth/register):
+  * Added duplicate National ID check (scans registrationData JSON across all users)
+  * Added email format validation (RFC-5322 simplified regex)
+  * Added mobile number format validation (Saudi format)
+  * Added National ID format validation (10 digits)
+  * Added password complexity check (uppercase + lowercase + digit)
+  * Added bilingual error messages via Accept-Language header
+  * Auto-synced <html lang> attribute from i18n context so server can pick the right locale
+- Fixed approval workflow UI (user-approvals.tsx):
+  * Corrected API URL from /api/user-approvals/{id}/{action} (404) to /api/user-approvals/{id} with action in body
+  * Uppercased action strings (APPROVE/REJECT/SUSPEND/ACTIVATE/REQUEST_INFO)
+  * Added all 5 action buttons (was missing ACTIVATE and REQUEST_INFO)
+  * Added reason/memo dialog for REJECT/SUSPEND/REQUEST_INFO
+  * Added createCompany checkbox on APPROVE (links contractor to new/existing Company record)
+- Extended PUT /api/users/[id] to accept forcePasswordChange, accountStatus, roleId
+- Created GET /api/users/export (CSV export with BOM for Excel, audit logged)
+- Created POST /api/roles/[id]/duplicate (clones role with new code/name, copies permissions)
+- Created GET/POST /api/roles/[id]/users (list users on role + bulk assign/unassign)
+- Removed demo role-login from production:
+  * Stripped the role-switcher dropdown from topbar.tsx
+  * Removed the role-based demo login path from /api/auth/login (now requires email+password only)
+- Built comprehensive User Management UI (user-management.tsx):
+  * Create user dialog with role/language/active/forcePasswordChange
+  * Edit user dialog (loads existing user via GET /api/users/[id])
+  * Reset password dialog with force-change toggle
+  * Deactivate/Activate toggle button per row
+  * Lock/Unlock button per row
+  * Force password change toggle per row
+  * Soft delete with confirmation dialog
+  * Search by name/email
+  * Filter by role + active status
+  * Export CSV button
+  * Action button bar per row with icons + tooltips
+- Built Role Management UI + Permission Matrix (roles.tsx):
+  * Create/Edit/Duplicate role dialogs
+  * 23-module × 9-action permission matrix (View/Create/Edit/Delete/Approve/Export/Print/Manage Users/Manage Settings)
+  * Per-module "All" checkbox (toggles wildcard)
+  * "Grant All (*)" and "Clear All" shortcuts
+  * Live permission counter + wildcard badge
+  * Delete with confirmation (refuses system roles or roles with assigned users)
+  * Assign Users dialog with bulk checkbox selection
+- Implemented Dynamic RBAC:
+  * Extended Action type from 4 to 9 actions
+  * Added MODULE_APPLICABLE_ACTIONS map per module
+  * Added loadRolePermissions() runtime override mechanism
+  * Modified getCurrentUser() to load Role.permissions from DB and call loadRolePermissions()
+  * canAccessModule() and canPerformAction() now consult dynamic override map first
+- Expanded branding seed keys (seed.ts + scripts/upsert-branding-settings.ts):
+  * branding.companyNameEn = "GCCLAB"
+  * branding.companyNameAr = "المختبر الخليجي"
+  * branding.companyFullNameEn = "Gulf Calibration Laboratory"
+  * branding.companyFullNameAr = "المختبر الخليجي للمعايرة"
+  * branding.logoUrl = "/gcclab-logo-official.png"
+  * branding.logoWhiteUrl = "/gcclab-logo-white.png"
+  * branding.faviconUrl = "/gcclab-icon.png"
+  * branding.primaryColor = "#7B1E2B" (burgundy, was incorrectly teal)
+  * branding.secondaryColor = "#1F2937"
+  * branding.supportEmail = "support@gcclab.com"
+  * branding.supportPhone = "+966 11 XXX XXXX"
+- Created GET /api/settings/public (no-auth endpoint for login page to fetch branding)
+- Expanded Settings branding tab UI (settings-page.tsx):
+  * 4 cards: Company Identity, Official Logos, Brand Colors, Support Contact
+  * Live logo previews (color on white + white on burgundy)
+  * Fixed missing `locale` destructure bug (was causing settings page to crash)
+- Wired login-form.tsx to fetch /api/settings/public on mount:
+  * Dynamic support email (was hardcoded)
+  * Dynamic white logo URL
+  * Dynamic company name (alt text)
+- Branding cleanup:
+  * Changed JWT_AUDIENCE from "trainflow-users" to "gcclab-users" in jwt.ts
+  * Updated prisma/schema.prisma header from "TrainFlow TMS" to "GCCLAB TMS"
+  * Deleted public/logo.svg (old TrainFlow placeholder)
+  * Fixed COMPANY RefNumberCounter bug (NULL year wasn't matching via upsert — replaced with findFirst+update)
+  * Reset stale COMPANY counter rows from 4 duplicates to 1 with correct sequence
+- Verification via Agent Browser:
+  * Login page: ✅ no TrainFlow text, no GC Lab (single C), correct Arabic name, support email shown, official GCCLAB logo
+  * Public registration: ✅ valid registration → PENDING_APPROVAL; duplicate email blocked; duplicate National ID blocked (Arabic message); invalid email/weak password/bad national ID all return bilingual errors
+  * Dashboard: ✅ loads without error, all 21 nav items accessible
+  * User Approvals: ✅ filter tabs (Pending/Suspended/Rejected/Active), table with columns, Approve/Reject/Suspend/Activate/Request Info buttons all work, reason dialog opens, approve creates Company record + audit log + notification
+  * User Management: ✅ list with 3+ users, Export/New User buttons, role + status filters, action buttons (edit/reset pw/deactivate/lock/force-change/delete) all present
+  * Roles & Permissions: ✅ list with 5+ roles including custom QUALITY_MANAGER, New Role dialog with full 23×9 permission matrix, Grant All/Clear All buttons, duplicate/edit/delete/assign-users buttons
+  * Settings → Branding tab: ✅ all 8 fields present (Company Name EN/AR, Logo URL, Favicon, Primary Color, Secondary Color, Support Email, Support Phone) + live logo previews
+  * Existing modules (Companies, Reports, Audit Log, etc.): ✅ all still load without crashes
+  * CSV Export: ✅ returns valid CSV with BOM, includes all users, audit logged
+  * Role Duplicate API: ✅ POST /api/roles/{id}/duplicate creates new role with permissions copied
+
+Stage Summary:
+- Sprint 6 is functionally complete. All 8 user requirements addressed.
+- 23 files modified or created across backend API, frontend routes, seed data, branding assets, and documentation.
+- All 9 verification checks passed via Agent Browser.
+- One pre-existing bug fixed in COMPANY ref-number generation (was blocking the approval workflow).
+- Demo role-login security hole closed (any logged-in user could previously escalate to SUPER_ADMIN).
+- Dynamic RBAC now consults DB-stored Role.permissions at runtime — admins can create custom roles with custom permission matrices from the UI without code changes.
+- Branding is fully dynamic — login page reads support email + logo URL from /api/settings/public, admin can change everything from Settings → Branding tab.
+- No "TrainFlow" or "GC Lab" (single C) references remain in source code.
+- Old public/logo.svg placeholder removed.
+- Verification screenshots saved to /home/z/my-project/download/sprint6-verify-*.png (12 files).
+- Type-check passes cleanly for all new/modified files (5 pre-existing errors in other files unchanged).

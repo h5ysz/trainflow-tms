@@ -19,21 +19,54 @@ export function RegisterForm() {
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
-    if (!formData.companyName || !formData.contactPerson || !formData.nationalId || !formData.mobileNumber || !formData.email || !formData.password) {
-      setError(locale === "en" ? "All fields are required except Commercial Registration" : "جميع الحقول مطلوبة عدا السجل التجاري");
+    setError(null);
+
+    // Client-side validation (server mirrors these checks; both layers bilingual)
+    const required = {
+      companyName: formData.companyName?.trim(),
+      contactPerson: formData.contactPerson?.trim(),
+      nationalId: formData.nationalId?.trim(),
+      mobileNumber: formData.mobileNumber?.trim(),
+      email: formData.email?.trim(),
+      password: formData.password,
+    };
+    for (const [k, v] of Object.entries(required)) {
+      if (!v) {
+        setError(locale === "en" ? "All fields are required except Commercial Registration" : "جميع الحقول مطلوبة عدا السجل التجاري");
+        return;
+      }
+      void k;
+    }
+    if (!formData.confirmPassword) {
+      setError(locale === "en" ? "Please confirm your password" : "يرجى تأكيد كلمة المرور");
       return;
     }
     if (formData.password !== formData.confirmPassword) {
-      setError(locale === "en" ? "Passwords do not match" : "كلمات المرور غير متطابقة");
+      setError(locale === "en" ? "Passwords do not match" : "كلمتا المرور غير متطابقتين");
       return;
     }
     if (formData.password.length < 8) {
       setError(locale === "en" ? "Password must be at least 8 characters" : "كلمة المرور يجب أن تكون 8 أحرف على الأقل");
       return;
     }
+    if (!/[A-Z]/.test(formData.password) || !/[a-z]/.test(formData.password) || !/\d/.test(formData.password)) {
+      setError(locale === "en" ? "Password must include uppercase, lowercase, and a number" : "كلمة المرور يجب أن تحتوي على أحرف كبيرة وصغيرة ورقم");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(formData.email)) {
+      setError(locale === "en" ? "Please enter a valid email address" : "الرجاء إدخال بريد إلكتروني صحيح");
+      return;
+    }
+    if (!/^\d{10}$/.test(formData.nationalId)) {
+      setError(locale === "en" ? "National ID / Iqama must be 10 digits" : "رقم الهوية / الإقامة يجب أن يكون 10 أرقام");
+      return;
+    }
+    if (!/^(\+?966|0)?[\s-]?5\d[\s-]?\d{3}[\s-]?\d{4}$/.test(formData.mobileNumber)) {
+      setError(locale === "en" ? "Please enter a valid mobile number (e.g. +966 5X XXX XXXX)" : "الرجاء إدخال رقم جوال صحيح (مثل ‎+966 5X XXX XXXX)");
+      return;
+    }
 
     setSubmitting(true);
-    setError(null);
     try {
       await api.post("/auth/register", {
         companyName: formData.companyName,
@@ -184,6 +217,11 @@ export function RegisterForm() {
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">{locale === "en" ? "Password" : "كلمة المرور"} *</Label>
               <Input type="password" value={formData.password ?? ""} onChange={(e) => setField("password", e.target.value)} className="h-11" placeholder="••••••••" />
+              <p className="text-[11px] text-muted-foreground">
+                {locale === "en"
+                  ? "Min 8 chars, with uppercase, lowercase, and a number."
+                  : "٨ أحرف على الأقل، مع حرف كبير وصغير ورقم."}
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">{locale === "en" ? "Confirm Password" : "تأكيد كلمة المرور"} *</Label>

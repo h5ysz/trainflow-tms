@@ -1,4 +1,4 @@
-// TrainFlow TMS — Enterprise Prisma Schema
+// GCCLAB TMS — Enterprise Prisma Schema
 // =====================================================================
 // Architecture requirements implemented:
 //  - UUID primary keys for every table

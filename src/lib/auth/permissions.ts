@@ -32,7 +32,64 @@ export type RouteKey =
   | "user-management"
   | "roles";
 
-export type Action = "view" | "create" | "edit" | "delete";
+// Sprint 6 — extended action set for the full permission matrix.
+// Each module can grant: view, create, edit, delete, approve, export, print,
+// manage_users, manage_settings.
+export type Action =
+  | "view"
+  | "create"
+  | "edit"
+  | "delete"
+  | "approve"
+  | "export"
+  | "print"
+  | "manage_users"
+  | "manage_settings";
+
+// All actions available in the matrix (used by Role editor UI)
+export const ALL_ACTIONS: Action[] = [
+  "view", "create", "edit", "delete", "approve", "export", "print", "manage_users", "manage_settings",
+];
+
+// Human-readable labels (EN + AR) for each action — used by the matrix editor
+export const ACTION_LABELS: Record<Action, { en: string; ar: string }> = {
+  view: { en: "View", ar: "عرض" },
+  create: { en: "Create", ar: "إنشاء" },
+  edit: { en: "Edit", ar: "تعديل" },
+  delete: { en: "Delete", ar: "حذف" },
+  approve: { en: "Approve", ar: "اعتماد" },
+  export: { en: "Export", ar: "تصدير" },
+  print: { en: "Print", ar: "طباعة" },
+  manage_users: { en: "Manage Users", ar: "إدارة المستخدمين" },
+  manage_settings: { en: "Manage Settings", ar: "إدارة الإعدادات" },
+};
+
+// Per-module list of which actions are *applicable* (e.g. dashboard has no "delete")
+export const MODULE_APPLICABLE_ACTIONS: Partial<Record<RouteKey, Action[]>> = {
+  dashboard: ["view", "export"],
+  companies: ["view", "create", "edit", "delete", "export", "print"],
+  "company-contacts": ["view", "create", "edit", "delete", "export"],
+  trainers: ["view", "create", "edit", "delete", "export"],
+  "trainer-qualifications": ["view", "create", "edit", "delete", "export"],
+  trainees: ["view", "create", "edit", "delete", "export", "print"],
+  courses: ["view", "create", "edit", "delete", "export"],
+  requests: ["view", "create", "edit", "delete", "approve", "export", "print"],
+  sessions: ["view", "create", "edit", "delete", "approve", "export", "print"],
+  scheduling: ["view", "create", "edit", "delete", "export"],
+  attendance: ["view", "create", "edit", "export", "print"],
+  "qr-code": ["view", "create"],
+  "pre-test": ["view", "create", "edit", "export"],
+  "final-test": ["view", "create", "edit", "export"],
+  evaluation: ["view", "export"],
+  certificates: ["view", "create", "edit", "delete", "export", "print"],
+  reports: ["view", "export", "print"],
+  notifications: ["view"],
+  "audit-log": ["view", "export"],
+  "user-approvals": ["view", "approve"],
+  "user-management": ["view", "create", "edit", "delete", "manage_users", "export"],
+  roles: ["view", "create", "edit", "delete", "manage_users"],
+  settings: ["view", "manage_settings"],
+};
 
 // Module visibility per role
 // =====================================================================
@@ -213,6 +270,13 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
 };
 
 export function canAccessModule(role: UserRole, module: RouteKey): boolean {
+  // SUPER_ADMIN can always see everything
+  if (role === "SUPER_ADMIN") return true;
+  // Dynamic override: if a runtime override map has been loaded (from DB Role.permissions),
+  // check it first.
+  if (dynamicModuleAccess[role]) {
+    return dynamicModuleAccess[role]!.includes(module);
+  }
   return moduleAccess[role].includes(module);
 }
 
@@ -222,9 +286,91 @@ export function canPerformAction(
   action: Action
 ): boolean {
   if (role === "SUPER_ADMIN") return true;
+  // Dynamic override: if a runtime override map has been loaded (from DB Role.permissions),
+  // check it first.
+  if (dynamicActionPermissions[role]) {
+    const allowed = dynamicActionPermissions[role]![module];
+    if (!allowed) return false;
+    return allowed.includes(action);
+  }
   const allowed = actionPermissions[role][module];
   if (!allowed) return false;
   return allowed.includes(action);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Sprint 6 — Dynamic RBAC override mechanism
+// ─────────────────────────────────────────────────────────────────────────
+// Custom roles created in the DB store their permission matrix as an array of
+// strings like ["companies.view", "companies.create", "sessions.*"] in
+// Role.permissions. When a user logs in with a custom roleId, the API layer
+// (requireRole / getCurrentUser) loads that array into the user's session and
+// the frontend / API can call `loadRolePermissions(role, permissions)` to
+// override the hardcoded map for that role.
+//
+// Format supported:
+//   "*"                              → all actions on all modules (super-admin-equivalent)
+//   "companies.view"                 → single module + action
+//   "companies.*"                    → all applicable actions for that module
+//   "companies"                      → view-only on that module (shorthand)
+//
+// On the SERVER side, this is loaded once per request from the User's Role.
+// On the CLIENT side, it's loaded once after login from /api/auth/me.
+// ─────────────────────────────────────────────────────────────────────────
+
+const dynamicModuleAccess: Partial<Record<string, RouteKey[]>> = {};
+const dynamicActionPermissions: Partial<Record<string, Partial<Record<RouteKey, Action[]>>>> = {};
+
+export function clearRoleOverride(role: string) {
+  delete dynamicModuleAccess[role];
+  delete dynamicActionPermissions[role];
+}
+
+export function loadRolePermissions(role: string, permissions: string[] | null | undefined) {
+  if (!permissions || permissions.length === 0) {
+    clearRoleOverride(role);
+    return;
+  }
+
+  // Super-admin wildcard
+  if (permissions.includes("*")) {
+    // Don't override SUPER_ADMIN's hardcoded behavior; just bail out.
+    return;
+  }
+
+  const moduleSet = new Set<RouteKey>();
+  const actionMap: Partial<Record<RouteKey, Action[]>> = {};
+
+  for (const entry of permissions) {
+    const [mod, act] = entry.split(".");
+    if (!mod) continue;
+    // Validate module name against known RouteKeys
+    const knownModules: RouteKey[] = [
+      "dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
+      "trainees", "courses", "requests", "sessions", "scheduling", "attendance", "qr-code",
+      "pre-test", "final-test", "evaluation", "certificates", "reports", "notifications",
+      "audit-log", "settings", "user-approvals", "user-management", "roles",
+    ];
+    if (!knownModules.includes(mod as RouteKey)) continue;
+    const rMod = mod as RouteKey;
+
+    moduleSet.add(rMod);
+
+    if (!act || act === "*") {
+      // Grant all applicable actions for this module
+      const applicable = MODULE_APPLICABLE_ACTIONS[rMod] ?? ["view"];
+      actionMap[rMod] = [...applicable];
+    } else if (ALL_ACTIONS.includes(act as Action)) {
+      // Single action
+      if (!actionMap[rMod]) actionMap[rMod] = [];
+      if (!actionMap[rMod]!.includes(act as Action)) {
+        actionMap[rMod]!.push(act as Action);
+      }
+    }
+  }
+
+  dynamicModuleAccess[role] = Array.from(moduleSet);
+  dynamicActionPermissions[role] = actionMap;
 }
 
 // Module grouping for navigation

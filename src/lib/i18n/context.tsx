@@ -42,6 +42,15 @@ export function I18nProvider({
     };
   }, [locale, setLocale]);
 
+  // Sync <html lang> + dir so server-side bilingual messages (Accept-Language)
+  // and CSS RTL selectors work consistently.
+  React.useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.lang = locale;
+      document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
+    }
+  }, [locale]);
+
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 

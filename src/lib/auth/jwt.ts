@@ -7,7 +7,7 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "gcclab-tms-dev-secret-change-in-production-32bytes!"
 );
 const JWT_ISSUER = "gcclab-tms";
-const JWT_AUDIENCE = "trainflow-users";
+const JWT_AUDIENCE = "gcclab-users";
 const TOKEN_TTL = "7d";
 
 export interface JwtPayload {

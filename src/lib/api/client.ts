@@ -52,9 +52,15 @@ async function request<T>(
   }
 
   const isFormData = options.body instanceof FormData;
+  // Auto-include Accept-Language so server-side bilingual error messages work
+  const acceptLang =
+    typeof document !== "undefined" && document.documentElement.lang
+      ? document.documentElement.lang
+      : "en";
   const res = await fetch(url, {
     ...options,
     headers: {
+      "Accept-Language": acceptLang,
       ...(options.body && !isFormData ? { "Content-Type": "application/json" } : {}),
       ...(options.headers ?? {}),
     },

@@ -25,7 +25,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     email: target.email,
     fullName: target.fullName,
     role: target.role,
+    roleId: target.roleId,
     isActive: target.isActive,
+    accountStatus: target.accountStatus,
+    forcePasswordChange: target.forcePasswordChange,
+    failedLoginAttempts: target.failedLoginAttempts,
+    lockedUntil: target.lockedUntil,
     language: target.language,
     avatarUrl: target.avatarUrl,
     companyId: target.companyId,
@@ -49,7 +54,10 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!existing || existing.deletedAt) return notFound("User not found");
 
   const body = await req.json().catch(() => ({}));
-  const { email, fullName, role, language, isActive, companyId, trainerId, password, avatarUrl } = body;
+  const {
+    email, fullName, role, language, isActive, companyId, trainerId,
+    password, avatarUrl, forcePasswordChange, accountStatus, roleId,
+  } = body;
 
   if (email && email !== existing.email) {
     const dup = await db.user.findFirst({ where: { email, deletedAt: null } });
@@ -68,6 +76,9 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
       ...(companyId !== undefined && { companyId }),
       ...(trainerId !== undefined && { trainerId }),
       ...(avatarUrl !== undefined && { avatarUrl }),
+      ...(forcePasswordChange !== undefined && { forcePasswordChange: !!forcePasswordChange }),
+      ...(accountStatus !== undefined && { accountStatus }),
+      ...(roleId !== undefined && { roleId }),
       ...(password && { passwordHash: await hashPassword(password) }),
       updatedBy: user.id,
     },

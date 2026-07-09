@@ -51,14 +51,29 @@ function pad(n: number, width = 6): string {
 export async function nextRefNumber(entityType: RefEntityType): Promise<string> {
   const year = YEARLY.has(entityType) ? new Date().getFullYear() : null;
 
-  // Atomic increment via upsert (safe under concurrent requests)
-  const counter = await db.refNumberCounter.upsert({
-    where: {
-      entityType_year: { entityType, year: year ?? 0 },
-    },
-    update: { sequence: { increment: 1 } },
-    create: { entityType, year, sequence: 1 },
+  // Find existing counter for this entity type + year (NULL-safe lookup)
+  // — Prisma's compound unique on (entityType, year) doesn't match NULL years
+  // via the convenience where clause, so we findFirst + manual increment.
+  const existing = await db.refNumberCounter.findFirst({
+    where: { entityType, year },
+    orderBy: { createdAt: "asc" },
   });
+
+  let counter;
+  if (existing) {
+    counter = await db.refNumberCounter.update({
+      where: { id: existing.id },
+      data: { sequence: { increment: 1 } },
+    });
+    // If there are duplicate counter rows (legacy data), clean them up
+    await db.refNumberCounter.deleteMany({
+      where: { entityType, year, id: { not: existing.id } },
+    });
+  } else {
+    counter = await db.refNumberCounter.create({
+      data: { entityType, year, sequence: 1 },
+    });
+  }
 
   const prefix = PREFIX[entityType];
   const seq = pad(counter.sequence);

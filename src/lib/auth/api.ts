@@ -3,9 +3,10 @@
 
 import { cookies } from "next/headers";
 import { verifyToken, type JwtPayload } from "./jwt";
-import { canAccessModule, canPerformAction, type RouteKey, type Action, type UserRole } from "@/lib/auth/permissions";
+import { canAccessModule, canPerformAction, loadRolePermissions, type RouteKey, type Action, type UserRole } from "@/lib/auth/permissions";
 import { recordAudit, type AuditAction, type AuditEntity } from "./audit";
 import { ok, created, fail, notFound, type ApiMeta } from "@/lib/api/response";
+import { db } from "@/lib/db";
 
 const COOKIE_NAME = "tf_session";
 const COOKIE_TTL_DAYS = 7;
@@ -40,6 +41,29 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
   if (!token) return null;
   const payload = await verifyToken(token);
   if (!payload) return null;
+
+  // Sprint 6 — Dynamic RBAC: if the user has a custom roleId, load its
+  // permissions from the DB into the runtime override map so canAccessModule /
+  // canPerformAction consult them on this request.
+  try {
+    if (payload.roleId) {
+      const role = await db.role.findUnique({
+        where: { id: payload.roleId },
+        select: { permissions: true, code: true },
+      });
+      if (role && Array.isArray(role.permissions) && role.permissions.length > 0) {
+        // Use the role code as the dynamic-RBAC key — overrides the hardcoded
+        // map for this role string during this request.
+        loadRolePermissions(role.code ?? payload.role, role.permissions as string[]);
+        // ALSO expose the role code on the user object so downstream code
+        // sees the custom role identifier.
+        return { ...payload, id: payload.sub, role: role.code as UserRole ?? payload.role };
+      }
+    }
+  } catch {
+    // DB might be unavailable in some edge cases (e.g. during seed); fall back to hardcoded.
+  }
+
   return { ...payload, id: payload.sub };
 }
 

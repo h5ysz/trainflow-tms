@@ -34,7 +34,7 @@ interface UserRow {
 function bool(v?: string) { return v === "true" || v === "1"; }
 
 export function SettingsRoute() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { toast } = useToast();
   const { user } = useAppStore();
   const [tab, setTab] = useState("general");
@@ -182,18 +182,100 @@ export function SettingsRoute() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="branding" className="mt-4">
-          <Card className="p-6 max-w-2xl">
+        <TabsContent value="branding" className="mt-4 space-y-4">
+          {/* Identity */}
+          <Card className="p-6 max-w-3xl">
+            <h3 className="text-sm font-semibold mb-4">
+              {locale === "en" ? "Company Identity" : "هوية الشركة"}
+            </h3>
             {loading ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : (
               <FormGrid>
-                <Field label={t("settings.logoUrl")}>
-                  <Input value={settings["branding.logoUrl"] ?? ""} onChange={(e) => setSetting("branding.logoUrl", e.target.value)} />
+                <Field label={locale === "en" ? "Company Name (English)" : "اسم الشركة (إنجليزي)"}>
+                  <Input value={settings["branding.companyNameEn"] ?? ""} onChange={(e) => setSetting("branding.companyNameEn", e.target.value)} placeholder="GCCLAB" />
                 </Field>
-                <Field label={t("settings.primaryColor")}>
-                  <div className="flex items-center gap-2">
-                    <Input type="color" value={settings["branding.primaryColor"] ?? "#0d9488"} onChange={(e) => setSetting("branding.primaryColor", e.target.value)} className="h-9 w-16 p-1" />
-                    <Input value={settings["branding.primaryColor"] ?? "#0d9488"} onChange={(e) => setSetting("branding.primaryColor", e.target.value)} className="font-mono" />
+                <Field label={locale === "en" ? "Company Name (Arabic)" : "اسم الشركة (عربي)"}>
+                  <Input value={settings["branding.companyNameAr"] ?? ""} onChange={(e) => setSetting("branding.companyNameAr", e.target.value)} dir="rtl" placeholder="المختبر الخليجي" />
+                </Field>
+                <Field label={locale === "en" ? "Full Company Name (English)" : "الاسم الكامل (إنجليزي)"}>
+                  <Input value={settings["branding.companyFullNameEn"] ?? ""} onChange={(e) => setSetting("branding.companyFullNameEn", e.target.value)} placeholder="Gulf Calibration Laboratory" />
+                </Field>
+                <Field label={locale === "en" ? "Full Company Name (Arabic)" : "الاسم الكامل (عربي)"}>
+                  <Input value={settings["branding.companyFullNameAr"] ?? ""} onChange={(e) => setSetting("branding.companyFullNameAr", e.target.value)} dir="rtl" placeholder="المختبر الخليجي للمعايرة" />
+                </Field>
+              </FormGrid>
+            )}
+          </Card>
+
+          {/* Logos */}
+          <Card className="p-6 max-w-3xl">
+            <h3 className="text-sm font-semibold mb-4">
+              {locale === "en" ? "Official Logos" : "الشعارات الرسمية"}
+            </h3>
+            {loading ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : (
+              <div className="space-y-4">
+                <FormGrid>
+                  <Field label={locale === "en" ? "Logo URL (color, light backgrounds)" : "رابط الشعار (ملوّن، خلفيات فاتحة)"}>
+                    <Input value={settings["branding.logoUrl"] ?? ""} onChange={(e) => setSetting("branding.logoUrl", e.target.value)} placeholder="/gcclab-logo-official.png" />
+                  </Field>
+                  <Field label={locale === "en" ? "Logo URL (white, dark backgrounds)" : "رابط الشعار (أبيض، خلفيات داكنة)"}>
+                    <Input value={settings["branding.logoWhiteUrl"] ?? ""} onChange={(e) => setSetting("branding.logoWhiteUrl", e.target.value)} placeholder="/gcclab-logo-white.png" />
+                  </Field>
+                  <Field label={locale === "en" ? "Favicon URL" : "رابط الأيقونة (Favicon)"}>
+                    <Input value={settings["branding.faviconUrl"] ?? ""} onChange={(e) => setSetting("branding.faviconUrl", e.target.value)} placeholder="/gcclab-icon.png" />
+                  </Field>
+                </FormGrid>
+                {/* Live preview */}
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div className="rounded-md border bg-white p-3">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">{locale === "en" ? "Color logo" : "شعار ملوّن"}</div>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={settings["branding.logoUrl"] || "/gcclab-logo-official.png"} alt="Color logo preview" className="h-10 object-contain" />
                   </div>
+                  <div className="rounded-md border p-3" style={{ background: settings["branding.primaryColor"] || "#7B1E2B" }}>
+                    <div className="text-[10px] uppercase tracking-wider text-white/70 mb-2">{locale === "en" ? "White logo on burgundy" : "شعار أبيض على عنابي"}</div>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={settings["branding.logoWhiteUrl"] || "/gcclab-logo-white.png"} alt="White logo preview" className="h-10 object-contain" />
+                  </div>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          {/* Colors */}
+          <Card className="p-6 max-w-3xl">
+            <h3 className="text-sm font-semibold mb-4">
+              {locale === "en" ? "Brand Colors" : "ألوان العلامة"}
+            </h3>
+            {loading ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : (
+              <FormGrid>
+                <Field label={locale === "en" ? "Primary Color" : "اللون الأساسي"}>
+                  <div className="flex items-center gap-2">
+                    <Input type="color" value={settings["branding.primaryColor"] ?? "#7B1E2B"} onChange={(e) => setSetting("branding.primaryColor", e.target.value)} className="h-9 w-16 p-1" />
+                    <Input value={settings["branding.primaryColor"] ?? "#7B1E2B"} onChange={(e) => setSetting("branding.primaryColor", e.target.value)} className="font-mono" />
+                  </div>
+                </Field>
+                <Field label={locale === "en" ? "Secondary Color" : "اللون الثانوي"}>
+                  <div className="flex items-center gap-2">
+                    <Input type="color" value={settings["branding.secondaryColor"] ?? "#1F2937"} onChange={(e) => setSetting("branding.secondaryColor", e.target.value)} className="h-9 w-16 p-1" />
+                    <Input value={settings["branding.secondaryColor"] ?? "#1F2937"} onChange={(e) => setSetting("branding.secondaryColor", e.target.value)} className="font-mono" />
+                  </div>
+                </Field>
+              </FormGrid>
+            )}
+          </Card>
+
+          {/* Support contact */}
+          <Card className="p-6 max-w-3xl">
+            <h3 className="text-sm font-semibold mb-4">
+              {locale === "en" ? "Support Contact" : "معلومات الدعم"}
+            </h3>
+            {loading ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : (
+              <FormGrid>
+                <Field label={locale === "en" ? "Support Email" : "بريد الدعم"}>
+                  <Input type="email" value={settings["branding.supportEmail"] ?? ""} onChange={(e) => setSetting("branding.supportEmail", e.target.value)} placeholder="support@gcclab.com" />
+                </Field>
+                <Field label={locale === "en" ? "Support Phone" : "هاتف الدعم"}>
+                  <Input value={settings["branding.supportPhone"] ?? ""} onChange={(e) => setSetting("branding.supportPhone", e.target.value)} placeholder="+966 11 XXX XXXX" />
                 </Field>
               </FormGrid>
             )}

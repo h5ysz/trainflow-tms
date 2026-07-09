@@ -95,9 +95,18 @@ async function main() {
     { key: "security.requireSymbols", value: "false", category: "SECURITY", description: "Require symbols", isPublic: false },
     { key: "security.sessionTimeoutMinutes", value: "30", category: "SECURITY", description: "Session timeout (minutes)", isPublic: false },
     { key: "security.twoFactorEnabled", value: "false", category: "SECURITY", description: "Enable 2FA", isPublic: true },
-    // Branding
-    { key: "branding.primaryColor", value: "#0d9488", category: "BRANDING", description: "Primary brand color", isPublic: true },
-    { key: "branding.logoUrl", value: "/logo.svg", category: "BRANDING", description: "Logo URL", isPublic: true },
+    // Branding — Sprint 6: expanded with full GCCLAB identity + support contact
+    { key: "branding.companyNameEn", value: "GCCLAB", category: "BRANDING", description: "Company name (English)", isPublic: true },
+    { key: "branding.companyNameAr", value: "المختبر الخليجي", category: "BRANDING", description: "Company name (Arabic)", isPublic: true },
+    { key: "branding.companyFullNameEn", value: "Gulf Calibration Laboratory", category: "BRANDING", description: "Full company name (English)", isPublic: true },
+    { key: "branding.companyFullNameAr", value: "المختبر الخليجي للمعايرة", category: "BRANDING", description: "Full company name (Arabic)", isPublic: true },
+    { key: "branding.logoUrl", value: "/gcclab-logo-official.png", category: "BRANDING", description: "Official logo URL (color, for light backgrounds)", isPublic: true },
+    { key: "branding.logoWhiteUrl", value: "/gcclab-logo-white.png", category: "BRANDING", description: "White logo URL (for dark/burgundy backgrounds)", isPublic: true },
+    { key: "branding.faviconUrl", value: "/gcclab-icon.png", category: "BRANDING", description: "Favicon URL", isPublic: true },
+    { key: "branding.primaryColor", value: "#7B1E2B", category: "BRANDING", description: "Primary brand color (burgundy)", isPublic: true },
+    { key: "branding.secondaryColor", value: "#1F2937", category: "BRANDING", description: "Secondary brand color (slate)", isPublic: true },
+    { key: "branding.supportEmail", value: "support@gcclab.com", category: "BRANDING", description: "Support contact email", isPublic: true },
+    { key: "branding.supportPhone", value: "+966 11 XXX XXXX", category: "BRANDING", description: "Support contact phone", isPublic: true },
     // Email
     { key: "email.smtpHost", value: "", category: "EMAIL", description: "SMTP host", isPublic: false },
     { key: "email.smtpPort", value: "587", category: "EMAIL", description: "SMTP port", isPublic: false },
