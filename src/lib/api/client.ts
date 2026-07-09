@@ -34,6 +34,23 @@ export interface ApiResponse<T> {
   error?: string;
 }
 
+/**
+ * Carries the machine-readable `code` the API returns alongside `error`, so
+ * callers can branch on it instead of pattern-matching the message text.
+ * Still an Error, so `(e as Error).message` keeps working everywhere.
+ */
+export class ApiError extends Error {
+  readonly code?: string;
+  readonly status: number;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -64,8 +81,7 @@ async function request<T>(
   const json = await res.json().catch(() => ({ success: false, error: "Invalid JSON response" }));
 
   if (!res.ok || !json.success) {
-    const msg = json.error ?? `Request failed (${res.status})`;
-    throw new Error(msg);
+    throw new ApiError(json.error ?? `Request failed (${res.status})`, res.status, json.code);
   }
 
   return json.data as T;
@@ -92,8 +108,7 @@ async function requestList<T>(
   const json = await res.json().catch(() => ({ success: false, error: "Invalid JSON response" }));
 
   if (!res.ok || !json.success) {
-    const msg = json.error ?? `Request failed (${res.status})`;
-    throw new Error(msg);
+    throw new ApiError(json.error ?? `Request failed (${res.status})`, res.status, json.code);
   }
 
   // Standardized list shape: { success, data: [], meta: {...} }

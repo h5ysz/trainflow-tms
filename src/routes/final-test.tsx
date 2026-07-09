@@ -13,9 +13,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FileCheck2, Plus, Check, X, User, AlertCircle } from "lucide-react";
+import { FileCheck2, Plus, Check, X, User, AlertCircle, ClipboardList } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api } from "@/lib/api/client";
+import { useAppStore } from "@/lib/store/app-store";
 import { useEntityActions } from "@/hooks/use-entity-actions";
 import { newQuestionDefaults, validateQuestion } from "@/lib/questions";
 
@@ -33,6 +34,7 @@ const TEST_TYPE = "FINAL_TEST";
 
 export function FinalTestRoute() {
   const { t } = useI18n();
+  const { navigate } = useAppStore();
   const [courses, setCourses] = useState<CourseOption[]>([]);
 
   const questionsList = useList<Question>("/questions", { extraParams: { testType: TEST_TYPE } });
@@ -151,7 +153,14 @@ export function FinalTestRoute() {
         title={t("finalTest.title")}
         subtitle={t("finalTest.subtitle")}
         icon={FileCheck2}
-        actions={canCreate && <Button onClick={() => openCreate(newQuestionDefaults(TEST_TYPE))}><Plus className="h-4 w-4 me-1.5" />{t("finalTest.newQuestion")}</Button>}
+        actions={
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => navigate("exam-attempts", TEST_TYPE)}>
+              <ClipboardList className="h-4 w-4 me-1.5" />{t("exam.title")}
+            </Button>
+            {canCreate && <Button onClick={() => openCreate(newQuestionDefaults(TEST_TYPE))}><Plus className="h-4 w-4 me-1.5" />{t("finalTest.newQuestion")}</Button>}
+          </div>
+        }
       />
       <Tabs defaultValue="questions">
         <TabsList>

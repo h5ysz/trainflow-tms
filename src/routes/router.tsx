@@ -20,6 +20,7 @@ import { AttendanceRoute } from "./attendance";
 import { QrCodeRoute } from "./qr-code";
 import { PreTestRoute } from "./pre-test";
 import { FinalTestRoute } from "./final-test";
+import { ExamAttemptRoute } from "./exam-attempt";
 import { CourseEvaluationRoute } from "./course-evaluation";
 import { CertificatesRoute } from "./certificates";
 import { ReportsRoute } from "./reports";
@@ -49,6 +50,8 @@ const ROUTES: Record<RouteKey, React.ComponentType> = {
   "qr-code": QrCodeRoute,
   "pre-test": PreTestRoute,
   "final-test": FinalTestRoute,
+  // Reached from the pre-test / final-test pages; intentionally absent from navItems.
+  "exam-attempts": ExamAttemptRoute,
   evaluation: CourseEvaluationRoute,
   certificates: CertificatesRoute,
   reports: ReportsRoute,

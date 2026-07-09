@@ -23,6 +23,7 @@ export type RouteKey =
   | "qr-code"
   | "pre-test"
   | "final-test"
+  | "exam-attempts"
   | "evaluation"
   | "certificates"
   | "reports"
@@ -43,8 +44,9 @@ export const ACTIONS: Action[] = ["view", "create", "edit", "delete"];
  * "module.action" strings with wildcards — "*", "companies.*", "reports.view"
  * — matching the vocabulary seeded in scripts/seed.ts.
  *
- * Excludes "session-detail": it is a detail view reached from the sessions
- * list, not a module a role is granted separately.
+ * Excludes "session-detail" and "exam-attempts": those are views reached from
+ * another page, not modules a role is granted separately. Exam start/submit
+ * authorise against pre-test / final-test.
  */
 export const ALL_MODULES: RouteKey[] = [
   "dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
@@ -79,6 +81,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "qr-code",
     "pre-test",
     "final-test",
+    "exam-attempts",
     "evaluation",
     "certificates",
     "reports",
@@ -107,6 +110,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "qr-code",
     "pre-test",
     "final-test",
+    "exam-attempts",
     "evaluation",
     "certificates",
     "reports",
@@ -132,6 +136,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "qr-code",
     "pre-test",
     "final-test",
+    "exam-attempts",
     "evaluation",
     "certificates",
     "reports",
@@ -155,6 +160,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "qr-code",
     "pre-test",
     "final-test",
+    "exam-attempts",
     "evaluation",
     "certificates",
     "reports",
