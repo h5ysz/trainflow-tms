@@ -26,7 +26,10 @@ export const PUT = withModuleAction("trainer-qualifications", "edit", async ({ r
   const updated = await db.trainerCertification.update({
     where: { id },
     data: {
-      ...(validFrom !== undefined && { validFrom: validFrom ? new Date(validFrom) : null }),
+      // validFrom is non-nullable in the schema — only write it when a real
+      // date is supplied, otherwise leave the existing value alone.
+      ...(validFrom ? { validFrom: new Date(validFrom) } : {}),
+      // validUntil is nullable, so clearing it is meaningful.
       ...(validUntil !== undefined && { validUntil: validUntil ? new Date(validUntil) : null }),
       ...(status !== undefined && { status }),
       ...(notes !== undefined && { notes }),

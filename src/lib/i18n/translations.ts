@@ -180,6 +180,8 @@ export const dict = {
     "certifications.validFrom": "Valid From",
     "certifications.validUntil": "Valid Until",
     "certifications.status": "Status",
+    "certifications.edit": "Edit Certification",
+    "certifications.notes": "Notes",
     "certifications.empty.title": "No certifications yet",
     "certifications.empty.subtitle": "Trainers without certifications cannot be assigned to sessions",
 
@@ -857,6 +859,8 @@ export const dict = {
     "certifications.validFrom": "صالح من",
     "certifications.validUntil": "صالح حتى",
     "certifications.status": "الحالة",
+    "certifications.edit": "تعديل الاعتماد",
+    "certifications.notes": "ملاحظات",
     "certifications.empty.title": "لا توجد اعتمادات بعد",
     "certifications.empty.subtitle": "المدربون بدون اعتمادات لا يمكن تعيينهم للجلسات",
 

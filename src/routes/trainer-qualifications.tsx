@@ -10,7 +10,9 @@ import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/common/status-badge";
+import { TrainerCertificationsTab } from "./trainer-certifications-tab";
 import { Award, Plus, Calendar, FileText, User, AlertCircle } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api } from "@/lib/api/client";
@@ -138,30 +140,47 @@ export function TrainerQualificationsRoute() {
         title={t("qualifications.title")}
         subtitle={t("qualifications.subtitle")}
         icon={Award}
-        actions={canCreate && <Button onClick={() => openCreate()}><Plus className="h-4 w-4 me-1.5" />{t("qualifications.new")}</Button>}
       />
-      {error && (
-        <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-          <AlertCircle className="h-4 w-4" /> {error}
-        </div>
-      )}
-      <DataTable
-        columns={columns}
-        data={data}
-        loading={loading}
-        rowKey={(r) => r.id}
-        searchable
-        searchValue={search}
-        onSearchChange={setSearch}
-        page={page}
-        total={pagination?.total ?? 0}
-        pageSize={pagination?.pageSize ?? 10}
-        onPageChange={setPage}
-        emptyIcon={Award}
-        emptyTitle={t("qualifications.empty.title")}
-        emptySubtitle={t("qualifications.empty.subtitle")}
-        emptyAction={canCreate && <Button onClick={() => openCreate()}><Plus className="h-4 w-4 me-1.5" />{t("qualifications.new")}</Button>}
-      />
+
+      <Tabs defaultValue="qualifications">
+        <TabsList>
+          <TabsTrigger value="qualifications">{t("qualifications.title")}</TabsTrigger>
+          <TabsTrigger value="certifications">{t("certifications.title")}</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="certifications" className="mt-4">
+          <TrainerCertificationsTab />
+        </TabsContent>
+
+        <TabsContent value="qualifications" className="mt-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">{t("qualifications.subtitle")}</p>
+            {canCreate && <Button onClick={() => openCreate()}><Plus className="h-4 w-4 me-1.5" />{t("qualifications.new")}</Button>}
+          </div>
+          {error && (
+            <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+              <AlertCircle className="h-4 w-4" /> {error}
+            </div>
+          )}
+          <DataTable
+            columns={columns}
+            data={data}
+            loading={loading}
+            rowKey={(r) => r.id}
+            searchable
+            searchValue={search}
+            onSearchChange={setSearch}
+            page={page}
+            total={pagination?.total ?? 0}
+            pageSize={pagination?.pageSize ?? 10}
+            onPageChange={setPage}
+            emptyIcon={Award}
+            emptyTitle={t("qualifications.empty.title")}
+            emptySubtitle={t("qualifications.empty.subtitle")}
+            emptyAction={canCreate && <Button onClick={() => openCreate()}><Plus className="h-4 w-4 me-1.5" />{t("qualifications.new")}</Button>}
+          />
+        </TabsContent>
+      </Tabs>
 
       <FormDialog
         open={dialogOpen}
