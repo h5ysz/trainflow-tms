@@ -9,7 +9,11 @@ services:
     # No package-lock.json in the repo (bun.lock only), so `npm install` resolves
     # fresh rather than `npm ci`. Prisma must generate before `next build`, since
     # the build imports the client while collecting page data.
-    buildCommand: npm install && npx prisma generate && npm run build
+    #
+    # --include=dev is required: NODE_ENV=production below makes npm skip
+    # devDependencies, but @tailwindcss/postcss, tailwindcss and typescript all
+    # live there and are needed to build.
+    buildCommand: npm install --include=dev && npx prisma generate && npm run build
     startCommand: node .next/standalone/server.js
 
     # The app has no /login route; the root page is the entry point.
