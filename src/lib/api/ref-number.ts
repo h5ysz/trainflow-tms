@@ -51,13 +51,19 @@ function pad(n: number, width = 6): string {
 export async function nextRefNumber(entityType: RefEntityType): Promise<string> {
   const year = YEARLY.has(entityType) ? new Date().getFullYear() : null;
 
+  // Continuous sequences are keyed on year 0 rather than NULL. A NULL year can
+  // never satisfy the @@unique([entityType, year]) lookup — SQL treats NULLs as
+  // distinct — so the upsert would insert a fresh counter at sequence 1 on
+  // every call and hand out a duplicate ref number.
+  const yearKey = year ?? 0;
+
   // Atomic increment via upsert (safe under concurrent requests)
   const counter = await db.refNumberCounter.upsert({
     where: {
-      entityType_year: { entityType, year: year ?? 0 },
+      entityType_year: { entityType, year: yearKey },
     },
     update: { sequence: { increment: 1 } },
-    create: { entityType, year, sequence: 1 },
+    create: { entityType, year: yearKey, sequence: 1 },
   });
 
   const prefix = PREFIX[entityType];

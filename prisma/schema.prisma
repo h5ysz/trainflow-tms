@@ -222,7 +222,7 @@ model Setting {
 model RefNumberCounter {
   id          String   @id @default(uuid())
   entityType  String   // "TRAINING_REQUEST" | "CERTIFICATE" | "EXAM" | "TRAINER" | "COMPANY" | "COURSE" | "SESSION"
-  year        Int?     // nullable for non-yearly sequences (TRN, COM, CRS)
+  year        Int?     // 0 for non-yearly sequences (TRN, COM, CRS) — never NULL: @@unique cannot match NULL
   sequence    Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
