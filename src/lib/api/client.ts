@@ -118,6 +118,37 @@ export const api = {
     request<T>(path, { method: "DELETE" }),
 };
 
+/**
+ * Download an endpoint that returns a raw file rather than the JSON envelope.
+ * `api.post` would call res.json() on the PDF bytes and throw, so this reads
+ * the body as a blob and triggers a browser download instead.
+ */
+export async function downloadFile(path: string, fallbackName: string): Promise<void> {
+  const res = await fetch(`${BASE}${path}`, { method: "POST", credentials: "same-origin" });
+
+  if (!res.ok) {
+    // Errors still come back as the JSON envelope.
+    const json = await res.json().catch(() => null);
+    throw new Error(json?.error ?? `Request failed (${res.status})`);
+  }
+
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = /filename="?([^"]+)"?/.exec(disposition);
+  const blob = await res.blob();
+
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = match?.[1] ?? fallbackName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 // Auth API
 export const authApi = {
   login: (email: string, password: string) =>

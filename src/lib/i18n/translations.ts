@@ -565,6 +565,8 @@ export const dict = {
     "certificates.status": "Status",
     "certificates.download": "Download PDF",
     "certificates.verify": "Verify",
+    "certificates.verificationUrl": "Verification URL",
+    "certificates.verificationCount": "Times Verified",
     "certificates.empty.title": "No certificates issued yet",
     "certificates.empty.subtitle": "Certificates are issued automatically upon successful course completion",
 
@@ -1234,6 +1236,8 @@ export const dict = {
     "certificates.status": "الحالة",
     "certificates.download": "تنزيل PDF",
     "certificates.verify": "تحقق",
+    "certificates.verificationUrl": "رابط التحقق",
+    "certificates.verificationCount": "عدد مرات التحقق",
     "certificates.empty.title": "لا توجد شهادات صادرة بعد",
     "certificates.empty.subtitle": "تصدر الشهادات تلقائياً عند إكمال الدورة بنجاح",
 
