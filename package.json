@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
-    "build": "npx tsx scripts/seed.ts && npx tsx scripts/seed-demo.ts && next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
+    "build": "npx tsx scripts/seed.ts && npx tsx scripts/seed-demo.ts --reset --force && next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
     "db:push": "prisma db push",
