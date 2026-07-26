@@ -7,13 +7,18 @@ services:
     branch: main
 
     # No package-lock.json in the repo (bun.lock only), so `npm install` resolves
-    # fresh rather than `npm ci`. Prisma must generate before `next build`, since
-    # the build imports the client while collecting page data.
+    # fresh from the registry rather than `npm ci`. Prisma must generate before
+    # `next build`, since the build imports the client while collecting page data.
     #
     # --include=dev is required: NODE_ENV=production below makes npm skip
     # devDependencies, but @tailwindcss/postcss, tailwindcss and typescript all
     # live there and are needed to build.
-    buildCommand: npm install --include=dev && npx prisma generate && npm run build
+    #
+    # --legacy-peer-deps is required because there's no lockfile pinning exact
+    # versions: a fresh resolve can pick up an upstream package bump (e.g.
+    # @hookform/resolvers requiring a newer valibot peer than another dependency
+    # allows) and fail with ERESOLVE on a build that worked yesterday.
+    buildCommand: npm install --include=dev --legacy-peer-deps && npx prisma generate && npm run build
     startCommand: node .next/standalone/server.js
 
     # The app has no /login route; the root page is the entry point.
