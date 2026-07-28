@@ -6,7 +6,7 @@ import { signToken, verifyPassword } from "@/lib/auth/jwt";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { parseBody } from "@/lib/api/validate";
 import { loginSchema } from "@/lib/api/schemas";
-import { setSessionCookie, ok, fail } from "@/lib/auth/api";
+import { setSessionCookie, ok, fail, resolveEffectivePermissions } from "@/lib/auth/api";
 import { recordAudit } from "@/lib/auth/audit";
 
 const MAX_FAILED_ATTEMPTS = 5;
@@ -132,11 +132,13 @@ export async function POST(req: NextRequest) {
 
     const dbUser = await db.user.findUnique({
       where: { id: userId },
-      include: { company: true, trainer: true },
+      include: { company: true, trainer: true, roleRecord: { select: { permissions: true } } },
     });
     if (!dbUser || dbUser.deletedAt) {
       return fail("Invalid account", 401);
     }
+
+    const permissions = await resolveEffectivePermissions(dbUser);
 
     if (dbUser.accountStatus === "PENDING_APPROVAL") {
       return fail("Account pending approval", 403, "PENDING_APPROVAL");
@@ -173,6 +175,7 @@ export async function POST(req: NextRequest) {
         email: dbUser.email,
         fullName: dbUser.fullName,
         role: dbUser.role,
+        permissions,
         language: dbUser.language,
         companyId: dbUser.companyId,
         companyName: dbUser.company?.name ?? null,

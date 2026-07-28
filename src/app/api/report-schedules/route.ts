@@ -1,6 +1,6 @@
 // /api/report-schedules — list + create report schedules
 import { db } from "@/lib/db";
-import { requireRole, ok, created, fail, audit } from "@/lib/auth/api";
+import { requireModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
 import { buildCronExpression, getNextRunTime, getScheduleSettings } from "@/lib/reports/scheduler";
@@ -10,7 +10,7 @@ const ALLOWED_SORT_FIELDS = ["name", "createdAt", "updatedAt", "nextRunAt", "las
 export async function GET(req: Request) {
   let user;
   try {
-    user = await requireRole("SUPER_ADMIN", "COORDINATOR");
+    user = await requireModuleAction("report-schedules", "view");
   } catch {
     return fail("Forbidden", 403);
   }
@@ -46,7 +46,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   let user;
   try {
-    user = await requireRole("SUPER_ADMIN", "COORDINATOR");
+    user = await requireModuleAction("report-schedules", "create");
   } catch {
     return fail("Forbidden", 403);
   }

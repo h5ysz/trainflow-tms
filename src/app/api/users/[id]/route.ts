@@ -3,9 +3,6 @@ import { db } from "@/lib/db";
 import { requireRole, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { hashPassword } from "@/lib/auth/jwt";
 import { recordStatusChange } from "@/lib/auth/audit";
-import type { UserRole } from "@/lib/auth/permissions";
-
-const VALID_ROLES: UserRole[] = ["SUPER_ADMIN", "COORDINATOR", "TRAINER", "CONTRACTOR"];
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   let user;
@@ -25,6 +22,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     email: target.email,
     fullName: target.fullName,
     role: target.role,
+    roleId: target.roleId,
     isActive: target.isActive,
     language: target.language,
     avatarUrl: target.avatarUrl,
@@ -49,20 +47,22 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!existing || existing.deletedAt) return notFound("User not found");
 
   const body = await req.json().catch(() => ({}));
-  const { email, fullName, role, language, isActive, companyId, trainerId, password, avatarUrl } = body;
+  const { email, fullName, roleId, language, isActive, companyId, trainerId, password, avatarUrl } = body;
 
   if (email && email !== existing.email) {
     const dup = await db.user.findFirst({ where: { email, deletedAt: null } });
     if (dup) return fail("Email already exists", 400);
   }
-  if (role && !VALID_ROLES.includes(role)) return fail(`Invalid role: ${role}`, 400);
+
+  const role = roleId !== undefined ? await db.role.findUnique({ where: { id: roleId } }) : null;
+  if (roleId !== undefined && (!role || role.deletedAt)) return fail(`Invalid roleId: ${roleId}`, 400);
 
   const updated = await db.user.update({
     where: { id },
     data: {
       ...(email !== undefined && { email }),
       ...(fullName !== undefined && { fullName }),
-      ...(role !== undefined && { role }),
+      ...(role && { role: role.baseType, roleId: role.id }),
       ...(language !== undefined && { language }),
       ...(isActive !== undefined && { isActive }),
       ...(companyId !== undefined && { companyId }),
@@ -101,6 +101,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
     email: updated.email,
     fullName: updated.fullName,
     role: updated.role,
+    roleId: updated.roleId,
     isActive: updated.isActive,
   });
 }

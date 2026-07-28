@@ -29,6 +29,7 @@ interface UserRow {
   email: string;
   fullName: string;
   role: string;
+  roleId: string | null;
   isActive: boolean;
   language: string | null;
   companyName: string | null;
@@ -48,8 +49,14 @@ interface LoginRow {
   attemptedAt: string;
 }
 
-// Mirrors VALID_ROLES in src/app/api/users/route.ts.
-const ROLES = ["SUPER_ADMIN", "COORDINATOR", "TRAINER", "CONTRACTOR"];
+interface RoleRow {
+  id: string;
+  code: string;
+  name: string;
+  nameAr: string | null;
+  isSystem: boolean;
+}
+
 const MIN_PASSWORD = 8;
 
 export function UserManagementRoute() {
@@ -57,11 +64,12 @@ export function UserManagementRoute() {
   const { toast } = useToast();
   const { user } = useAppStore();
 
-  const canAccess = canAccessModule(user?.role ?? "CONTRACTOR", "user-management");
+  const canAccess = canAccessModule(user?.permissions ?? [], "user-management");
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
   const users = useList<UserRow>("/users");
   const logins = useList<LoginRow>("/login-history");
+  const roles = useList<RoleRow>("/roles", { pageSize: 100 });
 
   const [pwTarget, setPwTarget] = useState<UserRow | null>(null);
   const [newPassword, setNewPassword] = useState("");
@@ -80,7 +88,7 @@ export function UserManagementRoute() {
     toForm: (r) => ({
       email: r.email,
       fullName: r.fullName,
-      role: r.role,
+      roleId: r.roleId,
       isActive: r.isActive,
       language: r.language ?? "en",
     }),
@@ -99,7 +107,7 @@ export function UserManagementRoute() {
       const missing = requireFields({
         [t("users.email")]: "email",
         [t("users.fullName")]: "fullName",
-        [t("users.role")]: "role",
+        [t("users.role")]: "roleId",
       })();
       if (missing) return missing;
       // Password is only set at creation; the reset action changes it later.
@@ -158,7 +166,10 @@ export function UserManagementRoute() {
     {
       key: "role",
       header: locale === "en" ? "Role" : "الدور",
-      cell: (row) => <Badge variant="outline" className="font-mono text-xs">{row.role}</Badge>,
+      cell: (row) => {
+        const assigned = roles.data.find((r) => r.id === row.roleId);
+        return <Badge variant="outline" className="font-mono text-xs">{assigned?.code ?? row.role}</Badge>;
+      },
     },
     {
       key: "company",
@@ -268,8 +279,9 @@ export function UserManagementRoute() {
     },
   ];
 
+  const defaultRoleId = roles.data.find((r) => r.code === "COORDINATOR")?.id ?? "";
   const newButton = isSuperAdmin && (
-    <Button onClick={() => openCreate({ role: "COORDINATOR", language: "en", isActive: true })}>
+    <Button onClick={() => openCreate({ roleId: defaultRoleId, language: "en", isActive: true })}>
       <Plus className="h-4 w-4 me-1.5" />
       {t("users.new")}
     </Button>
@@ -375,10 +387,14 @@ export function UserManagementRoute() {
               </Field>
             )}
             <Field label={t("users.role")} required>
-              <Select value={(formData.role as string) ?? "COORDINATOR"} onValueChange={(v) => setField("role", v)}>
+              <Select value={(formData.roleId as string) ?? ""} onValueChange={(v) => setField("roleId", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                  {roles.data.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>
+                      {r.code} — {locale === "ar" && r.nameAr ? r.nameAr : r.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </Field>

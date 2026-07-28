@@ -181,7 +181,8 @@ export interface AuthUser {
   id: string;
   email: string;
   fullName: string;
-  role: "SUPER_ADMIN" | "COORDINATOR" | "TRAINER" | "CONTRACTOR";
+  role: "SUPER_ADMIN" | "COORDINATOR" | "TRAINER" | "CONTRACTOR" | "VIEWER";
+  permissions: string[];
   language: string;
   companyId?: string | null;
   companyName?: string | null;

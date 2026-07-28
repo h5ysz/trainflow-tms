@@ -1,6 +1,6 @@
 // /api/audit-log — list (Super Admin / Coordinator only)
 import { db } from "@/lib/db";
-import { requireRole, ok, fail } from "@/lib/auth/api";
+import { requireModuleAction, ok, fail } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
 
@@ -9,7 +9,7 @@ const ALLOWED_SORT_FIELDS = ["createdAt", "action", "entity"];
 export async function GET(req: Request) {
   let user;
   try {
-    user = await requireRole("SUPER_ADMIN", "COORDINATOR");
+    user = await requireModuleAction("audit-log", "view");
   } catch {
     return fail("Forbidden", 403);
   }

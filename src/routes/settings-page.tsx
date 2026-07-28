@@ -69,7 +69,7 @@ export function SettingsRoute() {
     }
   };
 
-  const canAccess = canAccessModule(user?.role ?? "CONTRACTOR", "settings");
+  const canAccess = canAccessModule(user?.permissions ?? [], "settings");
 
   if (!canAccess) {
     return (

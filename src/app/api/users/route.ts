@@ -4,9 +4,7 @@ import { requireRole, ok, created, fail, audit } from "@/lib/auth/api";
 import { hashPassword } from "@/lib/auth/jwt";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
-import type { UserRole } from "@/lib/auth/permissions";
 
-const VALID_ROLES: UserRole[] = ["SUPER_ADMIN", "COORDINATOR", "TRAINER", "CONTRACTOR"];
 const ALLOWED_SORT_FIELDS = ["fullName", "email", "createdAt", "updatedAt", "role", "isActive", "lastLoginAt"];
 
 export async function GET(req: Request) {
@@ -52,6 +50,7 @@ export async function GET(req: Request) {
       email: u.email,
       fullName: u.fullName,
       role: u.role,
+      roleId: u.roleId,
       isActive: u.isActive,
       language: u.language,
       avatarUrl: u.avatarUrl,
@@ -77,10 +76,14 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const { email, fullName, password, role, language, companyId, trainerId, isActive } = body;
+  const { email, fullName, password, roleId, language, companyId, trainerId, isActive } = body;
 
-  if (!email || !fullName || !password) return fail("email, fullName, password are required", 422, "VALIDATION_ERROR");
-  if (!VALID_ROLES.includes(role)) return fail(`Invalid role: ${role}`, 400);
+  if (!email || !fullName || !password || !roleId) {
+    return fail("email, fullName, password, roleId are required", 422, "VALIDATION_ERROR");
+  }
+
+  const role = await db.role.findUnique({ where: { id: roleId } });
+  if (!role || role.deletedAt) return fail(`Invalid roleId: ${roleId}`, 400);
 
   const dup = await db.user.findFirst({ where: { email, deletedAt: null } });
   if (dup) return fail("Email already exists", 400);
@@ -92,7 +95,8 @@ export async function POST(req: Request) {
       email,
       fullName,
       passwordHash,
-      role,
+      role: role.baseType,
+      roleId: role.id,
       language: language ?? "en",
       isActive: isActive ?? true,
       companyId: companyId ?? null,
@@ -117,6 +121,7 @@ export async function POST(req: Request) {
     email: newUser.email,
     fullName: newUser.fullName,
     role: newUser.role,
+    roleId: newUser.roleId,
     isActive: newUser.isActive,
   });
 }

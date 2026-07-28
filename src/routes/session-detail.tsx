@@ -87,7 +87,7 @@ export function SessionDetailRoute() {
   const { user, routeParam, navigate } = useAppStore();
 
   const sessionId = routeParam;
-  const canEdit = user ? canPerformAction(user.role, "sessions", "edit") : false;
+  const canEdit = user ? canPerformAction(user.permissions, "sessions", "edit") : false;
 
   const [session, setSession] = useState<Session | null>(null);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);

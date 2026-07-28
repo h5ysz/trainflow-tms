@@ -35,7 +35,7 @@ export function Sidebar() {
   const { currentRoute, navigate, user } = useAppStore();
 
   if (!user) return null;
-  const items = getNavForRole(user.role);
+  const items = getNavForRole(user.permissions);
 
   const grouped = GROUP_ORDER.map((group) => ({
     group,

@@ -1,6 +1,6 @@
 // /api/user-approvals/[id] — approve / reject / suspend / activate / request-info
 import { db } from "@/lib/db";
-import { requireRole, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { requireModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { recordAudit } from "@/lib/auth/audit";
 
 const VALID_ACTIONS = ["APPROVE", "REJECT", "SUSPEND", "ACTIVATE", "REQUEST_INFO"];
@@ -8,7 +8,7 @@ const VALID_ACTIONS = ["APPROVE", "REJECT", "SUSPEND", "ACTIVATE", "REQUEST_INFO
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   let user;
   try {
-    user = await requireRole("SUPER_ADMIN", "COORDINATOR");
+    user = await requireModuleAction("user-approvals", "edit");
   } catch {
     return fail("Forbidden", 403);
   }

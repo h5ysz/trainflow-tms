@@ -1,6 +1,6 @@
 // /api/user-approvals — list pending users + approve/reject/suspend/activate
 import { db } from "@/lib/db";
-import { requireRole, ok, fail, audit } from "@/lib/auth/api";
+import { requireModuleAction, ok, fail, audit } from "@/lib/auth/api";
 import { recordAudit } from "@/lib/auth/audit";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
@@ -10,7 +10,7 @@ const ALLOWED_SORT_FIELDS = ["createdAt", "updatedAt", "fullName", "email", "acc
 export async function GET(req: Request) {
   let user;
   try {
-    user = await requireRole("SUPER_ADMIN", "COORDINATOR");
+    user = await requireModuleAction("user-approvals", "view");
   } catch {
     return fail("Forbidden", 403);
   }

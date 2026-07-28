@@ -48,7 +48,7 @@ export function CertificatesRoute() {
   const [revoking, setRevoking] = useState(false);
   const [verifyTarget, setVerifyTarget] = useState<Certificate | null>(null);
 
-  const canEdit = user ? canPerformAction(user.role, "certificates", "edit") : false;
+  const canEdit = user ? canPerformAction(user.permissions, "certificates", "edit") : false;
 
   const verifyUrl = (token: string) =>
     `${typeof window === "undefined" ? "" : window.location.origin}/api/certificates/verify?token=${token}`;

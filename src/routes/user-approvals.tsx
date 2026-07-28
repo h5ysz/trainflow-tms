@@ -68,7 +68,7 @@ export function UserApprovalsRoute() {
   const [reason, setReason] = useState("");
   const [createCompany, setCreateCompany] = useState(true);
 
-  const canAccess = canAccessModule(user?.role ?? "CONTRACTOR", "user-approvals");
+  const canAccess = canAccessModule(user?.permissions ?? [], "user-approvals");
 
   const { data, loading, error, refetch } = useList<ApprovalRow>("/user-approvals", {
     extraParams: { "filters.accountStatus": filter },

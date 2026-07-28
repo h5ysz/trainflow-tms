@@ -1,6 +1,6 @@
 // /api/report-executions — list execution history
 import { db } from "@/lib/db";
-import { requireRole, fail } from "@/lib/auth/api";
+import { requireModuleAction, fail } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
 
@@ -8,7 +8,7 @@ const ALLOWED_SORT_FIELDS = ["createdAt", "startedAt", "completedAt", "status", 
 
 export async function GET(req: Request) {
   let user;
-  try { user = await requireRole("SUPER_ADMIN", "COORDINATOR"); } catch { return fail("Forbidden", 403); }
+  try { user = await requireModuleAction("report-schedules", "view"); } catch { return fail("Forbidden", 403); }
 
   const q = parseListQuery(req);
   const where: Record<string, unknown> = {};

@@ -34,6 +34,7 @@ export async function getSessionToken(): Promise<string | undefined> {
 
 export interface AuthUser extends JwtPayload {
   id: string;
+  permissions: string[];
 }
 
 // Account statuses that must never hold a live session.
@@ -43,6 +44,28 @@ const BLOCKED_STATUSES = new Set([
   "LOCKED",
   "PENDING_APPROVAL",
 ]);
+
+// Resolves a user's live operational permission set: the assigned Role's
+// permissions (the real, DB-driven RBAC source) when present, else the
+// matching system Role's permissions by enum code (self-healing fallback for
+// a user whose roleId hasn't been backfilled yet), else fail closed — never
+// silently grant full access when a role can't be resolved.
+export async function resolveEffectivePermissions(dbUser: {
+  role: UserRole;
+  roleId: string | null;
+  roleRecord?: { permissions: unknown } | null;
+}): Promise<string[]> {
+  if (dbUser.roleId && dbUser.roleRecord?.permissions) {
+    return dbUser.roleRecord.permissions as string[];
+  }
+  const fallbackRole = await db.role.findUnique({
+    where: { code: dbUser.role },
+    select: { permissions: true },
+  });
+  if (fallbackRole?.permissions) return fallbackRole.permissions as string[];
+  console.error(`[RBAC] No Role record found for code=${dbUser.role}; denying all module access.`);
+  return [];
+}
 
 export async function getCurrentUser(): Promise<AuthUser | null> {
   const token = await getSessionToken();
@@ -61,14 +84,18 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
       deletedAt: true,
       tokenVersion: true,
       role: true,
+      roleId: true,
       companyId: true,
       trainerId: true,
+      roleRecord: { select: { permissions: true } },
     },
   });
 
   if (!dbUser || dbUser.deletedAt || !dbUser.isActive) return null;
   if (BLOCKED_STATUSES.has(dbUser.accountStatus)) return null;
   if ((payload.tokenVersion ?? 0) !== dbUser.tokenVersion) return null;
+
+  const permissions = await resolveEffectivePermissions(dbUser);
 
   // Trust the live DB values for authorization-relevant fields.
   return {
@@ -77,6 +104,7 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     role: dbUser.role,
     companyId: dbUser.companyId,
     trainerId: dbUser.trainerId,
+    permissions,
   };
 }
 
@@ -101,10 +129,10 @@ export async function requireModuleAction(
   action: Action = "view"
 ): Promise<AuthUser> {
   const user = await requireAuth();
-  if (!canAccessModule(user.role, module)) {
+  if (!canAccessModule(user.permissions, module)) {
     throw new ApiError(403, `Forbidden — no access to module: ${module}`);
   }
-  if (!canPerformAction(user.role, module, action)) {
+  if (!canPerformAction(user.permissions, module, action)) {
     throw new ApiError(403, `Forbidden — cannot ${action} on ${module}`);
   }
   return user;

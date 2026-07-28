@@ -1,6 +1,19 @@
 // /api/roles/[id] — update / delete role
 import { db } from "@/lib/db";
 import { requireRole, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { ALL_MODULES, ACTIONS, type UserRole } from "@/lib/auth/permissions";
+
+const ASSIGNABLE_BASE_TYPES: UserRole[] = ["COORDINATOR", "TRAINER", "CONTRACTOR", "VIEWER"];
+
+function validatePermissions(perms: unknown): string[] | null {
+  if (!Array.isArray(perms)) return null;
+  const valid = new Set<string>(["*"]);
+  for (const m of ALL_MODULES) {
+    valid.add(`${m}.*`);
+    for (const a of ACTIONS) valid.add(`${m}.${a}`);
+  }
+  return perms.every((p) => typeof p === "string" && valid.has(p)) ? (perms as string[]) : null;
+}
 
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
   let user;
@@ -11,7 +24,18 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!existing || existing.deletedAt) return notFound("Role not found");
 
   const body = await req.json().catch(() => ({}));
-  const { name, nameAr, description, permissions } = body;
+  const { name, nameAr, description, permissions, baseType } = body;
+
+  let validPermissions: string[] | undefined;
+  if (permissions !== undefined) {
+    const validated = validatePermissions(permissions);
+    if (validated === null) return fail("Invalid permission string(s)", 422, "VALIDATION_ERROR");
+    validPermissions = validated;
+  }
+
+  if (baseType !== undefined && !existing.isSystem && !ASSIGNABLE_BASE_TYPES.includes(baseType)) {
+    return fail(`baseType must be one of: ${ASSIGNABLE_BASE_TYPES.join(", ")}`, 422, "VALIDATION_ERROR");
+  }
 
   const updated = await db.role.update({
     where: { id },
@@ -19,7 +43,8 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
       ...(name !== undefined && { name }),
       ...(nameAr !== undefined && { nameAr }),
       ...(description !== undefined && { description }),
-      ...(permissions !== undefined && { permissions }),
+      ...(validPermissions !== undefined && { permissions: validPermissions }),
+      ...(baseType !== undefined && !existing.isSystem && { baseType }),
       updatedBy: user.id,
     },
   });
@@ -27,11 +52,11 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   await audit({
     user,
     action: "UPDATE",
-    entity: "USER",
+    entity: "ROLE",
     entityId: id,
     description: `Updated role: ${updated.name}`,
     req,
-    metadata: { permissions },
+    metadata: { permissions: validPermissions },
   });
 
   return ok(updated);
@@ -58,7 +83,7 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   await audit({
     user,
     action: "DELETE",
-    entity: "USER",
+    entity: "ROLE",
     entityId: id,
     description: `Deleted role: ${existing.name}`,
     req,

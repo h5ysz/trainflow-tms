@@ -39,6 +39,7 @@ export type AuditEntity =
   | "SESSION"
   | "CERTIFICATE"
   | "USER"
+  | "ROLE"
   | "SETTING"
   | "EXAM"
   | "ATTENDANCE"

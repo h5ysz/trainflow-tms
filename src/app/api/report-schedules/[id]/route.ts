@@ -1,11 +1,11 @@
 // /api/report-schedules/[id] — get / update / delete schedule
 import { db } from "@/lib/db";
-import { requireRole, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { requireModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { buildCronExpression, getNextRunTime } from "@/lib/reports/scheduler";
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   let user;
-  try { user = await requireRole("SUPER_ADMIN", "COORDINATOR"); } catch { return fail("Forbidden", 403); }
+  try { user = await requireModuleAction("report-schedules", "view"); } catch { return fail("Forbidden", 403); }
   const { id } = await ctx.params;
 
   const schedule = await db.reportSchedule.findUnique({ where: { id } });
@@ -23,7 +23,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
   let user;
-  try { user = await requireRole("SUPER_ADMIN", "COORDINATOR"); } catch { return fail("Forbidden", 403); }
+  try { user = await requireModuleAction("report-schedules", "edit"); } catch { return fail("Forbidden", 403); }
   const { id } = await ctx.params;
 
   const existing = await db.reportSchedule.findUnique({ where: { id } });
@@ -91,7 +91,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
 
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
   let user;
-  try { user = await requireRole("SUPER_ADMIN", "COORDINATOR"); } catch { return fail("Forbidden", 403); }
+  try { user = await requireModuleAction("report-schedules", "delete"); } catch { return fail("Forbidden", 403); }
   const { id } = await ctx.params;
 
   const existing = await db.reportSchedule.findUnique({ where: { id } });

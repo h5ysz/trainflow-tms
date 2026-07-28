@@ -1,11 +1,11 @@
 // /api/report-executions/[id]/retry — manually retry a failed execution
 import { db } from "@/lib/db";
-import { requireRole, ok, fail } from "@/lib/auth/api";
+import { requireModuleAction, ok, fail } from "@/lib/auth/api";
 import { retryExecution } from "@/lib/reports/execution-engine";
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   let user;
-  try { user = await requireRole("SUPER_ADMIN", "COORDINATOR"); } catch { return fail("Forbidden", 403); }
+  try { user = await requireModuleAction("report-schedules", "edit"); } catch { return fail("Forbidden", 403); }
   const { id } = await ctx.params;
 
   const execution = await db.reportExecution.findUnique({ where: { id } });

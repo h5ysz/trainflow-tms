@@ -91,7 +91,7 @@ export function ExamAttemptRoute() {
 
   const canStart = (a: Attempt) =>
     user
-      ? canPerformAction(user.role, a.testType === "FINAL_TEST" ? "final-test" : "pre-test", "create")
+      ? canPerformAction(user.permissions, a.testType === "FINAL_TEST" ? "final-test" : "pre-test", "create")
       : false;
 
   // The endpoints answer with these codes; show something a human can act on.

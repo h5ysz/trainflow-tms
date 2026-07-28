@@ -20,7 +20,7 @@ export function RoleGuard({
   const user = useAppStore((s) => s.user);
 
   if (!user) return null;
-  if (canPerformAction(user.role, module, action)) {
+  if (canPerformAction(user.permissions, module, action)) {
     return <>{children}</>;
   }
 

@@ -20,7 +20,7 @@ export const POST = withModuleAction("pre-test", "create", async ({ req, params,
   if (!attempt || attempt.deletedAt) return notFound("Exam attempt not found");
 
   // Final-test attempts require the "final-test" module, not "pre-test".
-  if (attempt.testType === "FINAL_TEST" && !canPerformAction(user.role, "final-test", "create")) {
+  if (attempt.testType === "FINAL_TEST" && !canPerformAction(user.permissions, "final-test", "create")) {
     return fail("Forbidden — cannot submit a final test", 403);
   }
 

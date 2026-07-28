@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DataTable, type Column } from "@/components/common/data-table";
 import { EmptyState } from "@/components/common/empty-state";
 import { FormDialog, Field, FormGrid } from "@/components/common/form-dialog";
@@ -16,7 +17,7 @@ import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { ShieldCheck, AlertCircle, Lock, Plus } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { useAppStore } from "@/lib/store/app-store";
-import { canAccessModule, ACTIONS, ALL_MODULES } from "@/lib/auth/permissions";
+import { canAccessModule, ACTIONS, ALL_MODULES, type UserRole, type RouteKey } from "@/lib/auth/permissions";
 import { useEntityActions } from "@/hooks/use-entity-actions";
 
 interface RoleRow {
@@ -26,16 +27,26 @@ interface RoleRow {
   nameAr: string | null;
   description: string | null;
   isSystem: boolean;
+  baseType: UserRole;
   permissions: string[];
   createdAt: string;
   updatedAt: string;
 }
 
+// A custom role can never acquire the platform-admin-exclusive gates: these
+// three modules stay hard-coded to SUPER_ADMIN in the backend regardless of
+// what's checked here, so the checkboxes are disabled to avoid implying
+// otherwise (the exact trap this whole feature is meant to fix).
+const ADMIN_ONLY_MODULES = new Set<RouteKey>(["settings", "user-management", "roles"]);
+
+// Reserve SUPER_ADMIN for the real Super Admin system role.
+const ASSIGNABLE_BASE_TYPES: UserRole[] = ["COORDINATOR", "TRAINER", "CONTRACTOR", "VIEWER"];
+
 export function RolesRoute() {
   const { t, locale } = useI18n();
   const { user } = useAppStore();
 
-  const canAccess = canAccessModule(user?.role ?? "CONTRACTOR", "roles");
+  const canAccess = canAccessModule(user?.permissions ?? [], "roles");
   // Every role endpoint except GET is requireRole("SUPER_ADMIN").
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
@@ -53,6 +64,7 @@ export function RolesRoute() {
       name: r.name,
       nameAr: r.nameAr,
       description: r.description,
+      baseType: r.baseType,
       permissions: r.permissions ?? [],
     }),
   });
@@ -117,6 +129,11 @@ export function RolesRoute() {
       ),
     },
     {
+      key: "baseType",
+      header: locale === "en" ? "Base Type" : "النوع الأساسي",
+      cell: (row) => <Badge variant="secondary" className="font-mono text-xs">{row.baseType}</Badge>,
+    },
+    {
       key: "permissions",
       header: locale === "en" ? "Permissions" : "الصلاحيات",
       cell: (row) => (
@@ -170,7 +187,7 @@ export function RolesRoute() {
   ];
 
   const newRoleButton = isSuperAdmin && (
-    <Button onClick={() => openCreate({ permissions: [] })}>
+    <Button onClick={() => openCreate({ baseType: "COORDINATOR", permissions: [] })}>
       <Plus className="h-4 w-4 me-1.5" />
       {locale === "en" ? "New Role" : "دور جديد"}
     </Button>
@@ -257,6 +274,29 @@ export function RolesRoute() {
             />
           </Field>
 
+          <Field
+            label={locale === "en" ? "Base Type" : "النوع الأساسي"}
+            required
+            hint={
+              locale === "en"
+                ? "Determines company-scoping and admin-gate behavior for users assigned this role"
+                : "يحدد سلوك النطاق حسب الشركة وصلاحيات الإدارة للمستخدمين المعينين لهذا الدور"
+            }
+          >
+            <Select
+              value={(formData.baseType as string) ?? "COORDINATOR"}
+              onValueChange={(v) => setField("baseType", v)}
+              disabled={isEditing}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {ASSIGNABLE_BASE_TYPES.map((bt) => (
+                  <SelectItem key={bt} value={bt}>{bt}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+
           <div className="border-t pt-4 space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium">
@@ -277,30 +317,48 @@ export function RolesRoute() {
             {/* "*" supersedes everything, so the per-module grid is redundant then. */}
             {!selected.includes("*") && (
               <div className="rounded-md border divide-y max-h-72 overflow-y-auto">
-                {ALL_MODULES.map((mod) => (
-                  <div key={mod} className="flex items-center justify-between gap-4 px-3 py-2">
-                    <span className="text-xs font-mono">{mod}</span>
-                    <div className="flex items-center gap-3">
-                      <label className="flex items-center gap-1.5 text-[11px]">
-                        <Checkbox
-                          checked={selected.includes(`${mod}.*`)}
-                          onCheckedChange={() => togglePermission(`${mod}.*`)}
-                        />
-                        <span className="font-mono">*</span>
-                      </label>
-                      {ACTIONS.map((action) => (
-                        <label key={action} className="flex items-center gap-1.5 text-[11px]">
+                {ALL_MODULES.map((mod) => {
+                  const adminOnly = ADMIN_ONLY_MODULES.has(mod);
+                  return (
+                    <div key={mod} className="flex items-center justify-between gap-4 px-3 py-2">
+                      <span className="text-xs font-mono flex items-center gap-1.5">
+                        {mod}
+                        {adminOnly && (
+                          <span
+                            className="text-[10px] text-muted-foreground font-sans"
+                            title={
+                              locale === "en"
+                                ? "Reserved for Super Admin — not governed by role permissions"
+                                : "محجوز لمدير النظام — لا يخضع لصلاحيات الدور"
+                            }
+                          >
+                            ({locale === "en" ? "Super Admin only" : "لمدير النظام فقط"})
+                          </span>
+                        )}
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-1.5 text-[11px]">
                           <Checkbox
-                            disabled={selected.includes(`${mod}.*`)}
-                            checked={selected.includes(`${mod}.${action}`)}
-                            onCheckedChange={() => togglePermission(`${mod}.${action}`)}
+                            disabled={adminOnly}
+                            checked={selected.includes(`${mod}.*`)}
+                            onCheckedChange={() => togglePermission(`${mod}.*`)}
                           />
-                          {action}
+                          <span className="font-mono">*</span>
                         </label>
-                      ))}
+                        {ACTIONS.map((action) => (
+                          <label key={action} className="flex items-center gap-1.5 text-[11px]">
+                            <Checkbox
+                              disabled={adminOnly || selected.includes(`${mod}.*`)}
+                              checked={selected.includes(`${mod}.${action}`)}
+                              onCheckedChange={() => togglePermission(`${mod}.${action}`)}
+                            />
+                            {action}
+                          </label>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

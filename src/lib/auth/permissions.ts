@@ -245,19 +245,43 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
   },
 };
 
-export function canAccessModule(role: UserRole, module: RouteKey): boolean {
-  return moduleAccess[role].includes(module);
+// ─────────────────────────────────────────────────────────────────────────
+// Live RBAC — resolves against a user's assigned Role.permissions (DB-driven)
+// instead of the hardcoded tables above. `moduleAccess`/`actionPermissions`
+// remain as the canonical description of each system role's grants: they
+// seed `Role.permissions` (scripts/seed.ts) and back the fallback path in
+// resolveEffectivePermissions() (src/lib/auth/api.ts) when a user has no
+// resolvable Role row.
+//
+// Permission strings: "*" (everything), "module.*" (every action on a
+// module), or "module.action". session-detail / exam-attempts are views
+// reached from another page, not modules with their own grants — they
+// resolve against the module(s) that actually gate them.
+// ─────────────────────────────────────────────────────────────────────────
+
+const MODULE_ALIASES: Partial<Record<RouteKey, RouteKey[]>> = {
+  "session-detail": ["sessions"],
+  "exam-attempts": ["pre-test", "final-test"],
+};
+
+function hasPermission(permissions: string[], module: RouteKey, action: Action): boolean {
+  if (permissions.includes("*")) return true;
+  if (permissions.includes(`${module}.*`)) return true;
+  return permissions.includes(`${module}.${action}`);
+}
+
+export function canAccessModule(permissions: string[], module: RouteKey): boolean {
+  const targets = MODULE_ALIASES[module] ?? [module];
+  return targets.some((m) => hasPermission(permissions, m, "view"));
 }
 
 export function canPerformAction(
-  role: UserRole,
+  permissions: string[],
   module: RouteKey,
   action: Action
 ): boolean {
-  if (role === "SUPER_ADMIN") return true;
-  const allowed = actionPermissions[role][module];
-  if (!allowed) return false;
-  return allowed.includes(action);
+  const targets = MODULE_ALIASES[module] ?? [module];
+  return targets.some((m) => hasPermission(permissions, m, action));
 }
 
 // Module grouping for navigation
@@ -304,6 +328,6 @@ export const navItems: NavItem[] = [
   { key: "settings", labelKey: "nav.settings", icon: "Settings", group: "system" },
 ];
 
-export function getNavForRole(role: UserRole): NavItem[] {
-  return navItems.filter((item) => canAccessModule(role, item.key));
+export function getNavForRole(permissions: string[]): NavItem[] {
+  return navItems.filter((item) => canAccessModule(permissions, item.key));
 }

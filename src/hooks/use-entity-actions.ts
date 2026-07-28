@@ -46,10 +46,10 @@ export function useEntityActions<T extends { id: string }>({
   const [deleteTarget, setDeleteTarget] = useState<T | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const role = user?.role;
-  const canCreate = role ? canPerformAction(role, module, "create") : false;
-  const canEdit = role ? canPerformAction(role, module, "edit") : false;
-  const canDelete = role ? canPerformAction(role, module, "delete") : false;
+  const permissions = user?.permissions ?? [];
+  const canCreate = canPerformAction(permissions, module, "create");
+  const canEdit = canPerformAction(permissions, module, "edit");
+  const canDelete = canPerformAction(permissions, module, "delete");
 
   const setField = useCallback((key: string, value: unknown) => {
     setFormData((prev) => ({ ...prev, [key]: value }));

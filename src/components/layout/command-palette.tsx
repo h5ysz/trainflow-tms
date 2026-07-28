@@ -48,7 +48,7 @@ export function CommandPalette() {
 
   const items = useMemo(() => {
     if (!user) return [];
-    return getNavForRole(user.role);
+    return getNavForRole(user.permissions);
   }, [user]);
 
   const filtered = useMemo(() => {

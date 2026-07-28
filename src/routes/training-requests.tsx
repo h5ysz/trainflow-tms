@@ -111,8 +111,8 @@ export function TrainingRequestsRoute() {
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
     useList<Request>("/requests");
 
-  const canCreate = user ? canPerformAction(user.role, "requests", "create") : false;
-  const canEdit = user ? canPerformAction(user.role, "requests", "edit") : false;
+  const canCreate = user ? canPerformAction(user.permissions, "requests", "create") : false;
+  const canEdit = user ? canPerformAction(user.permissions, "requests", "edit") : false;
 
   useEffect(() => {
     if (dialogOpen) {

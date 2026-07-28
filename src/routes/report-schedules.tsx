@@ -77,7 +77,7 @@ export function ReportSchedulesRoute() {
   const { toast } = useToast();
   const { user } = useAppStore();
 
-  const canAccess = canAccessModule(user?.role ?? "CONTRACTOR", "report-schedules");
+  const canAccess = canAccessModule(user?.permissions ?? [], "report-schedules");
 
   const schedules = useList<Schedule>("/report-schedules");
   const executions = useList<Execution>("/report-executions");

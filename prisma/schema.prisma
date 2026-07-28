@@ -111,12 +111,17 @@ model Language {
 
 model Role {
   id          String   @id @default(uuid())
-  code        String   @unique // "SUPER_ADMIN" | "COORDINATOR" | "TRAINER" | "CONTRACTOR"
+  code        String   @unique // "SUPER_ADMIN" | "COORDINATOR" | "TRAINER" | "CONTRACTOR" | "VIEWER"
   name        String
   nameAr      String?
   description String?
   isSystem    Boolean  @default(false) // system roles cannot be deleted
-  permissions Json?    // array of permission codes (for future RBAC expansion)
+  // Which UserRole "bucket" a user assigned to this role is treated as for
+  // tenant-row-scoping (CONTRACTOR) and fixed platform-admin gates (SUPER_ADMIN
+  // only settings/users/roles) — those two concerns stay enum-keyed even though
+  // operational module/action permissions below are fully dynamic.
+  baseType    UserRole @default(CONTRACTOR)
+  permissions Json?    // array of "module.action" / "module.*" / "*" — the live RBAC source
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   createdBy   String?
