@@ -96,6 +96,7 @@ export function TrainingRequestsRoute() {
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<Request | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [detailsTarget, setDetailsTarget] = useState<Request | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState<Record<string, unknown>>({
     priority: "NORMAL",
@@ -248,7 +249,13 @@ export function TrainingRequestsRoute() {
       className: "text-end",
       cell: (r) => {
         const actions = NEXT_ACTIONS[r.status] ?? [];
-        if (actions.length === 0) return <Button variant="ghost" size="sm" className="h-8">{t("action.details")}</Button>;
+        if (actions.length === 0) {
+          return (
+            <Button variant="ghost" size="sm" className="h-8" onClick={() => setDetailsTarget(r)}>
+              {t("action.details")}
+            </Button>
+          );
+        }
         return (
           <div className="flex justify-end gap-1 flex-wrap">
             {actions.map((a) => (
@@ -442,6 +449,87 @@ export function TrainingRequestsRoute() {
           </div>
         )}
       </FormDialog>
+
+      {/* Read-only details dialog — reached from rows with no remaining workflow actions */}
+      <FormDialog
+        open={detailsTarget !== null}
+        onOpenChange={(open) => { if (!open) setDetailsTarget(null); }}
+        title={t("requests.details")}
+        description={t("requests.detailsSubtitle")}
+        icon={ClipboardList}
+        size="lg"
+      >
+        {detailsTarget && (
+          <div className="space-y-5">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="font-mono text-sm font-semibold text-primary">{detailsTarget.refNumber}</div>
+              <div className="flex items-center gap-2">
+                <PriorityBadge priority={detailsTarget.priority} />
+                <StatusBadge status={detailsTarget.status} />
+              </div>
+            </div>
+
+            <FormGrid>
+              <DetailRow label={t("requests.company")} value={detailsTarget.companyName} />
+              <DetailRow label={t("requests.course")} value={detailsTarget.courseTitle} />
+              <DetailRow label={t("requests.traineeCount")} value={detailsTarget.traineeCount} />
+              <DetailRow label={t("requests.preferredLocation")} value={detailsTarget.preferredLocation} />
+              <DetailRow label={t("requests.preferredDateFrom")} value={fmtDate(detailsTarget.preferredDateFrom)} />
+              <DetailRow label={t("requests.preferredDateTo")} value={fmtDate(detailsTarget.preferredDateTo)} />
+              <DetailRow label={t("requests.preferredLanguage")} value={detailsTarget.preferredLanguage} />
+            </FormGrid>
+
+            {detailsTarget.notes && <DetailRow label={t("requests.notes")} value={detailsTarget.notes} />}
+
+            {detailsTarget.rejectionReason && (
+              <div className="rounded-md border border-destructive/20 bg-destructive/5 p-3">
+                <div className="text-xs font-medium text-destructive flex items-center gap-1.5">
+                  <AlertCircle className="h-3.5 w-3.5" /> {t("requests.rejectionReason")}
+                </div>
+                <div className="text-xs mt-1">{detailsTarget.rejectionReason}</div>
+              </div>
+            )}
+
+            <div>
+              <div className="text-xs font-semibold mb-2">{t("requests.timeline")}</div>
+              <div className="rounded-md border px-3">
+                {([
+                  ["requests.createdAt", detailsTarget.createdAt],
+                  ["requests.submittedAt", detailsTarget.submittedAt],
+                  ["requests.reviewedAt", detailsTarget.reviewedAt],
+                  ["requests.approvedAt", detailsTarget.approvedAt],
+                  ["requests.scheduledAt", detailsTarget.scheduledAt],
+                  ["requests.startedAt", detailsTarget.startedAt],
+                  ["requests.completedAt", detailsTarget.completedAt],
+                  ["requests.rejectedAt", detailsTarget.rejectedAt],
+                ] as const)
+                  .filter(([, at]) => Boolean(at))
+                  .map(([labelKey, at]) => (
+                    <div key={labelKey} className="flex items-center justify-between gap-3 py-2 border-b last:border-b-0">
+                      <span className="text-xs text-muted-foreground">{t(labelKey)}</span>
+                      <span className="text-xs font-medium">{new Date(at as string).toLocaleString()}</span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+            <p className="text-[11px] text-muted-foreground">{t("requests.noFurtherActions")}</p>
+          </div>
+        )}
+      </FormDialog>
+    </div>
+  );
+}
+
+function fmtDate(value?: string | null) {
+  return value ? new Date(value).toLocaleDateString() : null;
+}
+
+function DetailRow({ label, value }: { label: string; value?: string | number | null }) {
+  return (
+    <div className="space-y-1">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-sm break-words">{value === null || value === undefined || value === "" ? "—" : value}</div>
     </div>
   );
 }

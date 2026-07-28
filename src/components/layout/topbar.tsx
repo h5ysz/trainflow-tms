@@ -18,6 +18,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { RoleBadge } from "@/components/common/status-badge";
+import { ProfileDialog } from "./profile-dialog";
 import {
   Search, Bell, Sun, Moon, Languages, Menu, ChevronDown,
   UserCircle, Settings, LogOut, ShieldCheck, UserCog, GraduationCap, Building2,
@@ -50,12 +51,13 @@ export function Topbar() {
   const { t, locale, setLocale, dir } = useI18n();
   const {
     user, signOut, theme, setTheme,
-    setSidebarOpen, setCommandOpen,
+    setSidebarOpen, setCommandOpen, navigate,
   } = useAppStore();
   const { toast } = useToast();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifLoading, setNotifLoading] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const initials = user ? user.fullName.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase() : "";
   const RoleIcon = user ? ROLE_ICONS[user.role] : ShieldCheck;
@@ -193,8 +195,12 @@ export function Topbar() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="gap-2"><UserCircle className="h-4 w-4" /> {t("action.details")}</DropdownMenuItem>
-            <DropdownMenuItem className="gap-2"><Settings className="h-4 w-4" /> {t("nav.settings")}</DropdownMenuItem>
+            <DropdownMenuItem className="gap-2" onSelect={() => setProfileOpen(true)}>
+              <UserCircle className="h-4 w-4" /> {t("action.details")}
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2" onSelect={() => navigate("settings")}>
+              <Settings className="h-4 w-4" /> {t("nav.settings")}
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="gap-2 text-destructive focus:text-destructive" onClick={() => signOut()}>
               <LogOut className="h-4 w-4" /> {t("auth.signOut")}
@@ -202,6 +208,8 @@ export function Topbar() {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
     </header>
   );
 }
