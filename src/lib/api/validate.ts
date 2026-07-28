@@ -10,6 +10,12 @@ import type { NextResponse } from "next/server";
 
 type ParseResult<T> = { data: T } | { error: NextResponse };
 
+// Zod always attaches a message to every issue, so this only falls back to the
+// generic string if there are somehow no issues at all.
+function firstIssueMessage(error: import("zod").ZodError): string {
+  return error.issues[0]?.message ?? "Validation failed";
+}
+
 export async function parseBody<T>(req: Request, schema: ZodType<T>): Promise<ParseResult<T>> {
   let raw: unknown;
   try {
@@ -20,7 +26,7 @@ export async function parseBody<T>(req: Request, schema: ZodType<T>): Promise<Pa
 
   const result = schema.safeParse(raw);
   if (!result.success) {
-    return { error: validationError("Validation failed", result.error.flatten()) };
+    return { error: validationError(firstIssueMessage(result.error), result.error.flatten()) };
   }
   return { data: result.data };
 }
@@ -29,7 +35,7 @@ export async function parseBody<T>(req: Request, schema: ZodType<T>): Promise<Pa
 export function parseValue<T>(value: unknown, schema: ZodType<T>): ParseResult<T> {
   const result = schema.safeParse(value);
   if (!result.success) {
-    return { error: validationError("Validation failed", result.error.flatten()) };
+    return { error: validationError(firstIssueMessage(result.error), result.error.flatten()) };
   }
   return { data: result.data };
 }
