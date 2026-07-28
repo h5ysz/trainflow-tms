@@ -52,3 +52,16 @@ prompt
 server.log
 # Skills directory
 /skills/
+# GCCLAB TMS — additional ignores (Sprint 6)
+# Local SQLite database (contains user data, audit logs)
+db/*.db
+db/*.db-journal
+
+# Upload directory (user-uploaded files)
+/upload/
+
+# Download directory (generated screenshots, PDFs, exports)
+/download/
+
+# Worklog (internal multi-agent work log)
+/worklog.md
