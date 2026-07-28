@@ -37,10 +37,13 @@ async function main() {
   // ─────────────────────────────────────────────────────────────────
   // 2) SYSTEM ROLES
   // ─────────────────────────────────────────────────────────────────
+  // Only Super Admin is seeded as a system role — by design. Every other role
+  // (Coordinator/Trainer/Contractor/Viewer/anything else) is created by the
+  // Super Admin through the Roles page, with whatever permissions they choose;
+  // this script must never auto-create operational roles again.
+  //
   // `permissions` here is the LIVE, DB-driven RBAC source (src/lib/auth/api.ts
-  // resolveEffectivePermissions() reads it per-request) — it must match what
-  // src/lib/auth/permissions.ts's moduleAccess/actionPermissions actually grant
-  // each role today, or existing users regress on deploy. `baseType` is what a
+  // resolveEffectivePermissions() reads it per-request). `baseType` is what a
   // user assigned to this role gets stored as User.role (the enum), which
   // drives tenant-row-scoping and the fixed Super-Admin-only admin gates —
   // those two concerns stay separate from this operational permission set.
@@ -50,50 +53,6 @@ async function main() {
       code: "SUPER_ADMIN", name: "Super Admin", nameAr: "مدير النظام", baseType: "SUPER_ADMIN" as const,
       description: "Platform administration: settings, users, roles, branding, integrations. Also has all operational permissions.",
       permissions: ["*"], isSystem: true,
-    },
-    {
-      code: "COORDINATOR", name: "Coordinator", nameAr: "منسق التدريب", baseType: "COORDINATOR" as const,
-      description: "Full operational access to all training modules (equivalent to Trainer). No access to Settings.",
-      permissions: [
-        "dashboard.view", "companies.*", "company-contacts.*", "trainers.*", "trainer-qualifications.*",
-        "trainees.*", "courses.*", "requests.*", "sessions.*", "scheduling.*", "attendance.*", "qr-code.*",
-        "pre-test.*", "final-test.*", "evaluation.*", "certificates.*", "reports.view", "report-schedules.*",
-        "notifications.view", "audit-log.view",
-        "user-approvals.view", "user-approvals.create", "user-approvals.edit",
-      ],
-      isSystem: true,
-    },
-    {
-      code: "TRAINER", name: "Trainer", nameAr: "المدرب", baseType: "TRAINER" as const,
-      description: "Full operational access to all training modules (equivalent to Coordinator). No access to Settings.",
-      permissions: [
-        "dashboard.view", "companies.*", "company-contacts.*", "trainers.*", "trainer-qualifications.*",
-        "trainees.*", "courses.*", "requests.*", "sessions.*", "scheduling.*", "attendance.*", "qr-code.*",
-        "pre-test.*", "final-test.*", "evaluation.*", "certificates.*", "reports.view",
-        "notifications.view", "audit-log.view",
-        "user-approvals.view", "user-approvals.create", "user-approvals.edit",
-      ],
-      isSystem: true,
-    },
-    {
-      code: "VIEWER", name: "Viewer", nameAr: "مشاهد", baseType: "VIEWER" as const,
-      description: "Read-only access across operational modules. No create/edit/delete anywhere.",
-      permissions: [
-        "dashboard.view", "companies.view", "company-contacts.view", "trainers.view", "trainer-qualifications.view",
-        "trainees.view", "courses.view", "requests.view", "sessions.view", "scheduling.view", "attendance.view",
-        "qr-code.view", "pre-test.view", "final-test.view", "evaluation.view", "certificates.view",
-        "reports.view", "notifications.view", "audit-log.view",
-      ],
-      isSystem: true,
-    },
-    {
-      code: "CONTRACTOR", name: "Contractor", nameAr: "المقاول (الشركة)", baseType: "CONTRACTOR" as const,
-      description: "Submit and track training requests for own company only",
-      permissions: [
-        "dashboard.view", "trainees.view", "trainees.create", "trainees.edit",
-        "requests.view", "requests.create", "certificates.view", "notifications.view",
-      ],
-      isSystem: true,
     },
   ];
   for (const r of roles) {
@@ -296,7 +255,7 @@ async function main() {
 
   console.log(`\n✅ Clean seed completed`);
   console.log(`   - Languages: ${languages.length} (English, Arabic)`);
-  console.log(`   - Roles: ${roles.length} (Super Admin, Coordinator, Trainer, Viewer, Contractor)`);
+  console.log(`   - Roles: ${roles.length} (Super Admin only — create others via the Roles page)`);
   console.log(`   - Permissions: ${permCount}`);
   console.log(`   - Settings: ${defaultSettings.length}`);
   console.log(`   - Report Schedules: ${defaultSchedules.length}`);

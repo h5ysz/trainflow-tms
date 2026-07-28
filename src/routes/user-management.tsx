@@ -279,7 +279,7 @@ export function UserManagementRoute() {
     },
   ];
 
-  const defaultRoleId = roles.data.find((r) => r.code === "COORDINATOR")?.id ?? "";
+  const defaultRoleId = roles.data[0]?.id ?? "";
   const newButton = isSuperAdmin && (
     <Button onClick={() => openCreate({ roleId: defaultRoleId, language: "en", isActive: true })}>
       <Plus className="h-4 w-4 me-1.5" />
