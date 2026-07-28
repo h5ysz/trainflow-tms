@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useState as useReactState } from "react";
+import { useState, useEffect, useRef, useState as useReactState } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
@@ -10,12 +10,18 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge, PriorityBadge } from "@/components/common/status-badge";
-import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Check, X, RotateCcw, ArrowRight, FileText } from "lucide-react";
+import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Check, X, RotateCcw, ArrowRight, FileText, Download, Upload } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/lib/store/app-store";
 import { canPerformAction } from "@/lib/auth/permissions";
+
+interface RequestImportResult {
+  requestsCreated: number;
+  traineesLinked: number;
+  errors: { row: number; message: string }[];
+}
 
 interface CompanyOption { id: string; name: string; refNumber: string; }
 interface CourseOption { id: string; title: string; code: string; refNumber: string; }
@@ -99,6 +105,8 @@ export function TrainingRequestsRoute() {
   });
   const [companies, setCompanies] = useReactState<CompanyOption[]>([]);
   const [courses, setCourses] = useReactState<CourseOption[]>([]);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
     useList<Request>("/requests");
@@ -147,6 +155,31 @@ export function TrainingRequestsRoute() {
       refetch();
     } catch (e) {
       toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    }
+  };
+
+  const handleImportClick = () => fileInputRef.current?.click();
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImporting(true);
+    try {
+      const result = await api.postFile<RequestImportResult>("/requests/import", file);
+      toast({
+        title: t("misc.success"),
+        description: t("requests.import.success", {
+          requests: result.requestsCreated,
+          trainees: result.traineesLinked,
+        }),
+        variant: result.errors.length > 0 ? "destructive" : "default",
+      });
+      refetch();
+    } catch (err) {
+      toast({ title: t("misc.error"), description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -266,7 +299,22 @@ export function TrainingRequestsRoute() {
         title={t("requests.title")}
         subtitle={t("requests.subtitle")}
         icon={ClipboardList}
-        actions={canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("requests.new")}</Button>}
+        actions={
+          <>
+            <Button variant="outline" onClick={() => window.open("/api/requests/export", "_blank")}>
+              <Download className="h-4 w-4 me-1.5" />{t("requests.export")}
+            </Button>
+            {canCreate && (
+              <>
+                <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={(e) => void handleImportFile(e)} />
+                <Button variant="outline" onClick={handleImportClick} disabled={importing}>
+                  <Upload className="h-4 w-4 me-1.5" />{t("requests.import")}
+                </Button>
+              </>
+            )}
+            {canCreate && <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 me-1.5" />{t("requests.new")}</Button>}
+          </>
+        }
       />
       {error && (
         <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">

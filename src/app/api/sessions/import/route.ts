@@ -2,22 +2,12 @@
 // course-schedule sheet (same column layout as /api/sessions/export).
 // Unmatched course/trainer names are auto-created rather than rejecting the row.
 import ExcelJS from "exceljs";
-import { randomBytes } from "crypto";
 import { db } from "@/lib/db";
 import { withModuleAction, ok, fail, audit } from "@/lib/auth/api";
 import { nextRefNumber } from "@/lib/api/ref-number";
+import { generateCourseCode } from "@/lib/api/course-code";
 import { SESSION_COLUMNS, parseImportRow } from "@/lib/sessions/import-export";
 import { genQrToken } from "../route";
-
-async function generateCourseCode(title: string): Promise<string> {
-  const base = title.replace(/[^a-zA-Z0-9]+/g, "-").toUpperCase().slice(0, 12).replace(/^-+|-+$/g, "") || "CRS";
-  for (let i = 0; i < 5; i++) {
-    const candidate = `${base}-${randomBytes(2).toString("hex").toUpperCase()}`;
-    const exists = await db.course.findFirst({ where: { code: candidate } });
-    if (!exists) return candidate;
-  }
-  return `AUTO-${randomBytes(4).toString("hex").toUpperCase()}`;
-}
 
 export const POST = withModuleAction("sessions", "create", async ({ req, user }) => {
   const formData = await req.formData().catch(() => null);

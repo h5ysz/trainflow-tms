@@ -12,6 +12,9 @@
 //   SESSION          → SES-000001       (continuous)
 
 import { db } from "@/lib/db";
+import type { Prisma } from "@prisma/client";
+
+type DbClient = typeof db | Prisma.TransactionClient;
 
 export type RefEntityType =
   | "TRAINING_REQUEST"
@@ -48,7 +51,7 @@ function pad(n: number, width = 6): string {
  * Atomically generate the next reference number for the given entity type.
  * Uses upsert + increment pattern to be concurrency-safe.
  */
-export async function nextRefNumber(entityType: RefEntityType): Promise<string> {
+export async function nextRefNumber(entityType: RefEntityType, client: DbClient = db): Promise<string> {
   const year = YEARLY.has(entityType) ? new Date().getFullYear() : null;
 
   // Continuous sequences are keyed on year 0 rather than NULL. A NULL year can
@@ -57,8 +60,12 @@ export async function nextRefNumber(entityType: RefEntityType): Promise<string> 
   // every call and hand out a duplicate ref number.
   const yearKey = year ?? 0;
 
-  // Atomic increment via upsert (safe under concurrent requests)
-  const counter = await db.refNumberCounter.upsert({
+  // Atomic increment via upsert (safe under concurrent requests). When called
+  // from inside a db.$transaction, `client` must be the tx handle — SQLite only
+  // allows one writer at a time, so writing via the global `db` connection
+  // while an interactive transaction holds the write lock deadlocks until the
+  // transaction (and query) timeouts fire.
+  const counter = await client.refNumberCounter.upsert({
     where: {
       entityType_year: { entityType, year: yearKey },
     },

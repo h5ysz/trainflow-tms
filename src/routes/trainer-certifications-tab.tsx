@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { DataTable, type Column } from "@/components/common/data-table";
 import { FormDialog, Field, FormGrid } from "@/components/common/form-dialog";
@@ -11,11 +11,19 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/common/status-badge";
-import { BadgeCheck, Plus, Calendar, User, BookOpen, AlertCircle } from "lucide-react";
+import { BadgeCheck, Plus, Calendar, User, BookOpen, AlertCircle, Download, Upload } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api } from "@/lib/api/client";
+import { useToast } from "@/hooks/use-toast";
 import { useEntityActions } from "@/hooks/use-entity-actions";
 import { toDateInput } from "@/lib/utils";
+
+interface CertImportResult {
+  coursesProcessed: number;
+  certificationsCreated: number;
+  certificationsSkipped: number;
+  errors: { row: number; message: string }[];
+}
 
 interface TrainerOption { id: string; fullName: string; }
 interface CourseOption { id: string; title: string; code: string; }
@@ -44,9 +52,12 @@ const STATUSES = ["VALID", "EXPIRED", "REVOKED"];
  */
 export function TrainerCertificationsTab() {
   const { t } = useI18n();
+  const { toast } = useToast();
   const [trainers, setTrainers] = useState<TrainerOption[]>([]);
   const [courses, setCourses] = useState<CourseOption[]>([]);
   const [quals, setQuals] = useState<QualOption[]>([]);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
     useList<Certification>("/trainer-certifications");
@@ -93,6 +104,31 @@ export function TrainerCertificationsTab() {
 
   // The API rejects a qualification that belongs to a different trainer.
   const selectableQuals = quals.filter((q) => !q.trainerId || q.trainerId === formData.trainerId);
+
+  const handleImportClick = () => fileInputRef.current?.click();
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImporting(true);
+    try {
+      const result = await api.postFile<CertImportResult>("/trainer-certifications/import", file);
+      toast({
+        title: t("misc.success"),
+        description: t("certifications.import.success", {
+          created: result.certificationsCreated,
+          skipped: result.certificationsSkipped,
+        }),
+        variant: result.errors.length > 0 ? "destructive" : "default",
+      });
+      refetch();
+    } catch (err) {
+      toast({ title: t("misc.error"), description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const handleSubmit = () =>
     void submit(requireFields({
@@ -181,7 +217,20 @@ export function TrainerCertificationsTab() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{t("certifications.subtitle")}</p>
-        {newButton}
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => window.open("/api/trainer-certifications/export", "_blank")}>
+            <Download className="h-4 w-4 me-1.5" />{t("certifications.export")}
+          </Button>
+          {canCreate && (
+            <>
+              <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={(e) => void handleImportFile(e)} />
+              <Button variant="outline" onClick={handleImportClick} disabled={importing}>
+                <Upload className="h-4 w-4 me-1.5" />{t("certifications.import")}
+              </Button>
+            </>
+          )}
+          {newButton}
+        </div>
       </div>
 
       {error && (
