@@ -9,7 +9,7 @@ import { randomBytes } from "crypto";
 
 const ALLOWED_SORT_FIELDS = ["refNumber", "title", "startDate", "endDate", "createdAt", "status", "location", "city", "shift"];
 
-function genQrToken(): string {
+export function genQrToken(): string {
   return randomBytes(16).toString("hex");
 }
 
@@ -91,6 +91,10 @@ export const GET = withModuleAction("sessions", "view", async ({ req, user }) =>
       actualTrainees: s.actualTrainees,
       status: s.status,
       notes: s.notes,
+      instituteName: s.instituteName,
+      classification: s.classification,
+      locationMapUrl: s.locationMapUrl,
+      durationDays: s.durationDays,
       qrCodeToken: s.qrCodeToken,
       qrCodeGeneratedAt: s.qrCodeGeneratedAt,
       createdAt: s.createdAt,
@@ -108,6 +112,7 @@ export const POST = withModuleAction("sessions", "create", async ({ req, user })
     courseId, requestId, requestCourseId, trainerId, title, location, city, region, venue,
     shift, durationHours, capacity, language,
     startDate, endDate, expectedTrainees, notes,
+    instituteName, classification, locationMapUrl, durationDays,
   } = body;
 
   if (!courseId || !title || !startDate || !endDate) {
@@ -164,6 +169,10 @@ export const POST = withModuleAction("sessions", "create", async ({ req, user })
       actualTrainees: 0,
       status: "SCHEDULED",
       notes: notes ?? null,
+      instituteName: instituteName ?? null,
+      classification: classification ?? "COURSE",
+      locationMapUrl: locationMapUrl ?? null,
+      durationDays: durationDays ?? null,
       qrCodeToken: qrToken,
       qrCodeGeneratedAt: new Date(),
       createdBy: user.id,

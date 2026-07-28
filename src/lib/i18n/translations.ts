@@ -209,6 +209,15 @@ export const dict = {
     "sessions.generateFromRequest": "Generate Sessions from Request",
     "sessions.conflict.warning": "Trainer has a scheduling conflict",
     "sessions.notCertified.warning": "Trainer is not certified for this course",
+    "sessions.instituteName": "Executing Institute",
+    "sessions.classification": "Classification",
+    "sessions.classification.COURSE": "Course",
+    "sessions.classification.EXAM": "Exam",
+    "sessions.mapLink": "Location Map Link",
+    "sessions.durationDays": "Duration (days)",
+    "sessions.import": "Import",
+    "sessions.export": "Export",
+    "sessions.import.success": "Import complete: {imported} imported, {failed} failed",
 
     // Dashboard new KPIs
     "dashboard.kpi.pendingRequests": "Pending Requests",
@@ -976,6 +985,15 @@ export const dict = {
     "sessions.generateFromRequest": "توليد جلسات من الطلب",
     "sessions.conflict.warning": "لدى المدرب تعارض في الجدولة",
     "sessions.notCertified.warning": "المدرب غير معتمد لتدريس هذه الدورة",
+    "sessions.instituteName": "اسم المعهد المنفذ",
+    "sessions.classification": "التصنيف",
+    "sessions.classification.COURSE": "دورة",
+    "sessions.classification.EXAM": "إختبار",
+    "sessions.mapLink": "رابط موقع الدورة",
+    "sessions.durationDays": "مدة الدورة (أيام)",
+    "sessions.import": "استيراد",
+    "sessions.export": "تصدير",
+    "sessions.import.success": "اكتمل الاستيراد: تم استيراد {imported}، وفشل {failed}",
 
     // Dashboard new KPIs
     "dashboard.kpi.pendingRequests": "الطلبات المعلقة",

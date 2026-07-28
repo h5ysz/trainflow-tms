@@ -131,6 +131,11 @@ export const api = {
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string) =>
     request<T>(path, { method: "DELETE" }),
+  postFile: <T>(path: string, file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return request<T>(path, { method: "POST", body });
+  },
 };
 
 /**

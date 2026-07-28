@@ -733,6 +733,11 @@ model TrainingSession {
   startedAt       DateTime?
   completedAt     DateTime?
   notes           String?
+  // Import/export fields (course schedule sheet)
+  instituteName   String?  // اسم المعهد المنفذ
+  classification  String   @default("COURSE") // COURSE | EXAM — دورة / اختبار
+  locationMapUrl  String?  // احداثيات الموقع (map link)
+  durationDays    Int?     // مدة الدورة (days, as shown on the sheet)
   // Audit
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

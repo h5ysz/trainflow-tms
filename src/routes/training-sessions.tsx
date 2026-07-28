@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
@@ -12,11 +12,12 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/common/status-badge";
-import { CalendarDays, Plus, BookOpen, GraduationCap, MapPin, Users, AlertCircle } from "lucide-react";
+import { CalendarDays, Plus, BookOpen, GraduationCap, MapPin, Users, AlertCircle, Download, Upload } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api } from "@/lib/api/client";
 import { useAppStore } from "@/lib/store/app-store";
 import { useEntityActions } from "@/hooks/use-entity-actions";
+import { useToast } from "@/hooks/use-toast";
 import { toDateTimeInput } from "@/lib/utils";
 
 interface CourseOption { id: string; title: string; code: string; }
@@ -44,21 +45,35 @@ interface Session {
   status: string;
   attendanceCount: number;
   certificatesCount: number;
+  instituteName?: string | null;
+  classification?: string;
+  locationMapUrl?: string | null;
+  durationDays?: number | null;
+}
+
+interface ImportResult {
+  imported: number;
+  failed: number;
+  errors: { row: number; message: string }[];
 }
 
 const NEW_SESSION = {
   language: "en",
   expectedTrainees: 0,
   shift: "MORNING",
+  classification: "COURSE",
   durationHours: 6,
   capacity: 20,
 };
 
 export function TrainingSessionsRoute() {
   const { t } = useI18n();
+  const { toast } = useToast();
   const { navigate } = useAppStore();
   const [courses, setCourses] = useState<CourseOption[]>([]);
   const [trainers, setTrainers] = useState<TrainerOption[]>([]);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
     useList<Session>("/sessions");
@@ -94,6 +109,28 @@ export function TrainingSessionsRoute() {
       }
     }
   }, [dialogOpen, courses.length, trainers.length]);
+
+  const handleImportClick = () => fileInputRef.current?.click();
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImporting(true);
+    try {
+      const result = await api.postFile<ImportResult>("/sessions/import", file);
+      toast({
+        title: t("misc.success"),
+        description: t("sessions.import.success", { imported: result.imported, failed: result.failed }),
+        variant: result.failed > 0 ? "destructive" : "default",
+      });
+      refetch();
+    } catch (err) {
+      toast({ title: t("misc.error"), description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const columns: Column<Session>[] = [
     { key: "code", header: t("sessions.sessionCode"), cell: (r) => <div className="font-mono text-xs font-semibold text-primary">{r.refNumber}</div> },
@@ -164,7 +201,22 @@ export function TrainingSessionsRoute() {
         title={t("sessions.title")}
         subtitle={t("sessions.subtitle")}
         icon={CalendarDays}
-        actions={canCreate && <Button onClick={() => openCreate(NEW_SESSION)}><Plus className="h-4 w-4 me-1.5" />{t("sessions.new")}</Button>}
+        actions={
+          <>
+            <Button variant="outline" onClick={() => window.open("/api/sessions/export", "_blank")}>
+              <Download className="h-4 w-4 me-1.5" />{t("sessions.export")}
+            </Button>
+            {canCreate && (
+              <>
+                <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={(e) => void handleImportFile(e)} />
+                <Button variant="outline" onClick={handleImportClick} disabled={importing}>
+                  <Upload className="h-4 w-4 me-1.5" />{t("sessions.import")}
+                </Button>
+              </>
+            )}
+            {canCreate && <Button onClick={() => openCreate(NEW_SESSION)}><Plus className="h-4 w-4 me-1.5" />{t("sessions.new")}</Button>}
+          </>
+        }
       />
       {error && (
         <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
@@ -264,6 +316,24 @@ export function TrainingSessionsRoute() {
             </Field>
             <Field label={t("sessions.expectedTrainees")}>
               <Input type="number" min={0} value={formData.expectedTrainees as number} onChange={(e) => setField("expectedTrainees", parseInt(e.target.value, 10) || 0)} />
+            </Field>
+            <Field label={t("sessions.instituteName")}>
+              <Input placeholder="GCC Lab" value={(formData.instituteName as string) ?? ""} onChange={(e) => setField("instituteName", e.target.value)} />
+            </Field>
+            <Field label={t("sessions.classification")}>
+              <Select value={(formData.classification as string) ?? "COURSE"} onValueChange={(v) => setField("classification", v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="COURSE">{t("sessions.classification.COURSE")}</SelectItem>
+                  <SelectItem value="EXAM">{t("sessions.classification.EXAM")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label={t("sessions.durationDays")}>
+              <Input type="number" min={1} value={(formData.durationDays as number) ?? ""} onChange={(e) => setField("durationDays", parseInt(e.target.value, 10) || null)} />
+            </Field>
+            <Field label={t("sessions.mapLink")}>
+              <Input placeholder="https://maps.app.goo.gl/..." value={(formData.locationMapUrl as string) ?? ""} onChange={(e) => setField("locationMapUrl", e.target.value)} />
             </Field>
           </FormGrid>
           <Field label={t("sessions.notes")}>

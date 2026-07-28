@@ -35,6 +35,7 @@ export const PUT = withModuleAction("sessions", "edit", async ({ req, params, us
   const {
     trainerId, title, location, city, region, venue, shift, durationHours, capacity, language,
     startDate, endDate, expectedTrainees, actualTrainees, status, notes,
+    instituteName, classification, locationMapUrl, durationDays,
   } = body;
 
   // If trainer is being changed (or dates changing with a trainer set), validate assignment
@@ -82,6 +83,10 @@ export const PUT = withModuleAction("sessions", "edit", async ({ req, params, us
       ...(actualTrainees !== undefined && { actualTrainees }),
       ...(status !== undefined && { status }),
       ...(notes !== undefined && { notes }),
+      ...(instituteName !== undefined && { instituteName }),
+      ...(classification !== undefined && { classification }),
+      ...(locationMapUrl !== undefined && { locationMapUrl }),
+      ...(durationDays !== undefined && { durationDays }),
       updatedBy: user.id,
     },
   });
