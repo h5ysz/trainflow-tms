@@ -14,8 +14,17 @@ import {
   AlertCircle, AlertTriangle, Loader2, Users, CalendarDays,
   type LucideIcon,
 } from "lucide-react";
-import { api } from "@/lib/api/client";
+import { api, downloadFile } from "@/lib/api/client";
+import { useToast } from "@/hooks/use-toast";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, Legend } from "recharts";
+
+interface ExportTemplate {
+  code: string;
+  name: string;
+  nameAr: string;
+  description: string;
+  supportedFormats: string[];
+}
 
 interface ReportCard {
   key: string;
@@ -29,6 +38,7 @@ const PIE_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(-
 
 export function ReportsRoute() {
   const { t } = useI18n();
+  const { toast } = useToast();
   const today = new Date().toISOString().slice(0, 10);
   const yearStart = `${new Date().getFullYear()}-01-01`;
   const [reportType, setReportType] = useState("summary");
@@ -38,20 +48,24 @@ export function ReportsRoute() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  // The two Export buttons used to have no onClick at all. They now drive
+  // POST /api/reports/generate, which builds the xlsx/pdf and had no caller anywhere.
+  const [templates, setTemplates] = useState<ExportTemplate[]>([]);
+  const [exporting, setExporting] = useState<"xlsx" | "pdf" | null>(null);
 
   const reports: ReportCard[] = [
-    { key: "summary", title: t("reports.summary"), desc: t("misc.pageUnderConstruction"), icon: TrendingUp, accent: "bg-primary/10 text-primary" },
-    { key: "byCompany", title: t("reports.byCompany"), desc: t("misc.pageUnderConstruction"), icon: Building2, accent: "bg-info/10 text-info" },
-    { key: "byCourse", title: t("reports.byCourse"), desc: t("misc.pageUnderConstruction"), icon: BookOpen, accent: "bg-success/10 text-success" },
-    { key: "byTrainer", title: t("reports.byTrainer"), desc: t("misc.pageUnderConstruction"), icon: GraduationCap, accent: "bg-warning/10 text-warning" },
-    { key: "byPeriod", title: t("reports.byPeriod"), desc: t("misc.pageUnderConstruction"), icon: CalendarRange, accent: "bg-primary/10 text-primary" },
-    { key: "compliance", title: t("reports.compliance"), desc: t("misc.pageUnderConstruction"), icon: ShieldCheck, accent: "bg-destructive/10 text-destructive" },
-    { key: "attendance", title: t("reports.attendance"), desc: t("misc.pageUnderConstruction"), icon: UserCheck, accent: "bg-info/10 text-info" },
-    { key: "scores", title: t("reports.scores"), desc: t("misc.pageUnderConstruction"), icon: Award, accent: "bg-success/10 text-success" },
+    { key: "summary", title: t("reports.summary"), desc: "", icon: TrendingUp, accent: "bg-primary/10 text-primary" },
+    { key: "byCompany", title: t("reports.byCompany"), desc: "", icon: Building2, accent: "bg-info/10 text-info" },
+    { key: "byCourse", title: t("reports.byCourse"), desc: "", icon: BookOpen, accent: "bg-success/10 text-success" },
+    { key: "byTrainer", title: t("reports.byTrainer"), desc: "", icon: GraduationCap, accent: "bg-warning/10 text-warning" },
+    { key: "byPeriod", title: t("reports.byPeriod"), desc: "", icon: CalendarRange, accent: "bg-primary/10 text-primary" },
+    { key: "compliance", title: t("reports.compliance"), desc: "", icon: ShieldCheck, accent: "bg-destructive/10 text-destructive" },
+    { key: "attendance", title: t("reports.attendance"), desc: "", icon: UserCheck, accent: "bg-info/10 text-info" },
+    { key: "scores", title: t("reports.scores"), desc: "", icon: Award, accent: "bg-success/10 text-success" },
     // Sprint 2 new report types
-    { key: "trainees", title: t("dashboard.kpi.trainees"), desc: t("misc.pageUnderConstruction"), icon: Users, accent: "bg-success/10 text-success" },
-    { key: "conflicts", title: t("dashboard.kpi.trainerConflicts"), desc: t("misc.pageUnderConstruction"), icon: AlertTriangle, accent: "bg-destructive/10 text-destructive" },
-    { key: "todaySessions", title: t("dashboard.kpi.todaySessions"), desc: t("misc.pageUnderConstruction"), icon: CalendarDays, accent: "bg-info/10 text-info" },
+    { key: "trainees", title: t("dashboard.kpi.trainees"), desc: "", icon: Users, accent: "bg-success/10 text-success" },
+    { key: "conflicts", title: t("dashboard.kpi.trainerConflicts"), desc: "", icon: AlertTriangle, accent: "bg-destructive/10 text-destructive" },
+    { key: "todaySessions", title: t("dashboard.kpi.todaySessions"), desc: "", icon: CalendarDays, accent: "bg-info/10 text-info" },
   ];
 
   useEffect(() => {
@@ -78,6 +92,37 @@ export function ReportsRoute() {
       });
     return () => { cancelled = true; };
   }, [reportType, from, to, reloadKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get<ExportTemplate[]>("/report-templates")
+      .then((rows) => { if (!cancelled) setTemplates(rows); })
+      .catch(() => { /* export stays disabled; the page itself still works */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Pick the first template that can produce the requested format.
+  const exportTemplate = templates[0] ?? null;
+
+  const handleExport = async (format: "xlsx" | "pdf") => {
+    const template = templates.find((tpl) => tpl.supportedFormats.includes(format));
+    if (!template) {
+      toast({ title: t("misc.error"), description: t("reports.exportUnavailable"), variant: "destructive" });
+      return;
+    }
+    setExporting(format);
+    try {
+      await downloadFile(
+        "/reports/generate",
+        `${template.code}.${format}`,
+        { method: "POST", body: { template: template.code, format, filter: { dateFrom: from, dateTo: to } } }
+      );
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setExporting(null);
+    }
+  };
 
   const renderReport = () => {
     if (!data) return null;
@@ -146,8 +191,28 @@ export function ReportsRoute() {
         icon={BarChart3}
         actions={
           <div className="flex gap-2">
-            <Button variant="outline"><FileText className="h-4 w-4 me-1.5" />{t("reports.exportPdf")}</Button>
-            <Button variant="outline"><FileSpreadsheet className="h-4 w-4 me-1.5" />{t("reports.exportExcel")}</Button>
+            <Button
+              variant="outline"
+              disabled={!exportTemplate || exporting !== null}
+              onClick={() => void handleExport("pdf")}
+              title={exportTemplate?.name}
+            >
+              {exporting === "pdf"
+                ? <Loader2 className="h-4 w-4 me-1.5 animate-spin" />
+                : <FileText className="h-4 w-4 me-1.5" />}
+              {t("reports.exportPdf")}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={!exportTemplate || exporting !== null}
+              onClick={() => void handleExport("xlsx")}
+              title={exportTemplate?.name}
+            >
+              {exporting === "xlsx"
+                ? <Loader2 className="h-4 w-4 me-1.5 animate-spin" />
+                : <FileSpreadsheet className="h-4 w-4 me-1.5" />}
+              {t("reports.exportExcel")}
+            </Button>
           </div>
         }
       />

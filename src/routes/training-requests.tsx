@@ -5,6 +5,7 @@ import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
 import { FormDialog, Field, FormGrid } from "@/components/common/form-dialog";
+import { GenerateSessionsDialog } from "@/components/common/generate-sessions-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -54,6 +55,14 @@ interface Request {
 
 const PRIORITIES = ["LOW", "NORMAL", "HIGH", "URGENT"];
 
+// Transitions a requester may perform on their own request without `requests.edit`.
+// Mirrors SELF_SERVICE_TRANSITIONS in /api/requests/[id]/transition.
+const SELF_SERVICE_TRANSITIONS: Record<string, string[]> = {
+  DRAFT: ["SUBMITTED", "CANCELLED"],
+  SUBMITTED: ["CANCELLED"],
+  REJECTED: ["SUBMITTED"],
+};
+
 // Workflow transition matrix (mirror of backend)
 const NEXT_ACTIONS: Record<string, { status: string; labelKey: string; variant: "default" | "outline" | "ghost"; tone?: "success" | "destructive" | "info" | "warning" }[]> = {
   DRAFT: [
@@ -97,6 +106,7 @@ export function TrainingRequestsRoute() {
   const [rejectTarget, setRejectTarget] = useState<Request | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [detailsTarget, setDetailsTarget] = useState<Request | null>(null);
+  const [generateTarget, setGenerateTarget] = useState<Request | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState<Record<string, unknown>>({
     priority: "NORMAL",
@@ -136,8 +146,17 @@ export function TrainingRequestsRoute() {
       setRejectDialogOpen(true);
       return;
     }
+    // Turning an APPROVED request into sessions is a real scheduling decision, not a
+    // status flip — collect the dates and shifts first.
+    if (newStatus === "SCHEDULED" && req.status === "APPROVED") {
+      setGenerateTarget(req);
+      return;
+    }
     try {
-      await api.put(`/requests/${req.id}`, { status: newStatus });
+      // The dedicated transition endpoint accepts the requester's own workflow moves
+      // (submit / cancel / resubmit) without requiring requests.edit, which contractors
+      // do not have. Reviewers keep using PUT, which carries the richer edit payload.
+      await api.post(`/requests/${req.id}/transition`, { status: newStatus });
       toast({ title: t("misc.success"), description: t("misc.updateSuccess") });
       refetch();
     } catch (e) {
@@ -265,7 +284,9 @@ export function TrainingRequestsRoute() {
                 size="sm"
                 className={`h-8 ${a.tone === "success" ? "text-success" : a.tone === "destructive" ? "text-destructive" : a.tone === "info" ? "text-info" : ""}`}
                 onClick={() => handleTransition(r, a.status)}
-                disabled={!canEdit && user?.role !== "CONTRACTOR"}
+                // Offer only transitions the caller can actually complete: everything
+                // if they hold requests.edit, otherwise just their own submit/cancel.
+                disabled={!canEdit && !(SELF_SERVICE_TRANSITIONS[r.status] ?? []).includes(a.status)}
               >
                 {a.status === "SUBMITTED" && r.status === "REJECTED" && <RotateCcw className="h-3.5 w-3.5 me-1" />}
                 {a.status === "APPROVED" && <Check className="h-3.5 w-3.5 me-1" />}
@@ -423,6 +444,13 @@ export function TrainingRequestsRoute() {
           </Field>
         </div>
       </FormDialog>
+
+      <GenerateSessionsDialog
+        requestId={generateTarget?.id ?? null}
+        open={generateTarget !== null}
+        onOpenChange={(open) => { if (!open) setGenerateTarget(null); }}
+        onGenerated={() => { setGenerateTarget(null); refetch(); }}
+      />
 
       {/* Reject dialog */}
       <FormDialog

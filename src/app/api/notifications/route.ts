@@ -1,6 +1,7 @@
 // /api/notifications — list + create + mark-read
 import { db } from "@/lib/db";
 import { getCurrentUser, ok, created, fail } from "@/lib/auth/api";
+import { canPerformAction } from "@/lib/auth/permissions";
 import { parseListQuery, buildListMeta, buildOrderBy } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
 
@@ -49,9 +50,29 @@ export async function POST(req: Request) {
 
   if (!title || !message) return fail("title and message are required", 422, "VALIDATION_ERROR");
 
+  // Addressing another user's inbox is a privileged action. Without this check any
+  // authenticated account could push arbitrary titles, messages and links into any
+  // other user's notification list — or broadcast to everyone with `userId: null`.
+  let recipientId: string | null = user.id;
+  if (targetUserId !== undefined && targetUserId !== user.id) {
+    if (!canPerformAction(user.permissions, "notifications", "create")) {
+      return fail("Forbidden — cannot create notifications for other users", 403, "FORBIDDEN");
+    }
+    if (targetUserId === null) {
+      recipientId = null; // broadcast
+    } else {
+      const target = await db.user.findFirst({
+        where: { id: targetUserId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!target) return fail("Target user not found", 404, "NOT_FOUND");
+      recipientId = target.id;
+    }
+  }
+
   const notif = await db.notification.create({
     data: {
-      userId: targetUserId ?? user.id,
+      userId: recipientId,
       title,
       titleAr: titleAr ?? null,
       message,

@@ -60,3 +60,7 @@ workspace-*.tar
 *.bak-*
 *.db-wal
 *.db-shm
+
+# vitest integration scratch database + coverage output
+/.tmp/
+/coverage/

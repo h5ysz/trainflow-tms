@@ -1,19 +1,14 @@
 // /api/users — list + create (Super Admin only, soft delete, audit)
 import { db } from "@/lib/db";
-import { requireRole, ok, created, fail, audit } from "@/lib/auth/api";
+import { withErrorEnvelope, requireRole, ok, created, fail, audit } from "@/lib/auth/api";
 import { hashPassword } from "@/lib/auth/jwt";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
 
 const ALLOWED_SORT_FIELDS = ["fullName", "email", "createdAt", "updatedAt", "role", "isActive", "lastLoginAt"];
 
-export async function GET(req: Request) {
-  let user;
-  try {
-    user = await requireRole("SUPER_ADMIN");
-  } catch {
-    return fail("Forbidden — Super Admin only", 403);
-  }
+export const GET = withErrorEnvelope(async function GET(req: Request) {
+  const user = await requireRole("SUPER_ADMIN");
 
   const q = parseListQuery(req);
   const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
@@ -65,15 +60,10 @@ export async function GET(req: Request) {
     })),
     buildListMeta(total, q)
   );
-}
+});
 
-export async function POST(req: Request) {
-  let user;
-  try {
-    user = await requireRole("SUPER_ADMIN");
-  } catch {
-    return fail("Forbidden — Super Admin only", 403);
-  }
+export const POST = withErrorEnvelope(async function POST(req: Request) {
+  const user = await requireRole("SUPER_ADMIN");
 
   const body = await req.json().catch(() => ({}));
   const { email, fullName, password, roleId, language, companyId, trainerId, isActive } = body;
@@ -124,4 +114,4 @@ export async function POST(req: Request) {
     roleId: newUser.roleId,
     isActive: newUser.isActive,
   });
-}
+});

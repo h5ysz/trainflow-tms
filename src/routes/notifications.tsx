@@ -134,6 +134,8 @@ export function NotificationsRoute() {
   };
 
   useEffect(() => {
+    // Async data load; state is written from the promise callbacks.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load(tab === "unread" ? "unread" : undefined);
   }, [tab]);
 

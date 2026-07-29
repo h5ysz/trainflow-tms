@@ -1,18 +1,13 @@
 // /api/login-history — list login attempts
 import { db } from "@/lib/db";
-import { requireRole, fail } from "@/lib/auth/api";
+import { withErrorEnvelope, requireRole, fail } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
 
 const ALLOWED_SORT_FIELDS = ["attemptedAt", "email", "success"];
 
-export async function GET(req: Request) {
-  let user;
-  try {
-    user = await requireRole("SUPER_ADMIN", "COORDINATOR");
-  } catch {
-    return fail("Forbidden", 403);
-  }
+export const GET = withErrorEnvelope(async function GET(req: Request) {
+  const user = await requireRole("SUPER_ADMIN", "COORDINATOR");
 
   const q = parseListQuery(req);
   const where: Record<string, unknown> = {};
@@ -38,4 +33,4 @@ export async function GET(req: Request) {
   ]);
 
   return list(rows, buildListMeta(total, q));
-}
+});

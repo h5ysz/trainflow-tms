@@ -1,18 +1,14 @@
 // /api/audit-log — list (Super Admin / Coordinator only)
 import { db } from "@/lib/db";
-import { requireModuleAction, ok, fail } from "@/lib/auth/api";
+import { withErrorEnvelope, requireModuleAction, ok, fail } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
+import { parseJsonColumn } from "@/lib/api/json-column";
 
 const ALLOWED_SORT_FIELDS = ["createdAt", "action", "entity"];
 
-export async function GET(req: Request) {
-  let user;
-  try {
-    user = await requireModuleAction("audit-log", "view");
-  } catch {
-    return fail("Forbidden", 403);
-  }
+export const GET = withErrorEnvelope(async function GET(req: Request) {
+  const user = await requireModuleAction("audit-log", "view");
 
   const q = parseListQuery(req);
   const where: Record<string, unknown> = {};
@@ -56,9 +52,9 @@ export async function GET(req: Request) {
       descriptionAr: a.descriptionAr,
       ipAddress: a.ipAddress,
       userAgent: a.userAgent,
-      metadata: a.metadata ? JSON.parse(a.metadata) : null,
+      metadata: parseJsonColumn(a.metadata, null, "auditLog.metadata"),
       createdAt: a.createdAt,
     })),
     buildListMeta(total, q)
   );
-}
+});

@@ -157,8 +157,22 @@ async function main() {
   // 5) SUPER ADMIN ACCOUNT
   // ─────────────────────────────────────────────────────────────────
   console.log("→ Super Admin account");
-  const adminEmail = process.env.SUPER_ADMIN_EMAIL || "admin@gcclab.com";
-  const adminPassword = process.env.SUPER_ADMIN_PASSWORD || "ChangeMeInProduction!2024";
+  // No defaults, by design. A fallback password here would be committed to the
+  // repository and printed to every build log, which is how this seed previously
+  // shipped a publicly-known admin account to production.
+  const adminEmail = process.env.SUPER_ADMIN_EMAIL;
+  const adminPassword = process.env.SUPER_ADMIN_PASSWORD;
+  if (!adminEmail || !adminPassword) {
+    console.error(
+      "\n✗ SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD must both be set to seed the super admin.\n" +
+        "  Set them in your environment (or the Render dashboard) and re-run.\n"
+    );
+    process.exit(1);
+  }
+  if (adminPassword.length < 12) {
+    console.error("\n✗ SUPER_ADMIN_PASSWORD must be at least 12 characters.\n");
+    process.exit(1);
+  }
   const passwordHash = await hashPassword(adminPassword);
 
   const superAdminRole = await db.role.findUnique({ where: { code: "SUPER_ADMIN" } });
@@ -177,8 +191,7 @@ async function main() {
       },
     });
     console.log(`   ✓ Created Super Admin: ${adminEmail}`);
-    console.log(`   ⚠  Password: ${adminPassword}`);
-    console.log(`   ⚠  CHANGE THE PASSWORD IMMEDIATELY AFTER FIRST LOGIN`);
+    console.log(`   → Password taken from SUPER_ADMIN_PASSWORD (not logged).`);
   } else {
     console.log(`   → Super Admin already exists: ${adminEmail}`);
   }

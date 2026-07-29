@@ -1,21 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useAppStore } from "@/lib/store/app-store";
-import { I18nProvider } from "@/lib/i18n/context";
+import { PublicShell } from "@/components/public/public-shell";
 import { RegisterForm } from "@/components/auth/register-form";
+import { useEffect } from "react";
 
 export default function RegisterPage() {
-  const { isAuthenticated, locale, theme, setTheme, setLocale } = useAppStore();
+  const { isAuthenticated } = useAppStore();
 
+  // An already-signed-in visitor has no business on the registration form.
   useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle("dark", theme === "dark");
-  }, [theme, setTheme]);
+    if (isAuthenticated) window.location.replace("/");
+  }, [isAuthenticated]);
 
   return (
-    <I18nProvider locale={locale} setLocale={setLocale}>
+    <PublicShell>
       <RegisterForm />
-    </I18nProvider>
+    </PublicShell>
   );
 }

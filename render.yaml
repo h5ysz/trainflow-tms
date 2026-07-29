@@ -6,19 +6,26 @@ services:
     region: frankfurt
     branch: main
 
-    # No package-lock.json in the repo (bun.lock only), so `npm install` resolves
-    # fresh from the registry rather than `npm ci`. Prisma must generate before
-    # `next build`, since the build imports the client while collecting page data.
+    # package-lock.json is now committed, so this install is reproducible: it no longer
+    # resolves fresh from the registry, which is what used to let an upstream bump break
+    # a build that worked yesterday. Prisma must generate before `next build`, since the
+    # build imports the client while collecting page data.
     #
     # --include=dev is required: NODE_ENV=production below makes npm skip
     # devDependencies, but @tailwindcss/postcss, tailwindcss and typescript all
     # live there and are needed to build.
     #
-    # --legacy-peer-deps is required because there's no lockfile pinning exact
-    # versions: a fresh resolve can pick up an upstream package bump (e.g.
-    # @hookform/resolvers requiring a newer valibot peer than another dependency
-    # allows) and fail with ERESOLVE on a build that worked yesterday.
-    buildCommand: npm install --include=dev --legacy-peer-deps && npx prisma generate && npm run build
+    # --legacy-peer-deps is retained because some peer ranges in this tree still
+    # conflict (e.g. @hookform/resolvers' valibot peer).
+    #
+    # The seed runs as its own step rather than inside `npm run build`: it writes to
+    # db/custom.db, which is tracked in git, so folding it into the build meant every
+    # local `npm run build` mutated a committed file.
+    #
+    # `prisma db push` runs before the seed so a schema change that landed in git after
+    # db/custom.db was last committed still gets applied. Without it, a new table (e.g.
+    # ReportExecutionFile) would be missing at runtime and every report run would fail.
+    buildCommand: npm install --include=dev --legacy-peer-deps && npx prisma generate && npx prisma db push --skip-generate && npm run seed:deploy && npm run build
     startCommand: node .next/standalone/server.js
 
     # The app has no /login route; the root page is the entry point.
@@ -54,3 +61,21 @@ services:
 
       - key: SCHEDULER_SECRET
         sync: false
+
+      # The seed refuses to create the super admin unless both of these are set —
+      # deliberately, so that a default password can never ship to production again.
+      - key: SUPER_ADMIN_EMAIL
+        sync: false
+
+      - key: SUPER_ADMIN_PASSWORD
+        sync: false
+
+      # Encrypts secret Setting values (currently the SMTP password) at rest.
+      # Deliberately separate from JWT_SECRET so rotating sessions doesn't break email.
+      - key: SETTINGS_SECRET_KEY
+        sync: false
+
+      # Absolute base URL used to build the QR check-in and certificate verification
+      # links that get printed on PDFs, where no Origin header is available.
+      - key: APP_URL
+        value: https://trainflow-tms.onrender.com

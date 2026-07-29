@@ -2,6 +2,7 @@
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, audit } from "@/lib/auth/api";
 import { randomBytes } from "crypto";
+import { buildCheckInUrl, resolveOrigin } from "@/lib/qr/urls";
 
 export const POST = withModuleAction("qr-code", "create", async ({ params, user, req }) => {
   const id = params.id as string;
@@ -30,6 +31,7 @@ export const POST = withModuleAction("qr-code", "create", async ({ params, user,
     sessionRef: updated.refNumber,
     sessionCode: updated.refNumber,
     qrCodeToken: updated.qrCodeToken,
-    checkInUrl: `/check-in?token=${updated.qrCodeToken}`,
+    // Absolute, so the value is usable in a QR code or a printed sheet.
+    checkInUrl: buildCheckInUrl(resolveOrigin(req), updated.qrCodeToken!),
   });
 });

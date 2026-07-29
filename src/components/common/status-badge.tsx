@@ -108,13 +108,14 @@ export function RoleBadge({
     COORDINATOR: "bg-info/10 text-info border-info/20",
     TRAINER: "bg-warning/10 text-warning border-warning/20",
     CONTRACTOR: "bg-success/10 text-success border-success/20",
+    VIEWER: "bg-muted text-muted-foreground border-border",
   };
   const label = (t as (key: string) => string)(`role.${role}`) ?? role;
   return (
     <span
       className={cn(
         "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium",
-        styles[role] ?? styles.CONTRACTOR,
+        styles[role] ?? styles.VIEWER,
         className
       )}
     >

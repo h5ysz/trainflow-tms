@@ -1,24 +1,21 @@
 // /api/user-approvals/[id] — approve / reject / suspend / activate / request-info
 import { db } from "@/lib/db";
-import { requireModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { withErrorEnvelope, requireModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { recordAudit } from "@/lib/auth/audit";
+import { parseJsonColumn } from "@/lib/api/json-column";
 
 const VALID_ACTIONS = ["APPROVE", "REJECT", "SUSPEND", "ACTIVATE", "REQUEST_INFO"];
 
-export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  let user;
-  try {
-    user = await requireModuleAction("user-approvals", "edit");
-  } catch {
-    return fail("Forbidden", 403);
-  }
+export const POST = withErrorEnvelope(async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await requireModuleAction("user-approvals", "edit");
 
   const { id } = await ctx.params;
   const body = await req.json().catch(() => ({}));
-  const { action, reason, createCompany } = body as {
+  const { action, reason, createCompany, roleId } = body as {
     action: string;
     reason?: string;
     createCompany?: boolean;
+    roleId?: string;
   };
 
   if (!action || !VALID_ACTIONS.includes(action)) {
@@ -39,11 +36,50 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       description = `Approved user account: ${targetUser.email}`;
       descriptionAr = `تم اعتماد حساب المستخدم: ${targetUser.email}`;
 
+      // Approval must assign a Role. Registration only sets the `role` enum and leaves
+      // `roleId` null; with no matching Role row, resolveEffectivePermissions() fails
+      // closed to an empty permission set and the approved user logs in to an app with
+      // no sidebar, no dashboard and nothing they can click.
+      const effectiveRoleId = roleId ?? targetUser.roleId;
+      if (!effectiveRoleId) {
+        return fail(
+          "A role must be assigned when approving an account, otherwise the user will have no access to anything.",
+          422,
+          "ROLE_REQUIRED"
+        );
+      }
+      const role = await db.role.findFirst({
+        where: { id: effectiveRoleId, deletedAt: null },
+        select: { id: true, baseType: true, name: true },
+      });
+      if (!role) return fail(`Invalid roleId: ${effectiveRoleId}`, 400, "INVALID_ROLE");
+      updates.roleId = role.id;
+      updates.role = role.baseType;
+      description = `Approved user account: ${targetUser.email} as ${role.name}`;
+
       // Optionally create a Company record for the contractor
       if (createCompany && targetUser.registrationData) {
-        const regData = JSON.parse(targetUser.registrationData);
+        const regData = parseJsonColumn<{
+          companyName?: string;
+          crNumber?: string;
+          contactPerson?: string;
+          mobileNumber?: string;
+        }>(targetUser.registrationData, {}, "user.registrationData");
+
+        // Company.name is required. A registration payload missing companyName (or a
+        // row whose registrationData failed to parse) would otherwise reach Prisma with
+        // `name: undefined` and blow up mid-approval.
+        const companyName = regData.companyName?.trim();
+        if (!companyName) {
+          return fail(
+            "Cannot create a company: the registration data has no company name",
+            422,
+            "VALIDATION_ERROR"
+          );
+        }
+
         const existingCompany = await db.company.findFirst({
-          where: { name: regData.companyName, deletedAt: null },
+          where: { name: companyName, deletedAt: null },
         });
         if (existingCompany) {
           updates.companyId = existingCompany.id;
@@ -53,10 +89,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
           const newCompany = await db.company.create({
             data: {
               refNumber,
-              name: regData.companyName,
+              name: companyName,
               crNumber: regData.crNumber || null,
-              contactPerson: regData.contactPerson,
-              contactPhone: regData.mobileNumber,
+              contactPerson: regData.contactPerson ?? null,
+              contactPhone: regData.mobileNumber ?? null,
               contactEmail: targetUser.email,
               status: "ACTIVE",
               createdBy: user.id,
@@ -117,4 +153,4 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   });
 
   return ok({ success: true, action, userId: id, accountStatus: updates.accountStatus ?? targetUser.accountStatus });
-}
+});

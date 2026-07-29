@@ -208,7 +208,7 @@ export function FinalTestRoute() {
             onPageChange={resultsList.setPage}
             emptyIcon={User}
             emptyTitle={t("finalTest.empty.title")}
-            emptySubtitle={t("misc.pageUnderConstruction")}
+            emptySubtitle={t("misc.noDataYet")}
           />
         </TabsContent>
       </Tabs>

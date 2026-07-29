@@ -1,6 +1,6 @@
 // /api/roles/[id] — update / delete role
 import { db } from "@/lib/db";
-import { requireRole, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { withErrorEnvelope, requireRole, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { ALL_MODULES, ACTIONS, type UserRole } from "@/lib/auth/permissions";
 
 const ASSIGNABLE_BASE_TYPES: UserRole[] = ["COORDINATOR", "TRAINER", "CONTRACTOR", "VIEWER"];
@@ -15,9 +15,8 @@ function validatePermissions(perms: unknown): string[] | null {
   return perms.every((p) => typeof p === "string" && valid.has(p)) ? (perms as string[]) : null;
 }
 
-export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  let user;
-  try { user = await requireRole("SUPER_ADMIN"); } catch { return fail("Forbidden", 403); }
+export const PUT = withErrorEnvelope(async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await requireRole("SUPER_ADMIN");
   const { id } = await ctx.params;
 
   const existing = await db.role.findUnique({ where: { id } });
@@ -60,11 +59,10 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   });
 
   return ok(updated);
-}
+});
 
-export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  let user;
-  try { user = await requireRole("SUPER_ADMIN"); } catch { return fail("Forbidden", 403); }
+export const DELETE = withErrorEnvelope(async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await requireRole("SUPER_ADMIN");
   const { id } = await ctx.params;
 
   const existing = await db.role.findUnique({ where: { id } });
@@ -90,4 +88,4 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   });
 
   return ok({ success: true });
-}
+});

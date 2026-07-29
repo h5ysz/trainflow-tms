@@ -5,8 +5,14 @@ import { withModuleAction, fail } from "@/lib/auth/api";
 import { recordAudit } from "@/lib/auth/audit";
 import { syncCertificateStatus } from "@/lib/api/enrollment-sync";
 import PDFDocument from "pdfkit";
+import { buildVerifyUrl, resolveOrigin } from "@/lib/qr/urls";
+import { renderQrPng } from "@/lib/qr/server";
+import { arabicFontPath } from "@/lib/pdf/fonts";
+import { randomBytes } from "crypto";
 
-export const POST = withModuleAction("certificates", "view", async ({ req, params, user }) => {
+// Gated on `create`, not `view`: this handler writes `pdfGeneratedAt` and transitions
+// the certificate to ISSUED, so read-only roles must not be able to trigger it.
+export const POST = withModuleAction("certificates", "create", async ({ req, params, user }) => {
   const id = params.id as string;
   const cert = await db.certificate.findUnique({
     where: { id },
@@ -59,7 +65,11 @@ export const POST = withModuleAction("certificates", "view", async ({ req, param
     .stroke()
     .opacity(1);
 
-  // Header
+  // Header. The Arabic half of the strapline is only drawn when an Arabic-capable font
+  // is installed — Helvetica has no Arabic glyphs, so it previously rendered as boxes.
+  const arabicFont = arabicFontPath();
+  if (arabicFont) doc.registerFont("Arabic", arabicFont);
+
   doc
     .fontSize(14)
     .fillColor("#7B1E2B")
@@ -68,7 +78,12 @@ export const POST = withModuleAction("certificates", "view", async ({ req, param
     .fontSize(10)
     .fillColor("#666")
     .font("Helvetica")
-    .text("Training & Certification Management System — المختبر الخليجي", { align: "center" });
+    .text("Training & Certification Management System", { align: "center" });
+
+  if (arabicFont) {
+    doc.font("Arabic").fontSize(10).fillColor("#666").text("المختبر الخليجي", { align: "center" });
+    doc.font("Helvetica");
+  }
 
   // Title
   doc
@@ -128,15 +143,22 @@ export const POST = withModuleAction("certificates", "view", async ({ req, param
     .font("Helvetica")
     .text(`Certificate No: ${cert.refNumber}`, 0, 375, { align: "center" });
 
-  // Verification QR text (simplified — in production, generate actual QR image)
-  const verifyUrl = `${req.headers.get("origin") || ""}/verify/${cert.verificationToken}`;
+  // Verification QR. A certificate with no token yet gets one now, and it is persisted
+  // in the same update as pdfGeneratedAt below — otherwise the printed code would point
+  // at a token no lookup could ever match.
+  const verificationToken = cert.verificationToken ?? randomBytes(16).toString("hex");
+  const verifyUrl = buildVerifyUrl(resolveOrigin(req), verificationToken);
+  const qrPng = await renderQrPng(verifyUrl, { width: 240, margin: 1 });
+
+  // doc.image() does not advance the text cursor, so everything after it passes
+  // explicit coordinates (as the surrounding code already does).
+  doc.image(qrPng, doc.page.width / 2 - 45, 395, { width: 90 });
   doc
-    .fontSize(9)
-    .fillColor("#666")
-    .text(`Verify online: ${verifyUrl}`, 0, 400, { align: "center" })
     .fontSize(8)
     .fillColor("#999")
-    .text(`Verification Token: ${cert.verificationToken}`, { align: "center" });
+    .text("Scan to verify this certificate", 0, 490, { align: "center" })
+    .fontSize(7)
+    .text(verifyUrl, { align: "center" });
 
   // Company info (if available)
   if (cert.company?.name) {
@@ -144,7 +166,7 @@ export const POST = withModuleAction("certificates", "view", async ({ req, param
       .fontSize(11)
       .fillColor("#666")
       .font("Helvetica")
-      .text(`Company: ${cert.company.name}`, 0, 430, { align: "center" });
+      .text(`Company: ${cert.company.name}`, 0, 515, { align: "center" });
   }
 
   // Trainer info (if available)
@@ -152,7 +174,7 @@ export const POST = withModuleAction("certificates", "view", async ({ req, param
     doc
       .fontSize(11)
       .fillColor("#666")
-      .text(`Trainer: ${cert.session.trainer.fullName}`, 0, 450, { align: "center" });
+      .text(`Trainer: ${cert.session.trainer.fullName}`, 0, 533, { align: "center" });
   }
 
   // Signature line
@@ -172,7 +194,15 @@ export const POST = withModuleAction("certificates", "view", async ({ req, param
     .moveTo(doc.page.width - 350, doc.page.height - 100)
     .lineTo(doc.page.width - 150, doc.page.height - 100)
     .stroke()
-    .text("GCCLAB — المختبر الخليجي", doc.page.width - 320, doc.page.height - 90, { align: "left" });
+    .text("GCCLAB", doc.page.width - 320, doc.page.height - 90, { align: "left" });
+
+  if (arabicFont) {
+    doc
+      .font("Arabic")
+      .fontSize(10)
+      .fillColor("#666")
+      .text("المختبر الخليجي", doc.page.width - 320, doc.page.height - 76, { align: "left" });
+  }
 
   doc.end();
 
@@ -183,6 +213,8 @@ export const POST = withModuleAction("certificates", "view", async ({ req, param
     where: { id: cert.id },
     data: {
       pdfGeneratedAt: new Date(),
+      // Persist a token generated above, so the QR on the printed page resolves.
+      ...(cert.verificationToken ? {} : { verificationToken }),
       updatedBy: user.id,
     },
   });

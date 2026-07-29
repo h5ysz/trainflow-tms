@@ -24,7 +24,7 @@ import {
   UserCircle, Settings, LogOut, ShieldCheck, UserCog, GraduationCap, Building2,
   Loader2, Eye,
 } from "lucide-react";
-import { type UserRole } from "@/lib/auth/permissions";
+import { canAccessModule, type UserRole } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
@@ -76,6 +76,9 @@ export function Topbar() {
   };
 
   useEffect(() => {
+    // Async data load: the state writes happen in the promise callbacks, after the
+    // effect body has returned.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadNotifications();
   }, []);
 
@@ -198,9 +201,14 @@ export function Topbar() {
             <DropdownMenuItem className="gap-2" onSelect={() => setProfileOpen(true)}>
               <UserCircle className="h-4 w-4" /> {t("action.details")}
             </DropdownMenuItem>
-            <DropdownMenuItem className="gap-2" onSelect={() => navigate("settings")}>
-              <Settings className="h-4 w-4" /> {t("nav.settings")}
-            </DropdownMenuItem>
+            {/* Gated the same way profile-dialog.tsx already does it — offering this
+                to everyone sent non-admins to the lock screen, and the route then stuck
+                in the persisted store so a refresh reloaded it. */}
+            {canAccessModule(user?.permissions ?? [], "settings") && (
+              <DropdownMenuItem className="gap-2" onSelect={() => navigate("settings")}>
+                <Settings className="h-4 w-4" /> {t("nav.settings")}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem className="gap-2 text-destructive focus:text-destructive" onClick={() => signOut()}>
               <LogOut className="h-4 w-4" /> {t("auth.signOut")}

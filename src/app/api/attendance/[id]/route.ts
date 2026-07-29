@@ -55,14 +55,19 @@ export const DELETE = withModuleAction("attendance", "delete", async ({ params, 
   const existing = await db.attendance.findUnique({ where: { id } });
   if (!existing || existing.deletedAt) return notFound("Attendance record not found");
 
-  await db.attendance.update({
-    where: { id },
-    data: { deletedAt: new Date(), updatedBy: user.id },
-  });
+  await db.$transaction(async (tx) => {
+    await tx.attendance.update({
+      where: { id },
+      data: { deletedAt: new Date(), updatedBy: user.id },
+    });
 
-  await db.trainingSession.update({
-    where: { id: existing.sessionId },
-    data: { actualTrainees: { decrement: 1 } },
+    // Floored at zero. An unconditional decrement drove `actualTrainees` negative
+    // whenever the counter was already 0 (it is separately writable via the session
+    // PUT), and a negative occupancy silently disables the capacity gate on check-in.
+    await tx.trainingSession.updateMany({
+      where: { id: existing.sessionId, actualTrainees: { gt: 0 } },
+      data: { actualTrainees: { decrement: 1 } },
+    });
   });
 
   await audit({

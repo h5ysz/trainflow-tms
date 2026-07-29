@@ -1,12 +1,13 @@
 // /api/questions — list + create (question bank, soft delete, audit)
 import { db } from "@/lib/db";
-import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
+import { withExamAction, testTypeWhere, ok, created, fail, audit, type TestType } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
+import { parseJsonColumn } from "@/lib/api/json-column";
 
 const ALLOWED_SORT_FIELDS = ["text", "createdAt", "updatedAt", "order", "difficulty", "category"];
 
-export const GET = withModuleAction("pre-test", "view", async ({ req }) => {
+export const GET = withExamAction("view", async ({ req, allowedTestTypes }) => {
   const q = parseListQuery(req);
   const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
 
@@ -18,7 +19,9 @@ export const GET = withModuleAction("pre-test", "view", async ({ req }) => {
     ];
   }
   if (q.filters.courseId) where.courseId = q.filters.courseId;
-  if (q.filters.testType) where.testType = q.filters.testType;
+  const testType = testTypeWhere(q.filters.testType, allowedTestTypes);
+  if (testType === null) return fail(`Forbidden — no access to ${q.filters.testType} questions`, 403);
+  where.testType = testType;
   if (q.filters.category) where.category = q.filters.category;
   if (q.filters.difficulty) where.difficulty = q.filters.difficulty;
   if (q.filters.source) where.source = q.filters.source;
@@ -40,8 +43,8 @@ export const GET = withModuleAction("pre-test", "view", async ({ req }) => {
   return list(
     rows.map((question) => ({
       ...question,
-      options: question.options ? JSON.parse(question.options) : [],
-      correctAnswers: question.correctAnswers ? JSON.parse(question.correctAnswers) : [],
+      options: parseJsonColumn(question.options, [] as string[], "question.options"),
+      correctAnswers: parseJsonColumn(question.correctAnswers, [] as number[], "question.correctAnswers"),
       courseCode: question.course?.code ?? null,
       courseTitle: question.course?.title ?? null,
       courseRef: question.course?.refNumber ?? null,
@@ -50,7 +53,7 @@ export const GET = withModuleAction("pre-test", "view", async ({ req }) => {
   );
 });
 
-export const POST = withModuleAction("pre-test", "create", async ({ req, user }) => {
+export const POST = withExamAction("create", async ({ req, user, allowedTestTypes }) => {
   const body = await req.json().catch(() => ({}));
   const {
     courseId, type, testType, text, textAr, options, correctAnswers,
@@ -66,6 +69,11 @@ export const POST = withModuleAction("pre-test", "create", async ({ req, user })
     return fail("At least 1 correct answer required", 422, "VALIDATION_ERROR");
   }
 
+  const effectiveTestType = (testType ?? "PRE_TEST") as TestType;
+  if (!allowedTestTypes.includes(effectiveTestType)) {
+    return fail(`Forbidden — cannot create ${effectiveTestType} questions`, 403);
+  }
+
   if (courseId) {
     const course = await db.course.findFirst({ where: { id: courseId, deletedAt: null } });
     if (!course) return fail("Course not found", 404);
@@ -75,7 +83,7 @@ export const POST = withModuleAction("pre-test", "create", async ({ req, user })
     data: {
       courseId: courseId ?? null,
       type: type ?? "SINGLE_CHOICE",
-      testType: testType ?? "PRE_TEST",
+      testType: effectiveTestType,
       text,
       textAr: textAr ?? null,
       options: JSON.stringify(options),
@@ -107,7 +115,7 @@ export const POST = withModuleAction("pre-test", "create", async ({ req, user })
 
   return created({
     ...question,
-    options: JSON.parse(question.options),
-    correctAnswers: JSON.parse(question.correctAnswers),
+    options: parseJsonColumn(question.options, [] as string[], "question.options"),
+    correctAnswers: parseJsonColumn(question.correctAnswers, [] as number[], "question.correctAnswers"),
   });
 });

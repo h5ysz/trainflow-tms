@@ -1143,7 +1143,10 @@ model ReportExecution {
   schedule        ReportSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
   // Execution details
   status          String   @default("PENDING")
-    // PENDING | RUNNING | GENERATING | SENDING | SENT | FAILED | RETRYING | CANCELLED
+    // PENDING | RUNNING | GENERATING | SENDING | SENT | COMPLETED | FAILED | RETRYING
+    // | SUPERSEDED | CANCELLED
+    // COMPLETED  = report generated and stored, but nothing was emailed (SMTP not configured)
+    // SUPERSEDED = a retry produced a newer execution that replaces this one
   triggerType     String   @default("SCHEDULED") // SCHEDULED | MANUAL
   triggeredBy     String?  // user id (for MANUAL)
   // Report data
@@ -1153,7 +1156,10 @@ model ReportExecution {
   // Export files — JSON: [{ format, filename, sizeBytes }]
   exportedFiles   String?
   // Email delivery
-  emailStatus     String?  // PENDING | SENT | FAILED | SKIPPED
+  emailStatus     String?  // PENDING | SENT | FAILED | SKIPPED | SIMULATED
+    // SIMULATED = SMTP is not configured; the send was logged, not performed.
+    // This exists because the email service used to report success in that case and
+    // the row was written as SENT, so the UI claimed reports had been delivered.
   emailSentAt     DateTime?
   emailError      String?
   emailRecipients String?  // actual recipients used
@@ -1171,8 +1177,37 @@ model ReportExecution {
   // Audit
   createdAt       DateTime @default(now())
 
+  files           ReportExecutionFile[]
+
   @@index([scheduleId])
   @@index([status])
   @@index([createdAt])
   @@index([emailStatus])
+}
+
+// Generated report files, stored as blobs.
+//
+// The execution engine used to build the xlsx/pdf buffers, record their sizes in
+// ReportExecution.exportedFiles, and then let them be garbage collected — there was no
+// storage column and no download route, so a "successful" scheduled report produced
+// nothing a human could ever obtain.
+//
+// A separate table rather than columns on ReportExecution: Prisma has no column-level
+// lazy loading, so a `content Bytes` on the execution row would be pulled into memory by
+// the executions list query unless every single caller remembered to `select` around it.
+model ReportExecutionFile {
+  id              String   @id @default(uuid())
+  executionId     String
+  execution       ReportExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  format          String   // xlsx | pdf
+  filename        String
+  mimeType        String
+  sizeBytes       Int
+  content         Bytes    // BLOB on SQLite
+  checksum        String?  // sha256 hex
+  expiresAt       DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([executionId])
+  @@index([expiresAt])
 }

@@ -1,19 +1,15 @@
 // /api/report-schedules — list + create report schedules
 import { db } from "@/lib/db";
-import { requireModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
+import { withErrorEnvelope, requireModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
 import { buildCronExpression, getNextRunTime, getScheduleSettings } from "@/lib/reports/scheduler";
+import { parseJsonColumn } from "@/lib/api/json-column";
 
 const ALLOWED_SORT_FIELDS = ["name", "createdAt", "updatedAt", "nextRunAt", "lastRunAt", "scheduleType"];
 
-export async function GET(req: Request) {
-  let user;
-  try {
-    user = await requireModuleAction("report-schedules", "view");
-  } catch {
-    return fail("Forbidden", 403);
-  }
+export const GET = withErrorEnvelope(async function GET(req: Request) {
+  const user = await requireModuleAction("report-schedules", "view");
 
   const q = parseListQuery(req);
   const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
@@ -35,21 +31,16 @@ export async function GET(req: Request) {
 
   return list(rows.map((s) => ({
     ...s,
-    filters: s.filters ? JSON.parse(s.filters) : null,
-    exportFormats: s.exportFormats ? JSON.parse(s.exportFormats) : [],
-    recipients: s.recipients ? JSON.parse(s.recipients) : [],
-    ccRecipients: s.ccRecipients ? JSON.parse(s.ccRecipients) : [],
-    bccRecipients: s.bccRecipients ? JSON.parse(s.bccRecipients) : [],
+    filters: parseJsonColumn(s.filters, null, "reportSchedule.filters"),
+    exportFormats: parseJsonColumn(s.exportFormats, [] as string[], "reportSchedule.exportFormats"),
+    recipients: parseJsonColumn(s.recipients, [] as string[], "reportSchedule.recipients"),
+    ccRecipients: parseJsonColumn(s.ccRecipients, [] as string[], "reportSchedule.ccRecipients"),
+    bccRecipients: parseJsonColumn(s.bccRecipients, [] as string[], "reportSchedule.bccRecipients"),
   })), buildListMeta(total, q));
-}
+});
 
-export async function POST(req: Request) {
-  let user;
-  try {
-    user = await requireModuleAction("report-schedules", "create");
-  } catch {
-    return fail("Forbidden", 403);
-  }
+export const POST = withErrorEnvelope(async function POST(req: Request) {
+  const user = await requireModuleAction("report-schedules", "create");
 
   const body = await req.json().catch(() => ({}));
   const {
@@ -80,7 +71,8 @@ export async function POST(req: Request) {
   const effectiveTime = executionTime ?? (scheduleType === "WEEKLY" ? settings.weekly.executionTime : scheduleType === "MONTHLY" ? settings.monthly.executionTime : "09:00");
   const effectiveDayOfWeek = dayOfWeek ?? (scheduleType === "WEEKLY" ? settings.weekly.dayOfWeek : undefined);
   const effectiveDayOfMonth = dayOfMonth ?? (scheduleType === "MONTHLY" ? settings.monthly.dayOfMonth : undefined);
-  const effectiveTimezone = "Asia/Riyadh"; // from Settings, but we don't have a timezone field in the body
+  // Timezone comes from Settings (schedule.timezone); the body has no field for it.
+  const effectiveTimezone = settings.timezone;
 
   // Build cron expression from effective values
   const cronExpression = buildCronExpression({
@@ -91,7 +83,7 @@ export async function POST(req: Request) {
     customCron,
   });
 
-  const nextRunAt = getNextRunTime(cronExpression);
+  const nextRunAt = getNextRunTime(cronExpression, new Date(), effectiveTimezone);
 
   const schedule = await db.reportSchedule.create({
     data: {
@@ -102,7 +94,7 @@ export async function POST(req: Request) {
       scheduleType,
       cronExpression,
       executionTime: effectiveTime,
-      timezone: settings.timezone,
+      timezone: effectiveTimezone,
       dayOfWeek: effectiveDayOfWeek ?? null,
       dayOfMonth: effectiveDayOfMonth ?? null,
       filters: filters ? JSON.stringify(filters) : null,
@@ -130,4 +122,4 @@ export async function POST(req: Request) {
   });
 
   return created(schedule);
-}
+});

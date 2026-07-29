@@ -1,14 +1,14 @@
 // /api/report-executions — list execution history
 import { db } from "@/lib/db";
-import { requireModuleAction, fail } from "@/lib/auth/api";
+import { withErrorEnvelope, requireModuleAction, fail } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
+import { parseJsonColumn } from "@/lib/api/json-column";
 
 const ALLOWED_SORT_FIELDS = ["createdAt", "startedAt", "completedAt", "status", "emailStatus"];
 
-export async function GET(req: Request) {
-  let user;
-  try { user = await requireModuleAction("report-schedules", "view"); } catch { return fail("Forbidden", 403); }
+export const GET = withErrorEnvelope(async function GET(req: Request) {
+  const user = await requireModuleAction("report-schedules", "view");
 
   const q = parseListQuery(req);
   const where: Record<string, unknown> = {};
@@ -25,6 +25,10 @@ export async function GET(req: Request) {
       where,
       include: {
         schedule: { select: { id: true, name: true, templateCode: true, scheduleType: true } },
+        // The explicit select is what keeps the `content` blob out of the list payload
+        // — Prisma has no column-level lazy loading, so omitting it would pull every
+        // stored report file into memory on every page render.
+        files: { select: { id: true, format: true, filename: true, sizeBytes: true } },
       },
       orderBy,
       skip: (q.page - 1) * q.pageSize,
@@ -36,10 +40,10 @@ export async function GET(req: Request) {
   return list(
     rows.map((e) => ({
       ...e,
-      filterSummary: e.filterSummary ? JSON.parse(e.filterSummary) : null,
-      exportedFiles: e.exportedFiles ? JSON.parse(e.exportedFiles) : null,
-      emailRecipients: e.emailRecipients ? JSON.parse(e.emailRecipients) : null,
+      filterSummary: parseJsonColumn(e.filterSummary, null, "reportExecution.filterSummary"),
+      exportedFiles: parseJsonColumn(e.exportedFiles, null, "reportExecution.exportedFiles"),
+      emailRecipients: parseJsonColumn(e.emailRecipients, null, "reportExecution.emailRecipients"),
     })),
     buildListMeta(total, q)
   );
-}
+});

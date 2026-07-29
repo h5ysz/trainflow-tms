@@ -16,9 +16,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/common/status-badge";
-import { CalendarClock, Plus, Play, RotateCcw, AlertCircle, Mail, Loader2 } from "lucide-react";
+import { CalendarClock, Plus, Play, RotateCcw, AlertCircle, Mail, Loader2, Download } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
-import { api } from "@/lib/api/client";
+import { api, downloadFile } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/lib/store/app-store";
 import { canAccessModule } from "@/lib/auth/permissions";
@@ -44,6 +44,13 @@ interface Schedule {
   nextRunAt?: string | null;
 }
 
+interface ExecutionFile {
+  id: string;
+  format: string;
+  filename: string;
+  sizeBytes: number;
+}
+
 interface Execution {
   id: string;
   scheduleId: string;
@@ -54,6 +61,8 @@ interface Execution {
   emailStatus?: string | null;
   attemptNumber: number;
   startedAt: string;
+  /** Stored xlsx/pdf files, downloadable until they expire. */
+  files?: ExecutionFile[];
 }
 
 const SCHEDULE_TYPES = ["WEEKLY", "MONTHLY", "CUSTOM"];
@@ -86,6 +95,7 @@ export function ReportSchedulesRoute() {
   const [recipientsText, setRecipientsText] = useState("");
   const [running, setRunning] = useState<string | null>(null);
   const [retrying, setRetrying] = useState<string | null>(null);
+  const [downloadingFile, setDownloadingFile] = useState<string | null>(null);
 
   const {
     canCreate, canEdit, canDelete,
@@ -109,6 +119,9 @@ export function ReportSchedulesRoute() {
 
   // Keep the free-text recipients box in sync when a record is loaded for edit.
   useEffect(() => {
+    // Seeds an editable free-text field from the loaded record. It must be a one-time
+    // copy rather than derived state, because the user then edits it independently.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (dialogOpen) setRecipientsText(((formData.recipients as string[]) ?? []).join(", "));
     // Only when the dialog opens or a different record loads.
   }, [dialogOpen, formData.id]);
@@ -265,6 +278,21 @@ export function ReportSchedulesRoute() {
     },
   ];
 
+  const handleDownloadFile = async (executionId: string, file: ExecutionFile) => {
+    setDownloadingFile(file.id);
+    try {
+      await downloadFile(
+        `/report-executions/${executionId}/files/${file.id}`,
+        file.filename,
+        { method: "GET" }
+      );
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setDownloadingFile(null);
+    }
+  };
+
   const executionColumns: Column<Execution>[] = [
     {
       key: "template",
@@ -286,6 +314,33 @@ export function ReportSchedulesRoute() {
       key: "email",
       header: t("schedules.emailStatus"),
       cell: (r) => <span className="text-xs text-muted-foreground">{r.emailStatus ?? "—"}</span>,
+    },
+    {
+      key: "files",
+      header: t("schedules.files"),
+      cell: (r) =>
+        r.files && r.files.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {r.files.map((f) => (
+              <Button
+                key={f.id}
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 px-2 text-xs"
+                disabled={downloadingFile === f.id}
+                title={`${f.filename} · ${formatBytes(f.sizeBytes)}`}
+                onClick={() => void handleDownloadFile(r.id, f)}
+              >
+                {downloadingFile === f.id
+                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                  : <Download className="h-3 w-3" />}
+                {f.format.toUpperCase()}
+              </Button>
+            ))}
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
     },
     {
       key: "attempt",
@@ -528,4 +583,11 @@ export function ReportSchedulesRoute() {
       />
     </div>
   );
+}
+
+// Human-readable file size for the download button tooltip.
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

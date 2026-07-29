@@ -223,7 +223,7 @@ export function PreTestRoute() {
             onPageChange={resultsList.setPage}
             emptyIcon={User}
             emptyTitle={t("preTest.empty.title")}
-            emptySubtitle={t("misc.pageUnderConstruction")}
+            emptySubtitle={t("misc.noDataYet")}
           />
         </TabsContent>
       </Tabs>

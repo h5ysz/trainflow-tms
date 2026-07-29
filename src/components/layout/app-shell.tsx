@@ -5,11 +5,12 @@ import { useAppStore } from "@/lib/store/app-store";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 import { CommandPalette } from "./command-palette";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { VisuallyHidden } from "@/components/ui/visually-hidden";
 import { useEffect } from "react";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { dir } = useI18n();
+  const { dir, t } = useI18n();
   const { sidebarOpen, setSidebarOpen, theme } = useAppStore();
 
   // Apply theme + direction to <html>
@@ -30,6 +31,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Mobile sidebar (Sheet) */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <SheetContent side={dir === "rtl" ? "right" : "left"} className="p-0 w-72">
+          {/* Radix requires a title on every dialog; the sidebar shows its own brand
+              block, so this one is for assistive technology only. */}
+          <VisuallyHidden>
+            <SheetTitle>{t("nav.dashboard")}</SheetTitle>
+          </VisuallyHidden>
           <Sidebar />
         </SheetContent>
       </Sheet>

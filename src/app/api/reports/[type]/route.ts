@@ -1,7 +1,7 @@
 // /api/reports/[type] — aggregated report data by type (soft-delete aware)
 // Sprint 2: Added trainees, conflicts, todaySessions report types
 import { db } from "@/lib/db";
-import { getCurrentUser, ok, fail } from "@/lib/auth/api";
+import { withModuleAction, ok, fail } from "@/lib/auth/api";
 
 const REPORT_TYPES = [
   "summary", "byCompany", "byCourse", "byTrainer", "byPeriod",
@@ -13,11 +13,8 @@ const REPORT_TYPES = [
 ];
 const NOT_DELETED = { deletedAt: null };
 
-export async function GET(req: Request, ctx: { params: Promise<{ type: string }> }) {
-  const user = await getCurrentUser();
-  if (!user) return fail("Unauthorized", 401);
-
-  const { type } = await ctx.params;
+export const GET = withModuleAction("reports", "view", async ({ req, params, user }) => {
+  const type = params.type as string;
   if (!REPORT_TYPES.includes(type)) return fail("Invalid report type", 400);
 
   const url = new URL(req.url);
@@ -26,9 +23,23 @@ export async function GET(req: Request, ctx: { params: Promise<{ type: string }>
   const from = fromStr ? new Date(fromStr) : new Date(new Date().getFullYear(), 0, 1);
   const to = toStr ? new Date(toStr) : new Date();
 
-  const companyScope = user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {};
-  // Coordinator and Trainer have equivalent operational permissions — no trainer scoping
-  const trainerScope = {};
+  const isContractor = user.role === "CONTRACTOR";
+  // A contractor with no company assigned must see nothing, not everything: this
+  // sentinel cannot match any uuid, so their scope is empty rather than absent.
+  const scopedCompanyId = user.companyId ?? "__no_company__";
+  const companyScope = isContractor ? { companyId: scopedCompanyId } : {};
+  // Coordinator and Trainer have equivalent operational permissions — no trainer scoping.
+  // Sessions carry no companyId, so a contractor is scoped through the originating
+  // request or an enrolment belonging to their company. Without this, `trainerScope`
+  // was an empty object and every session-derived report was org-wide.
+  const trainerScope = isContractor
+    ? {
+        OR: [
+          { request: { companyId: scopedCompanyId } },
+          { enrollments: { some: { companyId: scopedCompanyId, deletedAt: null } } },
+        ],
+      }
+    : {};
   const dateFilter = { startDate: { gte: from, lte: to } };
 
   switch (type) {
@@ -560,7 +571,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ type: string }>
     default:
       return fail("Report type not implemented", 400);
   }
-}
+});
 
 function q_search(req: Request): string | null {
   return new URL(req.url).searchParams.get("search");

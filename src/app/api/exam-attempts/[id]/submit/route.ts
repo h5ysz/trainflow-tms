@@ -1,7 +1,6 @@
 // /api/exam-attempts/[id]/submit — submit answers, grade the exam, record results
 import { db } from "@/lib/db";
-import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
-import { canPerformAction } from "@/lib/auth/permissions";
+import { withExamAction, ok, notFound, fail, audit, type TestType } from "@/lib/auth/api";
 import { parseBody } from "@/lib/api/validate";
 import { examSubmitSchema } from "@/lib/api/schemas";
 import { gradeExamAttempt } from "@/lib/api/exam-engine";
@@ -14,14 +13,15 @@ import {
   recalcCertificateEligibility,
 } from "@/lib/api/enrollment-sync";
 
-export const POST = withModuleAction("pre-test", "create", async ({ req, params, user }) => {
+export const POST = withExamAction("create", async ({ req, params, user, allowedTestTypes }) => {
   const id = params.id as string;
   const attempt = await db.examAttempt.findUnique({ where: { id } });
   if (!attempt || attempt.deletedAt) return notFound("Exam attempt not found");
 
-  // Final-test attempts require the "final-test" module, not "pre-test".
-  if (attempt.testType === "FINAL_TEST" && !canPerformAction(user.permissions, "final-test", "create")) {
-    return fail("Forbidden — cannot submit a final test", 403);
+  // The guard admits anyone holding `create` on pre-test OR final-test; this narrows
+  // it to the module the attempt actually belongs to.
+  if (!allowedTestTypes.includes(attempt.testType as TestType)) {
+    return fail(`Forbidden — cannot submit a ${attempt.testType === "FINAL_TEST" ? "final" : "pre"} test`, 403);
   }
 
   // Must be IN_PROGRESS to submit

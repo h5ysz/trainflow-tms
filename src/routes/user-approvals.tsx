@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/common/data-table";
 import { FormDialog, Field } from "@/components/common/form-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState } from "@/components/common/empty-state";
 import { UserPlus, Check, X, Loader2, AlertCircle, Clock, Ban, CheckCircle2 } from "lucide-react";
 import { api } from "@/lib/api/client";
@@ -17,12 +18,21 @@ import { useList } from "@/lib/api/hooks";
 import { useAppStore } from "@/lib/store/app-store";
 import { canAccessModule } from "@/lib/auth/permissions";
 
+interface RoleOption {
+  id: string;
+  code: string;
+  name: string;
+  nameAr: string;
+  baseType: string;
+}
+
 interface ApprovalRow {
   id: string;
   email: string;
   fullName: string;
   phone: string | null;
   role: string;
+  roleId: string | null;
   accountStatus: string;
   registrationData: {
     companyName?: string;
@@ -67,6 +77,11 @@ export function UserApprovalsRoute() {
   const [pending, setPending] = useState<{ row: ApprovalRow; action: ApprovalAction } | null>(null);
   const [reason, setReason] = useState("");
   const [createCompany, setCreateCompany] = useState(true);
+  // Approval must assign a Role — without one the account resolves to zero permissions
+  // and logs in to an empty app.
+  const [roles, setRoles] = useState<RoleOption[]>([]);
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [selectedRoleId, setSelectedRoleId] = useState<string>("");
 
   const canAccess = canAccessModule(user?.permissions ?? [], "user-approvals");
 
@@ -88,7 +103,7 @@ export function UserApprovalsRoute() {
       await api.post(`/user-approvals/${row.id}`, {
         action,
         ...(reason.trim() ? { reason: reason.trim() } : {}),
-        ...(action === "APPROVE" ? { createCompany } : {}),
+        ...(action === "APPROVE" ? { createCompany, roleId: selectedRoleId } : {}),
       });
       toast({
         title: t("misc.success"),
@@ -109,6 +124,7 @@ export function UserApprovalsRoute() {
       setPending(null);
       setReason("");
       setCreateCompany(true);
+      setSelectedRoleId("");
     }
   };
 
@@ -121,7 +137,15 @@ export function UserApprovalsRoute() {
     }
     setReason("");
     setCreateCompany(true);
+    setSelectedRoleId(row.roleId ?? "");
     setPending({ row, action });
+    if (action === "APPROVE" && roles.length === 0) {
+      setRolesLoading(true);
+      api.getList<RoleOption>("/roles", { pageSize: 100 })
+        .then((r) => setRoles(r.rows))
+        .catch(() => { /* the dialog shows the "no roles" hint below */ })
+        .finally(() => setRolesLoading(false));
+    }
   };
 
   const columns: Column<ApprovalRow>[] = [
@@ -332,6 +356,32 @@ export function UserApprovalsRoute() {
       >
         <div className="space-y-4">
           {pending?.action === "APPROVE" ? (
+            <>
+            <Field label={locale === "en" ? "Assign role" : "تعيين الدور"} required>
+              {rolesLoading ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  {locale === "en" ? "Loading roles…" : "جارٍ تحميل الأدوار…"}
+                </div>
+              ) : roles.length === 0 ? (
+                <div className="rounded-md border border-warning/30 bg-warning/5 p-2.5 text-xs">
+                  {locale === "en"
+                    ? "No assignable roles exist yet. Create one on the Roles & Permissions page first — approving without a role would leave this account with no access."
+                    : "لا توجد أدوار قابلة للتعيين بعد. أنشئ دوراً من صفحة الأدوار والصلاحيات أولاً — الاعتماد بدون دور يترك الحساب بلا أي صلاحية."}
+                </div>
+              ) : (
+                <Select value={selectedRoleId} onValueChange={setSelectedRoleId}>
+                  <SelectTrigger><SelectValue placeholder={locale === "en" ? "Select a role" : "اختر دوراً"} /></SelectTrigger>
+                  <SelectContent>
+                    {roles.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {locale === "en" ? r.name : r.nameAr || r.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </Field>
             <label className="flex items-start gap-2.5 text-sm">
               <input
                 type="checkbox"
@@ -349,6 +399,7 @@ export function UserApprovalsRoute() {
                 </span>
               </span>
             </label>
+            </>
           ) : (
             <Field label={locale === "en" ? "Reason (optional)" : "السبب (اختياري)"}>
               <Textarea

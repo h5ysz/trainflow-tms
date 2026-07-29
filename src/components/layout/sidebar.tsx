@@ -44,7 +44,7 @@ export function Sidebar() {
   })).filter((g) => g.items.length > 0);
 
   return (
-    <aside className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
+    <aside className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground">
       {/* Brand — Official GCC Lab Logo */}
       <div className="flex h-16 items-center gap-3 px-5 border-b border-sidebar-border shrink-0">
         <Image

@@ -13,7 +13,8 @@
 import { db } from "@/lib/db";
 import { getTemplate, type ReportFilter } from "./template-registry";
 import { exportReport } from "./export-service";
-import { sendReportEmail, buildEmailSubject, buildEmailBody, getNextRetryTime, type EmailAttachment } from "./email-service";
+import { sendReportEmail, buildEmailSubject, buildEmailBody, getNextRetryTime, type EmailAttachment, type EmailDeliveryStatus } from "./email-service";
+import { persistExecutionFiles, pruneScheduleFiles } from "./file-store";
 import { updateNextRun } from "./scheduler";
 import { recordAudit } from "@/lib/auth/audit";
 
@@ -65,7 +66,7 @@ export async function executeReportSchedule(opts: {
   triggerType: "SCHEDULED" | "MANUAL";
   /** Null for scheduled runs, which have no acting user. */
   triggeredBy?: string | null;
-}): Promise<{ executionId: string; status: string; rowCount: number; emailSent: boolean }> {
+}): Promise<{ executionId: string; status: string; emailStatus: EmailDeliveryStatus; rowCount: number; emailSent: boolean }> {
   const { scheduleId, triggerType, triggeredBy } = opts;
   const startTime = Date.now();
 
@@ -153,6 +154,12 @@ export async function executeReportSchedule(opts: {
       });
     }
 
+    // Persist the generated files. Until now the buffers were built, measured, and
+    // then dropped on the floor: `exportedFiles` recorded only names and sizes, there
+    // was no storage column and no download route, so a "successful" scheduled report
+    // produced nothing anyone could actually obtain.
+    const storedFiles = await persistExecutionFiles(execution.id, attachments);
+
     await db.reportExecution.update({
       where: { id: execution.id },
       data: {
@@ -188,21 +195,34 @@ export async function executeReportSchedule(opts: {
     const completedAt = new Date();
 
     // ── Step 6: Update execution record ──
+    // The email status is recorded verbatim. Mapping it to the execution status keeps
+    // "we generated and stored the report" distinct from "we delivered it": a simulated
+    // send (SMTP unconfigured) is COMPLETED, never SENT.
+    const emailStatus = emailResult.status;
+    const executionStatus =
+      emailStatus === "SENT" ? "SENT"
+      : emailStatus === "FAILED" ? "FAILED"
+      : "COMPLETED"; // SIMULATED | SKIPPED — the files exist and are downloadable
+
     await db.reportExecution.update({
       where: { id: execution.id },
       data: {
-        status: emailResult.success ? "SENT" : "FAILED",
-        emailStatus: emailResult.success ? "SENT" : "FAILED",
-        emailSentAt: emailResult.success ? emailResult.sentAt : null,
+        status: executionStatus,
+        emailStatus,
+        emailSentAt: emailStatus === "SENT" ? emailResult.sentAt : null,
         emailError: emailResult.error ?? null,
         emailRecipients: JSON.stringify(recipients),
         completedAt,
         durationMs,
-        ...(emailResult.success ? {} : {
-          nextRetryAt: getNextRetryTime(schedule.retryDelayMin),
-        }),
+        // Only a genuine delivery failure is worth retrying. Retrying a simulation
+        // forever accomplishes nothing.
+        ...(emailStatus === "FAILED" ? { nextRetryAt: getNextRetryTime(schedule.retryDelayMin) } : {}),
       },
     });
+
+    // Keep only the most recent files per schedule. This is the layer that actually
+    // bounds database growth — "Run now" generates far faster than any TTL expires.
+    if (storedFiles.length > 0) await pruneScheduleFiles(scheduleId);
 
     // ── Step 7: Update schedule tracking ──
     await db.reportSchedule.update({
@@ -215,7 +235,7 @@ export async function executeReportSchedule(opts: {
 
     // ── Step 8: Compute next run (for scheduled runs) ──
     if (triggerType === "SCHEDULED") {
-      await updateNextRun(scheduleId, schedule.cronExpression);
+      await updateNextRun(scheduleId, schedule.cronExpression, schedule.timezone);
     }
 
     // ── Audit ──
@@ -224,12 +244,13 @@ export async function executeReportSchedule(opts: {
       action: "CREATE",
       entity: "SETTING",
       entityId: execution.id,
-      description: `Report execution: ${schedule.name} — ${data.length} rows, email ${emailResult.success ? "sent" : "failed"} (${triggerType})`,
+      description: `Report execution: ${schedule.name} — ${data.length} rows, email ${emailStatus.toLowerCase()} (${triggerType})`,
       metadata: {
         scheduleId,
         templateCode: schedule.templateCode,
         rowCount: data.length,
-        emailSuccess: emailResult.success,
+        emailStatus,
+        filesStored: storedFiles.length,
         triggerType,
         durationMs,
       },
@@ -237,9 +258,10 @@ export async function executeReportSchedule(opts: {
 
     return {
       executionId: execution.id,
-      status: emailResult.success ? "SENT" : "FAILED",
+      status: executionStatus,
+      emailStatus,
       rowCount: data.length,
-      emailSent: emailResult.success,
+      emailSent: emailStatus === "SENT",
     };
   } catch (e: any) {
     // ── Handle failure ──
@@ -261,7 +283,7 @@ export async function executeReportSchedule(opts: {
 
     // For scheduled runs, still update next run so it doesn't keep retrying every tick
     if (triggerType === "SCHEDULED") {
-      await updateNextRun(scheduleId, schedule.cronExpression);
+      await updateNextRun(scheduleId, schedule.cronExpression, schedule.timezone);
     }
 
     throw e;
@@ -288,7 +310,13 @@ export async function retryExecution(executionId: string): Promise<void> {
     return;
   }
 
-  // BUG FIX: Don't create a new execution — update the existing one and re-run
+  // A retry re-runs the pipeline, and `executeReportSchedule` always creates its own
+  // execution row. The old code ALSO wrote the outcome back onto this row, so every
+  // retry appeared twice in the execution history — once as the original and once as
+  // the new attempt, both claiming the same result.
+  //
+  // Instead the original is marked RETRYING for the duration and then SUPERSEDED,
+  // pointing at the attempt that replaced it. The new row is the record of truth.
   await db.reportExecution.update({
     where: { id: executionId },
     data: {
@@ -301,21 +329,19 @@ export async function retryExecution(executionId: string): Promise<void> {
   });
 
   try {
-    // Re-run the schedule pipeline (will create a NEW execution for the retry)
     const result = await executeReportSchedule({
       scheduleId: execution.scheduleId,
       triggerType: "SCHEDULED",
       triggeredBy: null,
     });
 
-    // Link this retry to the original execution
     await db.reportExecution.update({
       where: { id: executionId },
       data: {
-        status: result.status === "SENT" ? "SENT" : "FAILED",
-        emailStatus: result.emailSent ? "SENT" : "FAILED",
+        status: "SUPERSEDED",
         completedAt: new Date(),
-        ...(result.emailSent ? {} : { nextRetryAt: getNextRetryTime(execution.schedule.retryDelayMin) }),
+        nextRetryAt: null,
+        errorMessage: `Superseded by execution ${result.executionId} (${result.status})`,
       },
     });
   } catch {
@@ -371,14 +397,18 @@ export async function schedulerTick(): Promise<void> {
 
   // ── 2. Retry failed executions ──
   const now = new Date();
-  const failedExecutions = await db.reportExecution.findMany({
+  const retryCandidates = await db.reportExecution.findMany({
     where: {
       status: "FAILED",
       nextRetryAt: { lte: now },
-      attemptNumber: { lt: 3 },
     },
-    take: 5,
+    take: 20,
   });
+  // Respect each execution's own maxRetries rather than a hardcoded 3, which silently
+  // stopped retrying schedules configured to allow more.
+  const failedExecutions = retryCandidates
+    .filter((e) => e.attemptNumber < e.maxRetries)
+    .slice(0, 5);
 
   for (const exec of failedExecutions) {
     try {
@@ -386,6 +416,15 @@ export async function schedulerTick(): Promise<void> {
     } catch (e) {
       console.error(`[Scheduler] Retry failed for execution ${exec.id}:`, e);
     }
+  }
+
+  // ── 3. Prune expired report files ──
+  // Stored report blobs live in the database, so something has to remove them.
+  try {
+    const { pruneExpiredFiles } = await import("./file-store");
+    await pruneExpiredFiles();
+  } catch (e) {
+    console.error("[Scheduler] Failed to prune expired report files:", e);
   }
 
   if (dueSchedules.length > 0 || failedExecutions.length > 0) {

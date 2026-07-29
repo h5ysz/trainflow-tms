@@ -1,41 +1,44 @@
 // /api/exam-attempts/[id]/start — start an exam (returns the randomized question set for display)
 import { db } from "@/lib/db";
-import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
-import { canPerformAction } from "@/lib/auth/permissions";
-import { resolveExamVersion } from "@/lib/api/exam-engine";
+import { withExamAction, ok, notFound, fail, audit, type TestType } from "@/lib/auth/api";
+import { resolveExamVersion, traineeIdentityWhere } from "@/lib/api/exam-engine";
 import { syncPreTestStatus, syncFinalTestStatus } from "@/lib/api/enrollment-sync";
 
-export const POST = withModuleAction("pre-test", "create", async ({ req, params, user }) => {
+export const POST = withExamAction("create", async ({ req, params, user, allowedTestTypes }) => {
   const id = params.id as string;
   const attempt = await db.examAttempt.findUnique({ where: { id } });
   if (!attempt || attempt.deletedAt) return notFound("Exam attempt not found");
 
-  // Final-test attempts require the "final-test" module, not "pre-test".
-  if (attempt.testType === "FINAL_TEST" && !canPerformAction(user.permissions, "final-test", "create")) {
-    return fail("Forbidden — cannot start a final test", 403);
+  // The guard admits anyone holding `create` on pre-test OR final-test; this narrows
+  // it to the module the attempt actually belongs to.
+  if (!allowedTestTypes.includes(attempt.testType as TestType)) {
+    return fail(`Forbidden — cannot start a ${attempt.testType === "FINAL_TEST" ? "final" : "pre"} test`, 403);
   }
 
-  // BUG FIX: Enforce maxAttempts — prevent starting if attempt is already GRADED/SUBMITTED
-  // and the trainee has exhausted their max attempts
+  // A submitted or graded attempt cannot be reopened. Report it as an exhausted
+  // attempt budget rather than a bare status error, since that is what it means to
+  // the trainee. (This used to be a separate block that counted sibling attempts,
+  // but the count always included the current one and `maxAttempts` is fixed at 1,
+  // so it could never allow a retake — the status check below rejected it anyway.)
   if (attempt.status === "GRADED" || attempt.status === "SUBMITTED") {
-    // Check if this trainee has remaining attempts
-    const totalAttempts = await db.examAttempt.count({
+    const usedAttempts = await db.examAttempt.count({
       where: {
         sessionId: attempt.sessionId,
         testType: attempt.testType,
-        traineeName: attempt.traineeName,
+        ...traineeIdentityWhere({
+          traineeName: attempt.traineeName,
+          traineeIdNational: attempt.traineeIdNational,
+        }),
         status: { in: ["GRADED", "SUBMITTED", "IN_PROGRESS"] },
         deletedAt: null,
       },
     });
-    if (totalAttempts >= attempt.maxAttempts) {
-      return fail(
-        `Maximum attempts (${attempt.maxAttempts}) reached for this exam`,
-        400,
-        "MAX_ATTEMPTS_REACHED",
-        { attemptNumber: totalAttempts, maxAttempts: attempt.maxAttempts }
-      );
-    }
+    return fail(
+      `Maximum attempts (${attempt.maxAttempts}) reached for this exam`,
+      400,
+      "MAX_ATTEMPTS_REACHED",
+      { attemptNumber: usedAttempts, maxAttempts: attempt.maxAttempts }
+    );
   }
 
   // Must be in ASSIGNED or IN_PROGRESS state to start

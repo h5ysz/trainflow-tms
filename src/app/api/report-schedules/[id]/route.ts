@@ -1,11 +1,11 @@
 // /api/report-schedules/[id] — get / update / delete schedule
 import { db } from "@/lib/db";
-import { requireModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { withErrorEnvelope, requireModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { buildCronExpression, getNextRunTime } from "@/lib/reports/scheduler";
+import { parseJsonColumn } from "@/lib/api/json-column";
 
-export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  let user;
-  try { user = await requireModuleAction("report-schedules", "view"); } catch { return fail("Forbidden", 403); }
+export const GET = withErrorEnvelope(async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await requireModuleAction("report-schedules", "view");
   const { id } = await ctx.params;
 
   const schedule = await db.reportSchedule.findUnique({ where: { id } });
@@ -13,17 +13,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   return ok({
     ...schedule,
-    filters: schedule.filters ? JSON.parse(schedule.filters) : null,
-    exportFormats: schedule.exportFormats ? JSON.parse(schedule.exportFormats) : [],
-    recipients: schedule.recipients ? JSON.parse(schedule.recipients) : [],
-    ccRecipients: schedule.ccRecipients ? JSON.parse(schedule.ccRecipients) : [],
-    bccRecipients: schedule.bccRecipients ? JSON.parse(schedule.bccRecipients) : [],
+    filters: parseJsonColumn(schedule.filters, null, "reportSchedule.filters"),
+    exportFormats: parseJsonColumn(schedule.exportFormats, [] as string[], "reportSchedule.exportFormats"),
+    recipients: parseJsonColumn(schedule.recipients, [] as string[], "reportSchedule.recipients"),
+    ccRecipients: parseJsonColumn(schedule.ccRecipients, [] as string[], "reportSchedule.ccRecipients"),
+    bccRecipients: parseJsonColumn(schedule.bccRecipients, [] as string[], "reportSchedule.bccRecipients"),
   });
-}
+});
 
-export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  let user;
-  try { user = await requireModuleAction("report-schedules", "edit"); } catch { return fail("Forbidden", 403); }
+export const PUT = withErrorEnvelope(async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await requireModuleAction("report-schedules", "edit");
   const { id } = await ctx.params;
 
   const existing = await db.reportSchedule.findUnique({ where: { id } });
@@ -48,7 +47,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
       dayOfMonth: dayOfMonth ?? existing.dayOfMonth ?? undefined,
       customCron: customCron ?? undefined,
     });
-    nextRunAt = getNextRunTime(cronExpression);
+    nextRunAt = getNextRunTime(cronExpression, new Date(), existing.timezone);
   }
 
   const updated = await db.reportSchedule.update({
@@ -87,11 +86,10 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   });
 
   return ok(updated);
-}
+});
 
-export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  let user;
-  try { user = await requireModuleAction("report-schedules", "delete"); } catch { return fail("Forbidden", 403); }
+export const DELETE = withErrorEnvelope(async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await requireModuleAction("report-schedules", "delete");
   const { id } = await ctx.params;
 
   const existing = await db.reportSchedule.findUnique({ where: { id } });
@@ -112,4 +110,4 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   });
 
   return ok({ success: true });
-}
+});

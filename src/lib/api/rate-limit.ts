@@ -22,7 +22,7 @@ function sweep(now: number) {
   }
 }
 
-function clientIp(req: Request): string {
+export function clientIp(req: Request): string {
   const xff = req.headers.get("x-forwarded-for");
   if (xff) return xff.split(",")[0].trim();
   return req.headers.get("x-real-ip") ?? "unknown";
@@ -43,10 +43,22 @@ export function checkRateLimit(
   routeKey: string,
   opts: { limit: number; windowMs: number }
 ): RateLimitResult {
+  return checkRateLimitByIp(clientIp(req), routeKey, opts);
+}
+
+/**
+ * Same limiter, addressed by IP directly. Server components have `headers()` rather
+ * than a `Request`, so they cannot use the wrapper above.
+ */
+export function checkRateLimitByIp(
+  ip: string,
+  routeKey: string,
+  opts: { limit: number; windowMs: number }
+): RateLimitResult {
   const now = Date.now();
   sweep(now);
 
-  const key = `${clientIp(req)}:${routeKey}`;
+  const key = `${ip}:${routeKey}`;
   const existing = buckets.get(key);
 
   if (!existing || existing.resetAt <= now) {

@@ -28,7 +28,10 @@ export const PATCH = withModuleAction("notifications", "view", async ({ req, par
   return ok(updated);
 });
 
-export const DELETE = withModuleAction("notifications", "view", async ({ params, user }) => {
+// Delete is gated on `delete`, not `view`: a broadcast notification (userId null)
+// is visible to everyone, so read access must not confer the ability to remove it
+// for every user in the system.
+export const DELETE = withModuleAction("notifications", "delete", async ({ params, user }) => {
   const id = params.id as string;
 
   // Scope to notifications the caller can see: their own, or broadcast (userId null).

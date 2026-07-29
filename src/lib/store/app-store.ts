@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Locale } from "@/lib/i18n/translations";
 import type { RouteKey } from "@/lib/auth/permissions";
-import { authApi, type AuthUser } from "@/lib/api/client";
+import { authApi, ApiError, setUnauthorizedHandler, type AuthUser } from "@/lib/api/client";
 
 interface AppState {
   // Auth
@@ -71,9 +71,12 @@ export const useAppStore = create<AppState>()(
         try {
           const user = await authApi.me();
           set({ user, isAuthenticated: true, locale: (user.language as Locale) ?? get().locale });
-        } catch {
-          // Not authenticated
-          set({ user: null, isAuthenticated: false });
+        } catch (e) {
+          // Only an actual 401 means "not authenticated". Catching everything meant a
+          // transient network blip on page load silently signed a valid user out.
+          if (e instanceof ApiError && e.status === 401) {
+            set({ user: null, isAuthenticated: false });
+          }
         }
       },
 
@@ -116,6 +119,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: "gcclab-tms-store",
+      version: 1,
       partialize: (state) => ({
         user: state.user,
         isAuthenticated: state.isAuthenticated,
@@ -128,3 +132,10 @@ export const useAppStore = create<AppState>()(
     }
   )
 );
+
+// Any 401 from the API tears the session down here, so the app falls back to the
+// login screen instead of staying mounted with every request failing.
+setUnauthorizedHandler(() => {
+  const { isAuthenticated, clearAuth } = useAppStore.getState();
+  if (isAuthenticated) clearAuth();
+});

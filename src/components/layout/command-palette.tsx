@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { getNavForRole } from "@/lib/auth/permissions";
 import {
   LayoutDashboard, Building2, Contact, Users, Award, UserSquare, BookOpen,
-  ClipboardList, CalendarDays, UserCheck, QrCode,
+  ClipboardList, CalendarDays, CalendarRange, CalendarClock, UserCheck, QrCode,
   FilePen, FileCheck2, Star, BadgeCheck, BarChart3, ScrollText,
   Bell, Settings, Search, UserPlus, ShieldCheck,
   type LucideIcon,
@@ -21,9 +21,11 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 
+// Must cover every icon named in navItems, or those entries fall back to the dashboard
+// icon here while showing the correct one in the sidebar.
 const ICONS: Record<string, LucideIcon> = {
   LayoutDashboard, Building2, Contact, Users, Award, UserSquare, BookOpen,
-  ClipboardList, CalendarDays, UserCheck, QrCode,
+  ClipboardList, CalendarDays, CalendarRange, CalendarClock, UserCheck, QrCode,
   FilePen, FileCheck2, Star, BadgeCheck, BarChart3, ScrollText,
   Bell, Settings, UserPlus, ShieldCheck,
 };
@@ -36,7 +38,9 @@ export function CommandPalette() {
   // Global hotkey ⌘K / Ctrl+K
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      // e.code is the physical key, so the shortcut still works on an Arabic layout
+      // where e.key for this key is "ن".
+      if ((e.metaKey || e.ctrlKey) && e.code === "KeyK") {
         e.preventDefault();
         setCommandOpen(true);
       }

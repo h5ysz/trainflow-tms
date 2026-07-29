@@ -133,42 +133,53 @@ export const POST = withModuleAction("attendance", "create", async ({ req, user 
 
   const method = checkInMethod ?? (qrCodeToken ? "QR" : "MANUAL");
 
-  const attendance = await db.attendance.create({
-    data: {
-      sessionId,
-      traineeName,
-      traineeIdNational: traineeIdNational ?? null,
-      traineeEmail: traineeEmail ?? null,
-      traineePhone: traineePhone ?? null,
-      company: company ?? null,
-      companyId: companyId ?? null,
-      checkInAt: new Date(),
-      status: status ?? "PRESENT",
-      checkInMethod: method,
-      notes: notes ?? null,
-      createdBy: user.id,
-      updatedBy: user.id,
-    },
-  });
+  // One transaction: the attendance row, its audit trail entry and the session's
+  // occupancy counter have to move together. As three separate writes, a failure
+  // between them left the row created and `actualTrainees` stale — which then skews
+  // every capacity check made against that session.
+  const ipAddress = req.headers.get("x-forwarded-for") ?? null;
+  const userAgent = req.headers.get("user-agent") ?? null;
 
-  // Log successful attempt
-  await db.checkInAttempt.create({
-    data: {
-      sessionId,
-      qrToken: qrCodeToken ?? null,
-      traineeName,
-      traineeEmail: traineeEmail ?? null,
-      traineeIdNational: traineeIdNational ?? null,
-      ipAddress: req.headers.get("x-forwarded-for") ?? null,
-      userAgent: req.headers.get("user-agent") ?? null,
-      success: true,
-    },
-  });
+  const attendance = await db.$transaction(async (tx) => {
+    const created = await tx.attendance.create({
+      data: {
+        sessionId,
+        traineeName,
+        traineeIdNational: traineeIdNational ?? null,
+        traineeEmail: traineeEmail ?? null,
+        traineePhone: traineePhone ?? null,
+        company: company ?? null,
+        companyId: companyId ?? null,
+        checkInAt: new Date(),
+        status: status ?? "PRESENT",
+        checkInMethod: method,
+        notes: notes ?? null,
+        createdBy: user.id,
+        updatedBy: user.id,
+      },
+    });
 
-  // Bump actualTrainees on the session
-  await db.trainingSession.update({
-    where: { id: sessionId },
-    data: { actualTrainees: { increment: 1 }, updatedBy: user.id },
+    // Log successful attempt
+    await tx.checkInAttempt.create({
+      data: {
+        sessionId,
+        qrToken: qrCodeToken ?? null,
+        traineeName,
+        traineeEmail: traineeEmail ?? null,
+        traineeIdNational: traineeIdNational ?? null,
+        ipAddress,
+        userAgent,
+        success: true,
+      },
+    });
+
+    // Bump actualTrainees on the session
+    await tx.trainingSession.update({
+      where: { id: sessionId },
+      data: { actualTrainees: { increment: 1 }, updatedBy: user.id },
+    });
+
+    return created;
   });
 
   await audit({

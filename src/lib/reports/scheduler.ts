@@ -6,39 +6,85 @@
 // Supports: WEEKLY, MONTHLY, DAILY, CUSTOM schedule types with
 // configurable execution time + timezone.
 
+export const DEFAULT_TIMEZONE = "Asia/Riyadh";
+
+const WEEKDAY_INDEX: Record<string, number> = {
+  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+};
+
+interface ZonedParts {
+  minute: number;
+  hour: number;
+  day: number;
+  month: number;
+  weekday: number;
+}
+
+/**
+ * Break an instant into calendar fields *as observed in `timezone`*.
+ *
+ * Date.prototype.getHours() and friends report the server's local time. Render runs in
+ * UTC, so a schedule configured for 09:00 Asia/Riyadh was firing at 09:00 UTC — three
+ * hours late — and near midnight the day-of-week was wrong too. `schedule.timezone` was
+ * stored on every row but never actually read.
+ */
+export function zonedParts(date: Date, timezone: string): ZonedParts {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour12: false,
+    minute: "2-digit",
+    hour: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    weekday: "short",
+  });
+
+  const parts: Record<string, string> = {};
+  for (const { type, value } of formatter.formatToParts(date)) {
+    parts[type] = value;
+  }
+
+  return {
+    minute: parseInt(parts.minute, 10),
+    // Intl emits "24" for midnight in hour12:false mode in some engines.
+    hour: parseInt(parts.hour, 10) % 24,
+    day: parseInt(parts.day, 10),
+    month: parseInt(parts.month, 10),
+    weekday: WEEKDAY_INDEX[parts.weekday] ?? 0,
+  };
+}
+
 /**
  * Parse a cron expression (5-field: minute hour day-of-month month day-of-week)
- * and determine if it should fire at the given time.
+ * and determine if it should fire at the given time, interpreted in `timezone`.
  * Supports: wildcard, specific values, ranges (1-5), lists (1,3,5), step values
  */
-export function cronMatches(cronExpr: string, date: Date): boolean {
+export function cronMatches(cronExpr: string, date: Date, timezone: string = DEFAULT_TIMEZONE): boolean {
   const parts = cronExpr.trim().split(/\s+/);
   if (parts.length !== 5) return false;
 
   const [minField, hourField, domField, monthField, dowField] = parts;
-  const min = date.getMinutes();
-  const hour = date.getHours();
-  const dom = date.getDate();
-  const month = date.getMonth() + 1; // 1-12
-  const dow = date.getDay(); // 0=Sunday
+  const { minute, hour, day, month, weekday } = zonedParts(date, timezone);
 
   return (
-    fieldMatches(minField, min, 0, 59) &&
+    fieldMatches(minField, minute, 0, 59) &&
     fieldMatches(hourField, hour, 0, 23) &&
-    fieldMatches(domField, dom, 1, 31) &&
+    fieldMatches(domField, day, 1, 31) &&
     fieldMatches(monthField, month, 1, 12) &&
-    fieldMatches(dowField, dow, 0, 6)
+    fieldMatches(dowField, weekday, 0, 6)
   );
 }
 
 function fieldMatches(field: string, value: number, min: number, max: number): boolean {
   if (field === "*") return true;
 
-  // Step: */N
+  // Step: */N — counted from the field's minimum, not from zero. For day-of-month
+  // (min 1) and month (min 1), `value % step` matched the wrong days: */5 hit the 5th
+  // and 10th but never the 1st.
   if (field.startsWith("*/")) {
     const step = parseInt(field.slice(2), 10);
-    if (isNaN(step) || step === 0) return false;
-    return value % step === 0;
+    if (isNaN(step) || step <= 0) return false;
+    return (value - min) % step === 0;
   }
 
   // List: 1,3,5
@@ -46,10 +92,10 @@ function fieldMatches(field: string, value: number, min: number, max: number): b
     return field.split(",").some((f) => fieldMatches(f.trim(), value, min, max));
   }
 
-  // Range: 1-5
+  // Range: 1-5. A reversed range (5-1) is invalid rather than silently never matching.
   if (field.includes("-")) {
     const [start, end] = field.split("-").map((n) => parseInt(n, 10));
-    if (isNaN(start) || isNaN(end)) return false;
+    if (isNaN(start) || isNaN(end) || start > end) return false;
     return value >= start && value <= end;
   }
 
@@ -63,21 +109,27 @@ function fieldMatches(field: string, value: number, min: number, max: number): b
  * Compute the next run time for a cron expression after the given date.
  * Scans minute-by-minute (up to 7 days) to find the next match.
  */
-export function getNextRunTime(cronExpr: string, after: Date = new Date()): Date {
-  const next = new Date(after);
-  next.setSeconds(0, 0);
-  next.setMinutes(next.getMinutes() + 1); // start from next minute
+export function getNextRunTime(
+  cronExpr: string,
+  after: Date = new Date(),
+  timezone: string = DEFAULT_TIMEZONE
+): Date {
+  // Walk absolute instants a minute at a time and test each one *in the target zone*.
+  // Stepping a Date by minutes is DST-safe here because the arithmetic is on the
+  // underlying epoch value; only the comparison is zone-aware.
+  const startMs = Math.floor(after.getTime() / 60000) * 60000 + 60000;
 
-  const maxIterations = 7 * 24 * 60; // 7 days worth of minutes
+  const maxIterations = 366 * 24 * 60; // a full year — MONTHLY schedules can exceed a week
   for (let i = 0; i < maxIterations; i++) {
-    if (cronMatches(cronExpr, next)) {
-      return next;
+    const candidate = new Date(startMs + i * 60000);
+    if (cronMatches(cronExpr, candidate, timezone)) {
+      return candidate;
     }
-    next.setMinutes(next.getMinutes() + 1);
   }
 
-  // Fallback: return 7 days from now
-  return new Date(after.getTime() + 7 * 24 * 60 * 60 * 1000);
+  // Fallback: a year out, so an unsatisfiable expression parks the schedule rather
+  // than re-firing constantly.
+  return new Date(startMs + maxIterations * 60000);
 }
 
 /**
@@ -143,7 +195,7 @@ export async function getScheduleSettings(): Promise<{
   const mDay = parseInt(map["schedule.monthly.dayOfMonth"] ?? "1", 10);
   const mEnabled = map["schedule.monthly.enabled"] !== "false";
 
-  const tz = map["schedule.timezone"] ?? "Asia/Riyadh";
+  const tz = map["schedule.timezone"] ?? DEFAULT_TIMEZONE;
 
   const [wHour, wMin] = wTime.split(":").map(Number);
   const [mHour, mMin] = mTime.split(":").map(Number);
@@ -207,7 +259,7 @@ export async function syncScheduleFromSettings(scheduleId: string): Promise<void
     newTimezone !== schedule.timezone ||
     newIsActive !== schedule.isActive
   ) {
-    const nextRun = getNextRunTime(newCron);
+    const nextRun = getNextRunTime(newCron, new Date(), newTimezone);
     await db.reportSchedule.update({
       where: { id: scheduleId },
       data: {
@@ -249,9 +301,13 @@ export async function getDueSchedules(): Promise<any[]> {
 /**
  * Update the nextRunAt for a schedule after execution.
  */
-export async function updateNextRun(scheduleId: string, cronExpr: string): Promise<void> {
+export async function updateNextRun(
+  scheduleId: string,
+  cronExpr: string,
+  timezone: string = DEFAULT_TIMEZONE
+): Promise<void> {
   const { db } = await import("@/lib/db");
-  const nextRun = getNextRunTime(cronExpr);
+  const nextRun = getNextRunTime(cronExpr, new Date(), timezone);
 
   await db.reportSchedule.update({
     where: { id: scheduleId },

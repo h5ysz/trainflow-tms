@@ -1,9 +1,9 @@
 // /api/users/[id]/reset-password — admin resets user password
 import { db } from "@/lib/db";
-import { requireRole, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { withErrorEnvelope, requireRole, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { hashPassword } from "@/lib/auth/jwt";
 
-export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+export const POST = withErrorEnvelope(async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   let admin;
   try {
     admin = await requireRole("SUPER_ADMIN", "COORDINATOR");
@@ -47,4 +47,4 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   });
 
   return ok({ success: true });
-}
+});

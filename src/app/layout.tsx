@@ -30,8 +30,10 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // dir/lang are corrected client-side once the stored locale is known (see
+  // PublicShell and AppShell); these are the pre-hydration defaults.
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" dir="ltr" suppressHydrationWarning>
       <body
         className={`${inter.variable} ${plexArabic.variable} antialiased bg-background text-foreground`}
       >

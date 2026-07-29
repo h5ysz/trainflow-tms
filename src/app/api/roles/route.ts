@@ -1,6 +1,6 @@
 // /api/roles — list + create dynamic roles
 import { db } from "@/lib/db";
-import { requireRole, ok, created, fail, audit } from "@/lib/auth/api";
+import { withErrorEnvelope, requireRole, ok, created, fail, audit } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
 import { ALL_MODULES, ACTIONS, type UserRole } from "@/lib/auth/permissions";
@@ -22,9 +22,8 @@ function validatePermissions(perms: unknown): string[] | null {
   return perms.every((p) => typeof p === "string" && valid.has(p)) ? (perms as string[]) : null;
 }
 
-export async function GET(req: Request) {
-  let user;
-  try { user = await requireRole("SUPER_ADMIN", "COORDINATOR"); } catch { return fail("Forbidden", 403); }
+export const GET = withErrorEnvelope(async function GET(req: Request) {
+  const user = await requireRole("SUPER_ADMIN", "COORDINATOR");
 
   const q = parseListQuery(req);
   const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
@@ -45,11 +44,10 @@ export async function GET(req: Request) {
   ]);
 
   return list(rows, buildListMeta(total, q));
-}
+});
 
-export async function POST(req: Request) {
-  let user;
-  try { user = await requireRole("SUPER_ADMIN"); } catch { return fail("Forbidden", 403); }
+export const POST = withErrorEnvelope(async function POST(req: Request) {
+  const user = await requireRole("SUPER_ADMIN");
 
   const body = await req.json().catch(() => ({}));
   const { code, name, nameAr, description, permissions, baseType } = body;
@@ -91,4 +89,4 @@ export async function POST(req: Request) {
   });
 
   return created(role);
-}
+});

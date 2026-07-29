@@ -168,37 +168,15 @@ export async function exportToExcel(
 
 // ── PDF Exporter ─────────────────────────────────────────────────────
 
-// Monkey-patch pdfkit's font loading to resolve from the correct path.
-// In Turbopack/Next.js bundled environments, __dirname resolves to /ROOT
-// instead of the actual node_modules path, causing ENOENT errors.
-// We patch the GLOBAL fs module so pdfkit's internal require('fs') picks it up.
-/* eslint-disable @typescript-eslint/no-require-imports */
-try {
-  const nodePath = require("path");
-  const realDataDir = nodePath.join(process.cwd(), "node_modules", "pdfkit", "js", "data");
-  const fsModule = require("fs");
-  if (fsModule.existsSync(realDataDir)) {
-    const originalReadFileSync = fsModule.readFileSync;
-    fsModule.readFileSync = function (filePath: string, ...args: any[]) {
-      if (
-        typeof filePath === "string" &&
-        filePath.includes("/data/") &&
-        filePath.endsWith(".afm") &&
-        !fsModule.existsSync(filePath)
-      ) {
-        const filename = nodePath.basename(filePath);
-        const correctedPath = nodePath.join(realDataDir, filename);
-        if (fsModule.existsSync(correctedPath)) {
-          return originalReadFileSync(correctedPath, ...args);
-        }
-      }
-      return originalReadFileSync(filePath, ...args);
-    };
-  }
-} catch {
-  // ignore — will fall back to default
-}
-/* eslint-enable @typescript-eslint/no-require-imports */
+// pdfkit resolves its built-in AFM font metrics relative to __dirname. A bundler that
+// rewrites __dirname breaks that — which is why `serverExternalPackages: ["pdfkit"]`
+// is set in next.config.ts, keeping pdfkit unbundled and __dirname real.
+//
+// A defensive monkey-patch of the global fs.readFileSync used to live here as a second
+// line of defence. It was removed: it mutated `fs` process-wide at import time (a hazard
+// for every unrelated caller), and its guard tested for "/data/" in the path, which never
+// matches on Windows where the separator is a backslash — so on the machine most likely
+// to need it, it did nothing at all.
 
 export async function exportToPdf(
   template: ReportTemplate,

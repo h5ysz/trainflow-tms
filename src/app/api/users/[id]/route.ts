@@ -1,16 +1,11 @@
 // /api/users/[id] — get / update / soft-delete (Super Admin only)
 import { db } from "@/lib/db";
-import { requireRole, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { withErrorEnvelope, requireRole, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { hashPassword } from "@/lib/auth/jwt";
 import { recordStatusChange } from "@/lib/auth/audit";
 
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  let user;
-  try {
-    user = await requireRole("SUPER_ADMIN");
-  } catch {
-    return fail("Forbidden — Super Admin only", 403);
-  }
+export const GET = withErrorEnvelope(async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await requireRole("SUPER_ADMIN");
   const { id } = await ctx.params;
   const target = await db.user.findUnique({
     where: { id },
@@ -33,15 +28,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     lastLoginAt: target.lastLoginAt,
     createdAt: target.createdAt,
   });
-}
+});
 
-export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  let user;
-  try {
-    user = await requireRole("SUPER_ADMIN");
-  } catch {
-    return fail("Forbidden — Super Admin only", 403);
-  }
+export const PUT = withErrorEnvelope(async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await requireRole("SUPER_ADMIN");
   const { id } = await ctx.params;
   const existing = await db.user.findUnique({ where: { id } });
   if (!existing || existing.deletedAt) return notFound("User not found");
@@ -104,15 +94,10 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
     roleId: updated.roleId,
     isActive: updated.isActive,
   });
-}
+});
 
-export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  let user;
-  try {
-    user = await requireRole("SUPER_ADMIN");
-  } catch {
-    return fail("Forbidden — Super Admin only", 403);
-  }
+export const DELETE = withErrorEnvelope(async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await requireRole("SUPER_ADMIN");
   const { id } = await ctx.params;
   if (id === user.id) return fail("Cannot delete your own account", 400);
 
@@ -135,4 +120,4 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   });
 
   return ok({ success: true });
-}
+});

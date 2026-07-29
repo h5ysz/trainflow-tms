@@ -1,18 +1,21 @@
 // /api/test-results — list + submit (EXAM-YYYY-000001 ref number, EXAM_SUBMIT audit)
 import { db } from "@/lib/db";
-import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
+import { withExamAction, testTypeWhere, ok, created, fail, audit, type TestType } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
+import { parseJsonColumn } from "@/lib/api/json-column";
 
 const ALLOWED_SORT_FIELDS = ["refNumber", "traineeName", "attemptedAt", "scorePercent", "passed"];
 
-export const GET = withModuleAction("pre-test", "view", async ({ req }) => {
+export const GET = withExamAction("view", async ({ req, allowedTestTypes }) => {
   const q = parseListQuery(req);
   const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
 
   if (q.filters.sessionId) where.sessionId = q.filters.sessionId;
-  if (q.filters.testType) where.testType = q.filters.testType;
+  const testType = testTypeWhere(q.filters.testType, allowedTestTypes);
+  if (testType === null) return fail(`Forbidden — no access to ${q.filters.testType} results`, 403);
+  where.testType = testType;
   if (q.filters.traineeEmail) where.traineeEmail = q.filters.traineeEmail;
   if (q.filters.passed) where.passed = q.filters.passed === "true";
 
@@ -64,12 +67,17 @@ export const GET = withModuleAction("pre-test", "view", async ({ req }) => {
   );
 });
 
-export const POST = withModuleAction("pre-test", "create", async ({ req, user }) => {
+export const POST = withExamAction("create", async ({ req, user, allowedTestTypes }) => {
   const body = await req.json().catch(() => ({}));
   const { sessionId, testType, traineeName, traineeEmail, traineeIdNational, scorePercent, answers, durationSec, questionSet } = body;
 
   if (!sessionId || !traineeName || scorePercent === undefined) {
     return fail("sessionId, traineeName, scorePercent are required", 422, "VALIDATION_ERROR");
+  }
+
+  const effectiveTestType = (testType ?? "PRE_TEST") as TestType;
+  if (!allowedTestTypes.includes(effectiveTestType)) {
+    return fail(`Forbidden — cannot create ${effectiveTestType} results`, 403);
   }
 
   const session = await db.trainingSession.findFirst({
@@ -87,7 +95,7 @@ export const POST = withModuleAction("pre-test", "create", async ({ req, user })
     data: {
       refNumber,
       sessionId,
-      testType: testType ?? "PRE_TEST",
+      testType: effectiveTestType,
       traineeName,
       traineeEmail: traineeEmail ?? null,
       traineeIdNational: traineeIdNational ?? null,
@@ -108,7 +116,7 @@ export const POST = withModuleAction("pre-test", "create", async ({ req, user })
     entity: "EXAM",
     entityId: result.id,
     entityRef: result.refNumber,
-    description: `Submitted ${testType ?? "PRE_TEST"} exam ${result.refNumber} for ${traineeName}: ${scorePercent}% (${passed ? "Passed" : "Failed"})`,
+    description: `Submitted ${effectiveTestType} exam ${result.refNumber} for ${traineeName}: ${scorePercent}% (${passed ? "Passed" : "Failed"})`,
     descriptionAr: `تسليم اختبار ${testType ?? "قبلي"} ${result.refNumber} لـ ${traineeName}: ${scorePercent}% (${passed ? "ناجح" : "راسب"})`,
     req,
     metadata: { sessionId, scorePercent, passed, passScore },
@@ -116,8 +124,8 @@ export const POST = withModuleAction("pre-test", "create", async ({ req, user })
 
   return created({
     ...result,
-    answers: result.answers ? JSON.parse(result.answers) : null,
-    questionSet: result.questionSet ? JSON.parse(result.questionSet) : null,
+    answers: parseJsonColumn(result.answers, null, "testResult.answers"),
+    questionSet: parseJsonColumn(result.questionSet, null, "testResult.questionSet"),
     passed,
     passScore,
   });

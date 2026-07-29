@@ -1,15 +1,12 @@
 // /api/reports/generate — generate a report from a template and export it
 // POST: { template, format, filter } → returns file download
 import { NextResponse } from "next/server";
-import { getCurrentUser, fail, audit } from "@/lib/auth/api";
+import { withModuleAction, ok, fail, audit } from "@/lib/auth/api";
 import { getTemplate } from "@/lib/reports/template-registry";
 import { exportReport } from "@/lib/reports/export-service";
 import type { ReportFilter } from "@/lib/reports/template-registry";
 
-export async function POST(req: Request) {
-  const user = await getCurrentUser();
-  if (!user) return fail("Unauthorized", 401);
-
+export const POST = withModuleAction("reports", "view", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
   const { template: templateCode, format, filter } = body as {
     template: string;
@@ -78,13 +75,10 @@ export async function POST(req: Request) {
       "Content-Length": result.buffer.length.toString(),
     },
   });
-}
+});
 
 // GET endpoint — returns a preview of the report data (JSON, no export)
-export async function GET(req: Request) {
-  const user = await getCurrentUser();
-  if (!user) return fail("Unauthorized", 401);
-
+export const GET = withModuleAction("reports", "view", async ({ req, user }) => {
   const url = new URL(req.url);
   const templateCode = url.searchParams.get("template");
   if (!templateCode) return fail("template query parameter is required", 422, "VALIDATION_ERROR");
@@ -111,16 +105,13 @@ export async function GET(req: Request) {
 
   const data = await template.query(filter);
 
-  return NextResponse.json({
-    success: true,
-    data: {
-      template: templateCode,
-      templateName: template.name,
-      columns: template.columns,
-      rowCount: data.length,
-      rows: data.slice(0, 100), // preview: first 100 rows
-      totalRows: data.length,
-      filter,
-    },
+  return ok({
+    template: templateCode,
+    templateName: template.name,
+    columns: template.columns,
+    rowCount: data.length,
+    rows: data.slice(0, 100), // preview: first 100 rows
+    totalRows: data.length,
+    filter,
   });
-}
+});

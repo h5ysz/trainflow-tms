@@ -1,10 +1,9 @@
-// /api/sessions/[id]/generate-from-request — auto-generate sessions from approved request courses
-// POST /api/sessions/generate-from-request?requestId=... with body specifying shift/city/dates per course
-// OR POST /api/requests/[id]/generate-sessions — alternative path
+// /api/requests/[id]/generate-sessions — turn an APPROVED request's courses into sessions
 //
-// This endpoint is mounted at /api/sessions/[id]/generate-from-request but the [id]
-// here is the REQUEST ID (a small abuse of routing). For clarity, we treat [id] as requestId.
-
+// This used to live at /api/sessions/[id]/generate-from-request, where `[id]` was in fact
+// a request id. The only caller passed a *session* id and an empty body, so the handler
+// looked up a training request by session id and 404'd on every single call. Moving it
+// under /api/requests/[id] puts the path segment and its meaning back in agreement.
 import type { TrainingSession } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
@@ -32,10 +31,8 @@ interface SessionSpec {
   title?: string;
 }
 
-export const POST = withModuleAction("sessions", "create", async ({ req, params, user }) => {
-  const requestId = params.id as string;
-
-  const request = await db.trainingRequest.findUnique({
+async function loadRequest(requestId: string) {
+  return db.trainingRequest.findUnique({
     where: { id: requestId },
     include: {
       company: true,
@@ -45,6 +42,49 @@ export const POST = withModuleAction("sessions", "create", async ({ req, params,
       },
     },
   });
+}
+
+// GET — the data the "Generate sessions" dialog needs to build its form: which courses
+// are on the request, how many trainees each expects, and which already have sessions.
+export const GET = withModuleAction("sessions", "create", async ({ params }) => {
+  const requestId = params.id as string;
+  const request = await loadRequest(requestId);
+  if (!request || request.deletedAt) return notFound("Request not found");
+
+  const existing = await db.trainingSession.findMany({
+    where: { requestId, deletedAt: null },
+    select: { id: true, refNumber: true, requestCourseId: true, startDate: true, shift: true },
+  });
+  const generatedFor = new Set(existing.map((s) => s.requestCourseId).filter(Boolean) as string[]);
+
+  return ok({
+    requestId: request.id,
+    requestRef: request.refNumber,
+    status: request.status,
+    canGenerate: request.status === "APPROVED",
+    company: request.company
+      ? { id: request.company.id, name: request.company.name, city: request.company.city }
+      : null,
+    preferredDateFrom: request.preferredDateFrom ?? null,
+    preferredDateTo: request.preferredDateTo ?? null,
+    preferredLocation: request.preferredLocation ?? null,
+    courses: request.requestCourses.map((rc) => ({
+      requestCourseId: rc.id,
+      courseId: rc.courseId,
+      courseTitle: rc.course?.title ?? null,
+      courseCode: rc.course?.code ?? null,
+      traineeCount: rc.traineeCount,
+      defaultCapacity: rc.maxTrainees,
+      alreadyGenerated: generatedFor.has(rc.id),
+    })),
+    existingSessions: existing,
+  });
+});
+
+export const POST = withModuleAction("sessions", "create", async ({ req, params, user }) => {
+  const requestId = params.id as string;
+
+  const request = await loadRequest(requestId);
   if (!request || request.deletedAt) return notFound("Request not found");
 
   // Only allow session generation when request is APPROVED
@@ -67,13 +107,28 @@ export const POST = withModuleAction("sessions", "create", async ({ req, params,
     );
   }
 
-  // Untyped [] infers never[], so pushing a session fails and .refNumber below
-  // reads off never.
-  const created: TrainingSession[] = [];
+  // ── Validate every spec before creating anything ──────────────────────────
+  // Reference-number allocation writes to the database, so it cannot run inside a
+  // transaction on SQLite without deadlocking the single writer. Validating up front
+  // is what stops a bad spec halfway down the list from leaving a half-scheduled
+  // request behind.
+  const resolved: Array<{ spec: SessionSpec; traineeCount: number; courseTitle: string; courseLanguage: string; maxTrainees: number }> = [];
 
   for (const spec of sessions) {
     if (!spec.requestCourseId || !spec.courseId || !spec.shift || !spec.startDate || !spec.endDate) {
       return fail(`Invalid session spec: missing required fields`, 422, "VALIDATION_ERROR", { spec });
+    }
+    if (spec.shift !== "MORNING" && spec.shift !== "EVENING") {
+      return fail(`Invalid shift "${spec.shift}": must be MORNING or EVENING`, 422, "VALIDATION_ERROR", { spec });
+    }
+
+    const start = new Date(spec.startDate);
+    const end = new Date(spec.endDate);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return fail(`Invalid startDate or endDate`, 422, "VALIDATION_ERROR", { spec });
+    }
+    if (end < start) {
+      return fail(`endDate must not be before startDate`, 422, "VALIDATION_ERROR", { spec });
     }
 
     // Verify the requestCourseId belongs to this request
@@ -93,14 +148,27 @@ export const POST = withModuleAction("sessions", "create", async ({ req, params,
         user,
         trainerId: spec.trainerId,
         courseId: spec.courseId,
-        startDate: new Date(spec.startDate),
-        endDate: new Date(spec.endDate),
+        startDate: start,
+        endDate: end,
       });
       if (!validation.valid) {
         return validationErrorToResponse(validation);
       }
     }
 
+    resolved.push({
+      spec,
+      traineeCount: rc.traineeCount,
+      courseTitle: course.title,
+      courseLanguage: course.language,
+      maxTrainees: course.maxTrainees,
+    });
+  }
+
+  // ── Create ────────────────────────────────────────────────────────────────
+  const created: TrainingSession[] = [];
+
+  for (const { spec, traineeCount, courseTitle, courseLanguage, maxTrainees } of resolved) {
     const refNumber = await nextRefNumber("SESSION");
     const qrToken = genQrToken();
 
@@ -111,18 +179,18 @@ export const POST = withModuleAction("sessions", "create", async ({ req, params,
         requestId,
         requestCourseId: spec.requestCourseId,
         trainerId: spec.trainerId ?? null,
-        title: spec.title ?? `${course.title} — ${spec.shift === "MORNING" ? "Morning" : "Evening"}`,
+        title: spec.title ?? `${courseTitle} — ${spec.shift === "MORNING" ? "Morning" : "Evening"}`,
         location: request.company?.city ?? spec.city ?? null,
         city: spec.city ?? request.company?.city ?? null,
         region: spec.region ?? null,
         venue: spec.venue ?? null,
         shift: spec.shift,
         durationHours: SHIFT_DURATION_HOURS, // 6 hours for Morning/Evening
-        capacity: spec.capacity ?? course.maxTrainees,
-        language: course.language,
+        capacity: spec.capacity ?? maxTrainees,
+        language: courseLanguage,
         startDate: new Date(spec.startDate),
         endDate: new Date(spec.endDate),
-        expectedTrainees: rc.traineeCount,
+        expectedTrainees: traineeCount,
         actualTrainees: 0,
         status: "SCHEDULED",
         qrCodeToken: qrToken,

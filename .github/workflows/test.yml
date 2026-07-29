@@ -1,0 +1,40 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Install flags mirror render.yaml exactly. There is no package-lock.json in the
+      # repository (bun.lock only), so `npm ci` cannot be used, and --legacy-peer-deps
+      # is required because a fresh resolve can otherwise fail on peer ranges.
+      - name: Install dependencies
+        run: npm install --include=dev --legacy-peer-deps
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx eslint .
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Integration tests
+        run: npm run test:int
+        env:
+          # setup.ts overrides this with a throwaway file; Prisma just needs it set.
+          DATABASE_URL: file:./.tmp/integration-test.db

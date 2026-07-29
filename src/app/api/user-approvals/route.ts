@@ -1,19 +1,15 @@
 // /api/user-approvals — list pending users + approve/reject/suspend/activate
 import { db } from "@/lib/db";
-import { requireModuleAction, ok, fail, audit } from "@/lib/auth/api";
+import { withErrorEnvelope, requireModuleAction, ok, fail, audit } from "@/lib/auth/api";
 import { recordAudit } from "@/lib/auth/audit";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
+import { parseJsonColumn } from "@/lib/api/json-column";
 
 const ALLOWED_SORT_FIELDS = ["createdAt", "updatedAt", "fullName", "email", "accountStatus"];
 
-export async function GET(req: Request) {
-  let user;
-  try {
-    user = await requireModuleAction("user-approvals", "view");
-  } catch {
-    return fail("Forbidden", 403);
-  }
+export const GET = withErrorEnvelope(async function GET(req: Request) {
+  const user = await requireModuleAction("user-approvals", "view");
 
   const q = parseListQuery(req);
   const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
@@ -44,6 +40,8 @@ export async function GET(req: Request) {
         fullName: true,
         phone: true,
         role: true,
+        // Needed so the approval dialog can preselect an already-assigned role.
+        roleId: true,
         accountStatus: true,
         registrationData: true,
         createdAt: true,
@@ -60,8 +58,8 @@ export async function GET(req: Request) {
   return list(
     rows.map((u) => ({
       ...u,
-      registrationData: u.registrationData ? JSON.parse(u.registrationData) : null,
+      registrationData: parseJsonColumn(u.registrationData, null, "user.registrationData"),
     })),
     buildListMeta(total, q)
   );
-}
+});

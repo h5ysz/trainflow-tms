@@ -22,6 +22,8 @@ import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/lib/store/app-store";
 import { canPerformAction } from "@/lib/auth/permissions";
+import { QrImage } from "@/components/common/qr-image";
+import { buildCheckInUrl } from "@/lib/qr/urls";
 
 interface TraineeOption { id: string; fullName: string; refNumber: string; }
 interface TrainerOption { id: string; fullName: string; }
@@ -129,6 +131,8 @@ export function SessionDetailRoute() {
     }
   }, [sessionId]);
 
+  // Async data load; state is written from inside the awaited call.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
@@ -218,13 +222,6 @@ export function SessionDetailRoute() {
     run("qr", async () => {
       await api.post(`/sessions/${sessionId}/qr-activate`, {});
       toast({ title: t("misc.success"), description: t("session.qrActivated") });
-      await load();
-    });
-
-  const generateFromRequest = () =>
-    run("fromRequest", async () => {
-      await api.post(`/sessions/${sessionId}/generate-from-request`, {});
-      toast({ title: t("misc.success"), description: t("misc.updateSuccess") });
       await load();
     });
 
@@ -381,12 +378,6 @@ export function SessionDetailRoute() {
                 {allowed.length === 0 ? t("session.lifecycleDone") : t("session.lifecycleHint")}
               </p>
 
-              <div className="border-t pt-4">
-                <Button variant="outline" disabled={!canEdit || busy === "fromRequest"} onClick={() => void generateFromRequest()}>
-                  {busy === "fromRequest" ? <Loader2 className="h-4 w-4 me-1.5 animate-spin" /> : null}
-                  {t("session.generateFromRequest")}
-                </Button>
-              </div>
             </Card>
           </TabsContent>
 
@@ -409,12 +400,25 @@ export function SessionDetailRoute() {
 
           <TabsContent value="qr" className="mt-4">
             <Card className="p-6 space-y-4 max-w-lg text-center">
-              {/* Visual QR placeholder — a real QR lib can be plugged in here. */}
-              <div className="flex h-36 w-36 mx-auto items-center justify-center rounded-xl border-2 border-dashed border-primary/40 bg-primary/5">
-                <QrCode className="h-14 w-14 text-primary/60" />
-              </div>
-              {session?.qrToken && (
-                <Input readOnly value={session.qrToken} onFocus={(e) => e.target.select()} className="font-mono text-xs" />
+              {session?.qrToken ? (
+                <>
+                  <QrImage
+                    value={buildCheckInUrl(typeof window === "undefined" ? "" : window.location.origin, session.qrToken)}
+                    size={168}
+                    className="mx-auto border"
+                    label={t("qr.title")}
+                  />
+                  <Input
+                    readOnly
+                    value={buildCheckInUrl(typeof window === "undefined" ? "" : window.location.origin, session.qrToken)}
+                    onFocus={(e) => e.target.select()}
+                    className="font-mono text-xs"
+                  />
+                </>
+              ) : (
+                <div className="flex h-36 w-36 mx-auto items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 bg-muted/20">
+                  <QrCode className="h-10 w-10 text-muted-foreground/40" />
+                </div>
               )}
               <Button disabled={!canEdit || busy === "qr"} onClick={() => void activateQr()}>
                 {busy === "qr" ? <Loader2 className="h-4 w-4 me-1.5 animate-spin" /> : <QrCode className="h-4 w-4 me-1.5" />}

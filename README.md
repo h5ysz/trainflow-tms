@@ -24,12 +24,14 @@ bun run db:seed      # roles, permissions, settings, super admin
 bun run db:seed:demo # optional: demo companies, courses, sessions
 ```
 
-> [!WARNING]
-> The committed `db/custom.db` contains a super-admin account seeded with the default
-> password from `scripts/seed.ts` (`ChangeMeInProduction!2024`). It is demo data and is
-> fine for local development, but **never deploy this file as-is**. Provision a fresh
-> database and set `SUPER_ADMIN_PASSWORD` before seeding any environment that is
-> reachable from a network.
+> [!IMPORTANT]
+> `db:seed` refuses to run unless `SUPER_ADMIN_EMAIL` and `SUPER_ADMIN_PASSWORD` are
+> both set, and never prints the password. There is deliberately no default: the seed
+> previously shipped a publicly-known admin account (`ChangeMeInProduction!2024`) to
+> every deployment and echoed it into the build log.
+>
+> The committed `db/custom.db` is demo data. It is fine for local development, but
+> provision a fresh database for anything reachable from a network.
 
 ## Environment
 
@@ -38,8 +40,11 @@ bun run db:seed:demo # optional: demo companies, courses, sessions
 | `DATABASE_URL` | yes | Prisma connection string. SQLite for dev, PostgreSQL for production. |
 | `JWT_SECRET` | yes | Session signing key, 32+ bytes. The app refuses to boot without it. |
 | `SCHEDULER_SECRET` | yes | Bearer token guarding `POST /api/report-scheduler/tick`. |
-| `SUPER_ADMIN_EMAIL` | seed only | Super-admin address created by `db:seed`. |
-| `SUPER_ADMIN_PASSWORD` | seed only | Super-admin password created by `db:seed`. |
+| `SUPER_ADMIN_EMAIL` | seed only | Super-admin address created by `db:seed`. Required. |
+| `SUPER_ADMIN_PASSWORD` | seed only | Super-admin password created by `db:seed`. Required, 12+ chars. |
+| `APP_URL` | production | Absolute base URL used to build QR check-in and certificate verification links, where no request Origin is available. |
+| `SETTINGS_SECRET_KEY` | if using email | Encrypts secret Setting values (the SMTP password) at rest. 32+ chars. |
+| `SMTP_PASSWORD` | optional | Takes precedence over the stored SMTP password, so the secret never enters the database. |
 
 See [.env.example](.env.example) for the full annotated list.
 
@@ -71,8 +76,31 @@ Full instructions, including the reverse-proxy [Caddyfile](Caddyfile), are in
 - [CHANGELOG.md](CHANGELOG.md) — release history
 - [docs/](docs/) — architecture notes, ER diagram, design records
 
+## Testing
+
+```bash
+npm test         # unit suites (mocked Prisma) — fast, hermetic
+npm run test:int # integration suites against a throwaway SQLite file
+npm run test:cov # unit suites with coverage
+```
+
+Unit tests mock `@/lib/db`. The one exception is `nextRefNumber`, whose correctness
+depends on how SQL treats NULL inside a unique index — a claim no mock can prove — so it
+has an integration suite that provisions a real database in `.tmp/`.
+
 ## Notes
 
-`next.config.ts` sets `typescript.ignoreBuildErrors: true`. Application code under `src/`
-typechecks clean; the remaining errors are confined to `scripts/seed-demo.ts` and
-`examples/`, neither of which ships in the build.
+`next.config.ts` sets `typescript.ignoreBuildErrors: false`: a type error fails the
+build. `npx tsc --noEmit` and `npx eslint .` are both clean across `src/` and `scripts/`.
+
+Public, unauthenticated surfaces:
+
+| Route | Purpose |
+| --- | --- |
+| `/check-in?token=…` | QR attendance. The token in the QR is the credential; the session's QR activity window and rate limiting are the controls. |
+| `/verify/<token>` | Certificate verification. This is the URL printed and QR-encoded on every generated certificate. |
+| `GET /api/certificates/verify?token=…` | The same verification as JSON, for integrations. |
+
+Email delivery is only real once SMTP is configured in Settings. Until then report
+executions are recorded with `emailStatus: "SIMULATED"` and an execution status of
+`COMPLETED` — never `SENT`. Generated files are stored and downloadable either way.

@@ -11,6 +11,40 @@
 
 const BASE = "/api";
 
+// ─── Session expiry ──────────────────────────────────────────────────────────
+// A 401 means the session is gone: the cookie expired, the account was locked or
+// suspended, or its tokenVersion was rotated. Nothing used to handle that, so the
+// persisted store kept `isAuthenticated: true` and the app stayed mounted while
+// every request failed. The store registers a handler here at startup.
+type UnauthorizedHandler = () => void;
+let onUnauthorized: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
+  onUnauthorized = handler;
+}
+
+// `/auth/me` is the session probe itself — it legitimately 401s for a logged-out
+// visitor on the login page, and firing the handler there would be circular.
+function notifyUnauthorized(path: string) {
+  if (path.startsWith("/auth/")) return;
+  onUnauthorized?.();
+}
+
+// Reads the filename from a Content-Disposition header, preferring the RFC 5987
+// `filename*=UTF-8''…` form so non-ASCII names (Arabic report titles) survive.
+export function filenameFromDisposition(disposition: string): string | null {
+  const extended = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+  if (extended?.[1]) {
+    try {
+      return decodeURIComponent(extended[1].trim());
+    } catch {
+      // fall through to the plain form
+    }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(disposition);
+  return plain?.[1]?.trim() ?? null;
+}
+
 export interface ListMeta {
   page: number;
   pageSize: number;
@@ -81,6 +115,7 @@ async function request<T>(
   const json = await res.json().catch(() => ({ success: false, error: "Invalid JSON response" }));
 
   if (!res.ok || !json.success) {
+    if (res.status === 401) notifyUnauthorized(path);
     throw new ApiError(json.error ?? `Request failed (${res.status})`, res.status, json.code);
   }
 
@@ -108,6 +143,7 @@ async function requestList<T>(
   const json = await res.json().catch(() => ({ success: false, error: "Invalid JSON response" }));
 
   if (!res.ok || !json.success) {
+    if (res.status === 401) notifyUnauthorized(path);
     throw new ApiError(json.error ?? `Request failed (${res.status})`, res.status, json.code);
   }
 
@@ -143,24 +179,36 @@ export const api = {
  * `api.post` would call res.json() on the PDF bytes and throw, so this reads
  * the body as a blob and triggers a browser download instead.
  */
-export async function downloadFile(path: string, fallbackName: string): Promise<void> {
-  const res = await fetch(`${BASE}${path}`, { method: "POST", credentials: "same-origin" });
+export async function downloadFile(
+  path: string,
+  fallbackName: string,
+  options: { method?: "GET" | "POST"; body?: unknown } = {}
+): Promise<void> {
+  const method = options.method ?? "POST";
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    credentials: "same-origin",
+    ...(options.body !== undefined
+      ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(options.body) }
+      : {}),
+  });
 
   if (!res.ok) {
+    if (res.status === 401) notifyUnauthorized(path);
     // Errors still come back as the JSON envelope.
     const json = await res.json().catch(() => null);
     throw new Error(json?.error ?? `Request failed (${res.status})`);
   }
 
   const disposition = res.headers.get("Content-Disposition") ?? "";
-  const match = /filename="?([^"]+)"?/.exec(disposition);
+  const parsedName = filenameFromDisposition(disposition);
   const blob = await res.blob();
 
   const url = URL.createObjectURL(blob);
   try {
     const a = document.createElement("a");
     a.href = url;
-    a.download = match?.[1] ?? fallbackName;
+    a.download = parsedName ?? fallbackName;
     document.body.appendChild(a);
     a.click();
     a.remove();

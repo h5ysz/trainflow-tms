@@ -94,6 +94,19 @@ export async function selectQuestionsFromBank(
 }
 
 /**
+ * Identify a trainee within a session. The national ID is authoritative when present;
+ * the display name is only a fallback for records captured without one.
+ */
+export function traineeIdentityWhere(opts: {
+  traineeName: string;
+  traineeIdNational?: string | null;
+}): Record<string, unknown> {
+  const nationalId = opts.traineeIdNational?.trim();
+  if (nationalId) return { traineeIdNational: nationalId };
+  return { traineeName: opts.traineeName.trim() };
+}
+
+/**
  * Create a randomized exam version for a specific trainee.
  * Each trainee gets:
  *   - A different random order of questions
@@ -110,7 +123,7 @@ export async function createExamAttempt(opts: {
   traineeIdNational?: string;
   companyId?: string;
   numQuestions?: number;
-  createdBy: string;
+  createdBy: string | null;
 }): Promise<{ attemptId: string; refNumber: string; questionSet: QuestionSetItem[]; passScore: number }> {
   const { sessionId, attendanceId, testType, traineeName, traineeEmail, traineeIdNational, companyId, numQuestions, createdBy } = opts;
 
@@ -147,12 +160,15 @@ export async function createExamAttempt(opts: {
   // Generate ref number
   const refNumber = await nextRefNumber("EXAM");
 
-  // Check existing attempt count for this trainee + session + testType
+  // Check existing attempt count for this trainee + session + testType.
+  // Prefer the national ID: matching on display name alone made two trainees called
+  // "Mohammed Al-Otaibi" share one attempt budget, while a stray space or a casing
+  // difference handed the same person a fresh one.
   const existingAttempts = await db.examAttempt.count({
     where: {
       sessionId,
       testType,
-      traineeName: { equals: traineeName },
+      ...traineeIdentityWhere({ traineeName, traineeIdNational }),
       deletedAt: null,
     },
   });
@@ -261,26 +277,48 @@ export async function gradeExamAttempt(opts: {
   let earnedPoints = 0;
   const gradedAnswers: GradedAnswer[] = [];
 
+  // Index the submission by question id. The first entry for a question wins, so a
+  // payload repeating the same questionId cannot be counted more than once.
+  const submitted = new Map<string, number[]>();
   for (const answer of answers) {
-    const q = questionMap.get(answer.questionId);
-    const qsItem = questionSet.find((s) => s.questionId === answer.questionId);
-    if (!q || !qsItem) continue;
+    if (!submitted.has(answer.questionId)) {
+      submitted.set(answer.questionId, answer.selectedAnswerIndices ?? []);
+    }
+  }
+
+  // Iterate the stored questionSet, NOT the submitted answers. Driving the loop off
+  // the request body meant the denominator only counted questions the client chose to
+  // send — submitting a single correct answer to a twenty-question exam scored 100%
+  // and earned a certificate. Unanswered questions must still count against the total.
+  for (const qsItem of questionSet) {
+    const q = questionMap.get(qsItem.questionId);
+    if (!q) continue; // question deleted from the bank since assignment
 
     const correctAnswers: number[] = JSON.parse(q.correctAnswers);
     const maxPoints = q.points;
     totalPoints += maxPoints;
 
-    // Map selected indices from shuffled → original
-    // qsItem.optionsOrder[i] = original index of the i-th shuffled option
-    // So if trainee selected shuffled index j, the original index is qsItem.optionsOrder[j]
-    const originalSelectedIndices = answer.selectedAnswerIndices
-      .map((shuffledIdx) => qsItem.optionsOrder[shuffledIdx])
-      .filter((idx) => idx !== undefined)
-      .sort((a, b) => a - b);
+    const selectedAnswerIndices = submitted.get(qsItem.questionId) ?? [];
+
+    // Map selected indices from shuffled → original.
+    // qsItem.optionsOrder[i] = original index of the i-th shuffled option,
+    // so a selected shuffled index j maps to qsItem.optionsOrder[j].
+    const mapped = selectedAnswerIndices.map((shuffledIdx) => qsItem.optionsOrder[shuffledIdx]);
+    // An out-of-range index is a malformed submission, not a narrower answer.
+    // Filtering it out would silently shrink a wrong 3-option answer into a 2-option
+    // one that could match the correct set, so the whole answer is invalidated instead.
+    const hasInvalidIndex = mapped.some((idx) => idx === undefined);
+    const originalSelectedIndices = hasInvalidIndex
+      ? []
+      : [...mapped].sort((a, b) => a - b);
     const sortedCorrect = [...correctAnswers].sort((a, b) => a - b);
 
-    // Correct if the selected indices exactly match the correct indices
+    // Correct if the selected indices exactly match the correct indices. A question
+    // with no correct answers configured can never be satisfied — otherwise an empty
+    // submission would trivially "match" it and score free points.
     const isCorrect =
+      !hasInvalidIndex &&
+      sortedCorrect.length > 0 &&
       originalSelectedIndices.length === sortedCorrect.length &&
       originalSelectedIndices.every((val, i) => val === sortedCorrect[i]);
 
@@ -288,8 +326,8 @@ export async function gradeExamAttempt(opts: {
     earnedPoints += pointsAwarded;
 
     gradedAnswers.push({
-      questionId: answer.questionId,
-      selectedAnswerIndices: answer.selectedAnswerIndices,
+      questionId: qsItem.questionId,
+      selectedAnswerIndices,
       originalSelectedIndices,
       correctAnswerIndices: correctAnswers,
       isCorrect,

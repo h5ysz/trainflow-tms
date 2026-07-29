@@ -28,7 +28,9 @@ export type AuditAction =
   | "REJECT"
   | "ISSUE"
   | "REVOKE"
-  | "QR_REGENERATE";
+  | "QR_REGENERATE"
+  // Data leaving the system: report file downloads, dataset exports.
+  | "EXPORT";
 
 export type AuditEntity =
   | "COMPANY"

@@ -17,6 +17,8 @@ import { api, downloadFile } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/lib/store/app-store";
 import { canPerformAction } from "@/lib/auth/permissions";
+import { QrImage } from "@/components/common/qr-image";
+import { buildVerifyUrl } from "@/lib/qr/urls";
 
 interface Certificate {
   id: string;
@@ -50,8 +52,10 @@ export function CertificatesRoute() {
 
   const canEdit = user ? canPerformAction(user.permissions, "certificates", "edit") : false;
 
+  // The human-facing verification page, not the raw JSON endpoint — this is the URL
+  // printed on the certificate and encoded into its QR code.
   const verifyUrl = (token: string) =>
-    `${typeof window === "undefined" ? "" : window.location.origin}/api/certificates/verify?token=${token}`;
+    buildVerifyUrl(typeof window === "undefined" ? "" : window.location.origin, token);
 
   const handleDownload = async (row: Certificate) => {
     setDownloading(row.id);
@@ -226,10 +230,18 @@ export function CertificatesRoute() {
         size="md"
       >
         <div className="space-y-4">
-          {/* Visual QR placeholder — a real QR lib can be plugged in here. */}
-          <div className="flex h-36 w-36 mx-auto items-center justify-center rounded-xl border-2 border-dashed border-primary/40 bg-primary/5">
-            <QrCode className="h-14 w-14 text-primary/60" />
-          </div>
+          {verifyTarget?.verificationToken ? (
+            <QrImage
+              value={verifyUrl(verifyTarget.verificationToken)}
+              size={168}
+              className="mx-auto border"
+              label={t("certificates.verify")}
+            />
+          ) : (
+            <div className="flex h-36 w-36 mx-auto items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 bg-muted/20">
+              <QrCode className="h-10 w-10 text-muted-foreground/40" />
+            </div>
+          )}
 
           <Field label={t("certificates.verificationUrl")}>
             <Input readOnly value={verifyTarget?.verificationToken ? verifyUrl(verifyTarget.verificationToken) : ""} onFocus={(e) => e.target.select()} />

@@ -13,12 +13,26 @@ import { Field, FormGrid } from "@/components/common/form-dialog";
 import { DataTable, type Column } from "@/components/common/data-table";
 import { RoleBadge } from "@/components/common/status-badge";
 import { EmptyState } from "@/components/common/empty-state";
-import { Settings as SettingsIcon, Save, Plus, ShieldCheck, Lock, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Settings as SettingsIcon, Save, Plus, ShieldCheck, Lock, Loader2, CheckCircle2, AlertCircle, Send, MailWarning } from "lucide-react";
 import { canAccessModule } from "@/lib/auth/permissions";
 import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
 import { useList } from "@/lib/api/hooks";
 import { useAppStore } from "@/lib/store/app-store";
+
+interface SettingView {
+  value: string;
+  category: string;
+  isSecret?: boolean;
+  isSet?: boolean;
+}
+
+interface EmailTestResult {
+  status: "SENT" | "SIMULATED" | "FAILED" | "SKIPPED";
+  message?: string;
+  error?: string;
+  to?: string;
+}
 
 interface UserRow {
   id: string;
@@ -42,14 +56,25 @@ export function SettingsRoute() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Which secret keys already have a value stored, so the field can show
+  // "configured" without ever receiving the secret itself.
+  const [secretsSet, setSecretsSet] = useState<Record<string, boolean>>({});
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [emailTestResult, setEmailTestResult] = useState<EmailTestResult | null>(null);
   const usersList = useList<UserRow>("/users");
 
   useEffect(() => {
-    api.get<Record<string, { value: string; category: string }>>("/settings")
+    api.get<Record<string, SettingView>>("/settings")
       .then((data) => {
         const flat: Record<string, string> = {};
-        for (const [k, v] of Object.entries(data)) flat[k] = v.value;
+        const secretState: Record<string, boolean> = {};
+        for (const [k, v] of Object.entries(data)) {
+          flat[k] = v.value;
+          // Secret values are never sent to the browser; only whether one is stored.
+          if (v.isSecret) secretState[k] = Boolean(v.isSet);
+        }
         setSettings(flat);
+        setSecretsSet(secretState);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -66,6 +91,25 @@ export function SettingsRoute() {
       toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTestEmail = async () => {
+    setTestingEmail(true);
+    setEmailTestResult(null);
+    try {
+      // Save first: testing settings the server has not seen would be misleading.
+      await api.put("/settings", { settings });
+      const res = await api.post<EmailTestResult>("/settings/email/test", {});
+      setEmailTestResult(res);
+      if (res.status === "SENT") setSecretsSet((p) => ({ ...p, "email.smtpPassword": true }));
+      // The password is written once and then cleared from the form, so a later save
+      // does not resend it.
+      if (settings["email.smtpPassword"]) setSetting("email.smtpPassword", "");
+    } catch (e) {
+      setEmailTestResult({ status: "FAILED", error: (e as Error).message });
+    } finally {
+      setTestingEmail(false);
     }
   };
 
@@ -247,22 +291,80 @@ export function SettingsRoute() {
         </TabsContent>
 
         <TabsContent value="email" className="mt-4">
-          <Card className="p-6 max-w-2xl">
+          <Card className="p-6 max-w-2xl space-y-5">
             {loading ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : (
-              <FormGrid>
-                <Field label={t("settings.smtpHost")}>
-                  <Input value={settings["email.smtpHost"] ?? ""} onChange={(e) => setSetting("email.smtpHost", e.target.value)} placeholder="smtp.gmail.com" />
-                </Field>
-                <Field label={t("settings.smtpPort")}>
-                  <Input type="number" value={settings["email.smtpPort"] ?? "587"} onChange={(e) => setSetting("email.smtpPort", e.target.value)} />
-                </Field>
-                <Field label={t("settings.smtpUser")}>
-                  <Input value={settings["email.smtpUser"] ?? ""} onChange={(e) => setSetting("email.smtpUser", e.target.value)} placeholder="noreply@gcclab.com" />
-                </Field>
-                <Field label={t("settings.smtpFrom")}>
-                  <Input type="email" value={settings["email.smtpFrom"] ?? ""} onChange={(e) => setSetting("email.smtpFrom", e.target.value)} placeholder="noreply@gcclab.com" />
-                </Field>
-              </FormGrid>
+              <>
+                <FormGrid>
+                  <Field label={t("settings.smtpHost")}>
+                    <Input value={settings["email.smtpHost"] ?? ""} onChange={(e) => setSetting("email.smtpHost", e.target.value)} placeholder="smtp.gmail.com" />
+                  </Field>
+                  <Field label={t("settings.smtpPort")}>
+                    <Input type="number" value={settings["email.smtpPort"] ?? "587"} onChange={(e) => setSetting("email.smtpPort", e.target.value)} />
+                  </Field>
+                  <Field label={t("settings.smtpUser")}>
+                    <Input value={settings["email.smtpUser"] ?? ""} onChange={(e) => setSetting("email.smtpUser", e.target.value)} placeholder="noreply@gcclab.com" />
+                  </Field>
+                  <Field label={t("settings.smtpPassword")}>
+                    {/* Left empty means "keep the stored password" — saving the form
+                        without retyping it must not wipe the secret. */}
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      value={settings["email.smtpPassword"] ?? ""}
+                      onChange={(e) => setSetting("email.smtpPassword", e.target.value)}
+                      placeholder={secretsSet["email.smtpPassword"] ? t("settings.smtpPasswordSet") : ""}
+                    />
+                  </Field>
+                  <Field label={t("settings.smtpFrom")}>
+                    <Input type="email" value={settings["email.smtpFrom"] ?? ""} onChange={(e) => setSetting("email.smtpFrom", e.target.value)} placeholder="noreply@gcclab.com" />
+                  </Field>
+                  <Field label={t("settings.replyTo")}>
+                    <Input type="email" value={settings["email.replyTo"] ?? ""} onChange={(e) => setSetting("email.replyTo", e.target.value)} />
+                  </Field>
+                </FormGrid>
+
+                <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+                  <div>
+                    <div className="text-sm font-medium">{t("settings.smtpSecure")}</div>
+                    <div className="text-xs text-muted-foreground">{t("settings.smtpSecureHint")}</div>
+                  </div>
+                  <Switch
+                    checked={settings["email.smtpSecure"] === "true"}
+                    onCheckedChange={(v) => setSetting("email.smtpSecure", v ? "true" : "false")}
+                  />
+                </div>
+
+                <div className="border-t pt-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <p className="text-xs text-muted-foreground max-w-sm">{t("settings.emailTestHint")}</p>
+                    <Button variant="outline" size="sm" disabled={testingEmail} onClick={() => void handleTestEmail()}>
+                      {testingEmail ? <Loader2 className="h-4 w-4 me-1.5 animate-spin" /> : <Send className="h-4 w-4 me-1.5" />}
+                      {t("settings.sendTest")}
+                    </Button>
+                  </div>
+
+                  {emailTestResult && (
+                    <div
+                      className={
+                        emailTestResult.status === "SENT"
+                          ? "flex items-start gap-2 rounded-md border border-success/30 bg-success/5 p-3 text-xs"
+                          : emailTestResult.status === "SIMULATED"
+                            ? "flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 p-3 text-xs"
+                            : "flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive"
+                      }
+                    >
+                      {emailTestResult.status === "SENT" ? <CheckCircle2 className="h-4 w-4 shrink-0 text-success" /> : <MailWarning className="h-4 w-4 shrink-0" />}
+                      <span>
+                        {emailTestResult.status === "SENT"
+                          ? t("settings.testSent", { to: emailTestResult.to ?? "" })
+                          : emailTestResult.status === "SIMULATED"
+                            ? (emailTestResult.message ?? t("settings.testSimulated"))
+                            : (emailTestResult.error ?? t("settings.testFailed"))}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </>
             )}
           </Card>
         </TabsContent>

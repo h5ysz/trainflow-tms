@@ -80,7 +80,8 @@ export async function syncAttendanceCheckedIn(opts: {
   traineeIdNational?: string;
   attendanceId: string;
   attendanceStatus: "PRESENT" | "LATE" | "ABSENT";
-  userId: string;
+  // Null for anonymous public check-in — the audit columns are all nullable.
+  userId: string | null;
 }): Promise<void> {
   const enrollment = await findEnrollment({
     sessionId: opts.sessionId,
@@ -112,7 +113,8 @@ export async function syncPreTestStatus(opts: {
   traineeIdNational?: string;
   attendanceId?: string;
   status: "NOT_REQUIRED" | "PENDING" | "IN_PROGRESS" | "COMPLETED";
-  userId: string;
+  // Null for anonymous public check-in — the audit columns are all nullable.
+  userId: string | null;
 }): Promise<void> {
   const enrollment = await findEnrollment({
     sessionId: opts.sessionId,
@@ -159,7 +161,8 @@ export async function syncFinalTestStatus(opts: {
   traineeIdNational?: string;
   attendanceId?: string;
   status: "NOT_REQUIRED" | "PENDING" | "IN_PROGRESS" | "PASSED" | "FAILED";
-  userId: string;
+  // Null for anonymous public check-in — the audit columns are all nullable.
+  userId: string | null;
 }): Promise<void> {
   const enrollment = await findEnrollment({
     sessionId: opts.sessionId,
@@ -190,7 +193,8 @@ export async function syncEvaluationStatus(opts: {
   traineeIdNational?: string;
   attendanceId?: string;
   status: "NOT_REQUIRED" | "PENDING" | "COMPLETED";
-  userId: string;
+  // Null for anonymous public check-in — the audit columns are all nullable.
+  userId: string | null;
 }): Promise<void> {
   const enrollment = await findEnrollment({
     sessionId: opts.sessionId,
@@ -224,7 +228,8 @@ export async function syncCertificateStatus(opts: {
   traineeIdNational?: string;
   attendanceId?: string;
   status: "NOT_ELIGIBLE" | "ELIGIBLE" | "GENERATED" | "ISSUED";
-  userId: string;
+  // Null for anonymous public check-in — the audit columns are all nullable.
+  userId: string | null;
 }): Promise<void> {
   const enrollment = await findEnrollment({
     sessionId: opts.sessionId,
@@ -263,7 +268,8 @@ export async function recalcCertificateEligibility(opts: {
   traineeName?: string;
   traineeIdNational?: string;
   attendanceId?: string;
-  userId: string;
+  // Null for anonymous public check-in — the audit columns are all nullable.
+  userId: string | null;
 }): Promise<void> {
   const enrollment = await findEnrollment({
     sessionId: opts.sessionId,

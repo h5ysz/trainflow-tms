@@ -16,6 +16,7 @@
 // Every demo user's password is: Demo@1234
 
 import { PrismaClient } from "@prisma/client";
+import type { Course, Trainer, TrainerQualification, Trainee } from "@prisma/client";
 import { randomBytes, pbkdf2Sync } from "node:crypto";
 
 const db = new PrismaClient();
@@ -225,7 +226,7 @@ async function main() {
 
   // ── COURSES ────────────────────────────────────────────────────────────
   console.log("→ Courses + question bank");
-  const courses = [];
+  const courses: Course[] = [];
   for (const c of COURSES) {
     const course = await db.course.create({
       data: {
@@ -274,7 +275,7 @@ async function main() {
 
   // ── TRAINERS ───────────────────────────────────────────────────────────
   console.log("→ Trainers + qualifications + course certifications");
-  const trainers = [];
+  const trainers: Trainer[] = [];
   for (let i = 0; i < 5; i++) {
     const fullName = personName();
     const trainer = await db.trainer.create({
@@ -304,7 +305,7 @@ async function main() {
       { title: "OSHA 30-Hour General Industry", issuer: "OSHA Training Institute", offsetDays: i === 1 ? 20 : int(120, 700) },
       { title: "Certified Train-the-Trainer", issuer: "IOSH", offsetDays: i === 3 ? -30 : int(300, 1200) },
     ];
-    const quals = [];
+    const quals: TrainerQualification[] = [];
     for (const q of qualSpecs) {
       const expiry = daysFromNow(q.offsetDays);
       const status = q.offsetDays < 0 ? "EXPIRED" : q.offsetDays <= 60 ? "EXPIRING_SOON" : "VALID";
@@ -461,7 +462,7 @@ async function main() {
     });
 
     // Trainees
-    const trainees = [];
+    const trainees: Trainee[] = [];
     for (let k = 0; k < int(18, 26); k++) {
       const fullName = personName();
       trainees.push(

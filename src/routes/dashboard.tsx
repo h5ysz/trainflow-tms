@@ -14,7 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { RouteKey } from "@/lib/auth/permissions";
+import { canAccessModule, type RouteKey } from "@/lib/auth/permissions";
 import { api } from "@/lib/api/client";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -29,9 +29,10 @@ interface DashboardData {
     approvedRequests: number;
     scheduledSessions: number;
     todaySessions: number;
-    availableTrainers: number;
-    trainerConflicts: number;
-    companies: number;
+    // Org-wide metrics — null for contractors, who are scoped to their own company
+    availableTrainers: number | null;
+    trainerConflicts: number | null;
+    companies: number | null;
     trainees: number;
     // Existing
     totalSessions: number;
@@ -40,7 +41,7 @@ interface DashboardData {
     issuedCertificates: number;
     certsThisYear: number;
     expiringCerts: number;
-    activeTrainers: number;
+    activeTrainers: number | null;
     completionRate: number | null;
     avgScore: number | null;
   };
@@ -119,12 +120,17 @@ export function DashboardRoute() {
 
   if (!user) return null;
 
-  const quickActions: { label: string; icon: LucideIcon; route: RouteKey; accent: string }[] = [
+  // Only offer shortcuts the user can actually follow — an unfiltered list sends
+  // contractors and trainers straight into the "no access" lock screen.
+  const allQuickActions: { label: string; icon: LucideIcon; route: RouteKey; accent: string }[] = [
     { label: t("companies.new"), icon: Building2, route: "companies", accent: "bg-success/10 text-success" },
     { label: t("requests.new"), icon: ClipboardList, route: "requests", accent: "bg-warning/10 text-warning" },
     { label: t("sessions.new"), icon: CalendarDays, route: "sessions", accent: "bg-info/10 text-info" },
     { label: t("qr.title"), icon: QrCode, route: "qr-code", accent: "bg-primary/10 text-primary" },
   ];
+  const quickActions = allQuickActions.filter((qa) => canAccessModule(user.permissions, qa.route));
+
+  const canViewAudit = canAccessModule(user.permissions, "audit-log");
 
   const kpis = data?.kpis;
   const charts = data?.charts;
@@ -177,15 +183,23 @@ export function DashboardRoute() {
             <KpiCard label={t("dashboard.kpi.approvedRequests")} value={kpis?.approvedRequests ?? 0} icon={Check} accent="bg-success/10 text-success" />
             <KpiCard label={t("dashboard.kpi.scheduledSessions")} value={kpis?.scheduledSessions ?? 0} icon={CalendarDays} accent="bg-info/10 text-info" />
             <KpiCard label={t("dashboard.kpi.todaySessions")} value={kpis?.todaySessions ?? 0} icon={CalendarDays} accent="bg-primary/10 text-primary" />
-            <KpiCard label={t("dashboard.kpi.availableTrainers")} value={kpis?.availableTrainers ?? 0} icon={GraduationCap} accent="bg-success/10 text-success" />
-            <KpiCard label={t("dashboard.kpi.trainerConflicts")} value={kpis?.trainerConflicts ?? 0} icon={AlertTriangle} accent={kpis?.trainerConflicts ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"} />
-            <KpiCard label={t("dashboard.kpi.companies")} value={kpis?.companies ?? 0} icon={Building2} accent="bg-info/10 text-info" />
+            {kpis?.availableTrainers != null && (
+              <KpiCard label={t("dashboard.kpi.availableTrainers")} value={kpis.availableTrainers} icon={GraduationCap} accent="bg-success/10 text-success" />
+            )}
+            {kpis?.trainerConflicts != null && (
+              <KpiCard label={t("dashboard.kpi.trainerConflicts")} value={kpis.trainerConflicts} icon={AlertTriangle} accent={kpis.trainerConflicts ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"} />
+            )}
+            {kpis?.companies != null && (
+              <KpiCard label={t("dashboard.kpi.companies")} value={kpis.companies} icon={Building2} accent="bg-info/10 text-info" />
+            )}
             <KpiCard label={t("dashboard.kpi.trainees")} value={kpis?.trainees ?? 0} icon={Users} accent="bg-success/10 text-success" />
             {/* Existing KPIs */}
             <KpiCard label={t("dashboard.kpi.totalSessions")} value={kpis?.totalSessions ?? 0} icon={CalendarDays} accent="bg-info/10 text-info" hint={`${kpis?.sessionsThisYear ?? 0} this year`} />
             <KpiCard label={t("dashboard.kpi.issuedCertificates")} value={kpis?.issuedCertificates ?? 0} icon={BadgeCheck} accent="bg-primary/10 text-primary" hint={`${kpis?.certsThisYear ?? 0} this year`} />
             <KpiCard label={t("dashboard.kpi.expiringCerts")} value={kpis?.expiringCerts ?? 0} icon={AlertTriangle} accent="bg-warning/10 text-warning" />
-            <KpiCard label={t("dashboard.kpi.activeTrainers")} value={kpis?.activeTrainers ?? 0} icon={GraduationCap} accent="bg-info/10 text-info" />
+            {kpis?.activeTrainers != null && (
+              <KpiCard label={t("dashboard.kpi.activeTrainers")} value={kpis.activeTrainers} icon={GraduationCap} accent="bg-info/10 text-info" />
+            )}
             <KpiCard label={t("dashboard.kpi.completionRate")} value={kpis?.completionRate !== null ? `${kpis?.completionRate ?? 0}%` : "—"} icon={TrendingUp} accent="bg-success/10 text-success" />
             <KpiCard label={t("dashboard.kpi.avgScore")} value={kpis?.avgScore !== null ? `${kpis?.avgScore ?? 0}%` : "—"} icon={Award} accent="bg-primary/10 text-primary" />
           </div>
@@ -206,7 +220,7 @@ export function DashboardRoute() {
               ) : (
                 <div className="h-56 flex flex-col items-center justify-center text-center rounded-md border border-dashed">
                   <TrendingUp className="h-8 w-8 text-muted-foreground/40 mb-2" />
-                  <div className="text-xs text-muted-foreground max-w-xs">{t("misc.pageUnderConstruction")}</div>
+                  <div className="text-xs text-muted-foreground max-w-xs">{t("misc.noDataYet")}</div>
                 </div>
               )}
             </ChartCard>
@@ -225,7 +239,7 @@ export function DashboardRoute() {
               ) : (
                 <div className="h-56 flex flex-col items-center justify-center text-center rounded-md border border-dashed">
                   <ClipboardList className="h-8 w-8 text-muted-foreground/40 mb-2" />
-                  <div className="text-xs text-muted-foreground max-w-xs">{t("misc.pageUnderConstruction")}</div>
+                  <div className="text-xs text-muted-foreground max-w-xs">{t("misc.noDataYet")}</div>
                 </div>
               )}
             </ChartCard>
@@ -250,7 +264,7 @@ export function DashboardRoute() {
 
           {/* Quick actions + activity */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <Card className="p-5">
+            <Card className={cn("p-5", quickActions.length === 0 && "hidden")}>
               <h3 className="text-sm font-semibold mb-3">{t("dashboard.quickActions")}</h3>
               <div className="grid grid-cols-2 gap-2">
                 {quickActions.map((qa) => (
@@ -271,10 +285,12 @@ export function DashboardRoute() {
             <Card className="p-5 lg:col-span-2">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold">{t("dashboard.recentActivity")}</h3>
-                <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate("audit-log")}>
-                  {t("dashboard.viewAll")}
-                  <ArrowRight className="h-3 w-3 ms-1 rtl:rotate-180" />
-                </Button>
+                {canViewAudit && (
+                  <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate("audit-log")}>
+                    {t("dashboard.viewAll")}
+                    <ArrowRight className="h-3 w-3 ms-1 rtl:rotate-180" />
+                  </Button>
+                )}
               </div>
               {data?.recentActivity && data.recentActivity.length > 0 ? (
                 <div className="space-y-2 max-h-64 overflow-y-auto tf-scroll">
@@ -293,7 +309,7 @@ export function DashboardRoute() {
               ) : (
                 <div className="py-8 text-center">
                   <LayoutDashboard className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
-                  <div className="text-sm text-muted-foreground">{t("misc.pageUnderConstruction")}</div>
+                  <div className="text-sm text-muted-foreground">{t("misc.noActivityYet")}</div>
                 </div>
               )}
             </Card>
@@ -333,7 +349,7 @@ export function DashboardRoute() {
             ) : (
               <div className="py-8 text-center">
                 <CalendarDays className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
-                <div className="text-sm text-muted-foreground">{t("misc.pageUnderConstruction")}</div>
+                <div className="text-sm text-muted-foreground">{t("misc.noDataYet")}</div>
               </div>
             )}
           </Card>

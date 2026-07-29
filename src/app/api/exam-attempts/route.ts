@@ -1,17 +1,21 @@
 // /api/exam-attempts — list exam attempts
 import { db } from "@/lib/db";
-import { withModuleAction, ok, fail } from "@/lib/auth/api";
+import { withExamAction, testTypeWhere, fail } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
+import { parseJsonColumn } from "@/lib/api/json-column";
 
 const ALLOWED_SORT_FIELDS = ["refNumber", "createdAt", "assignedAt", "startedAt", "submittedAt", "status", "scorePercent"];
 
-export const GET = withModuleAction("pre-test", "view", async ({ req }) => {
+export const GET = withExamAction("view", async ({ req, allowedTestTypes }) => {
   const q = parseListQuery(req);
   const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
 
   if (q.filters.sessionId) where.sessionId = q.filters.sessionId;
-  if (q.filters.testType) where.testType = q.filters.testType;
+  // Never widen beyond what the caller's permissions allow.
+  const testType = testTypeWhere(q.filters.testType, allowedTestTypes);
+  if (testType === null) return fail(`Forbidden — no access to ${q.filters.testType} attempts`, 403);
+  where.testType = testType;
   if (q.filters.status) where.status = q.filters.status;
   if (q.filters.attendanceId) where.attendanceId = q.filters.attendanceId;
   if (q.filters.traineeEmail) where.traineeEmail = q.filters.traineeEmail;
@@ -47,8 +51,8 @@ export const GET = withModuleAction("pre-test", "view", async ({ req }) => {
   return list(
     rows.map((a) => ({
       ...a,
-      questionSet: a.questionSet ? JSON.parse(a.questionSet) : [],
-      answers: a.answers ? JSON.parse(a.answers) : null,
+      questionSet: parseJsonColumn(a.questionSet, [], "examAttempt.questionSet"),
+      answers: parseJsonColumn(a.answers, null, "examAttempt.answers"),
     })),
     buildListMeta(total, q)
   );

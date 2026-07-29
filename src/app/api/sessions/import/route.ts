@@ -19,7 +19,7 @@ export const POST = withModuleAction("sessions", "create", async ({ req, user })
   const buffer = Buffer.from(await file.arrayBuffer());
   const workbook = new ExcelJS.Workbook();
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     await workbook.xlsx.load(buffer as any);
   } catch {
     return fail("Could not read the uploaded file — expected a .xlsx spreadsheet", 422, "VALIDATION_ERROR");

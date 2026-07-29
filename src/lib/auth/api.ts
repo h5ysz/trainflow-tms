@@ -141,10 +141,65 @@ export async function requireModuleAction(
 // Standard error class
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  code?: string;
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
   }
+}
+
+// ─── Error translation ───────────────────────────────────────────────────────
+// Uncaught Prisma errors used to escape as framework 500s with a non-JSON body, so
+// the client's `res.json()` failed and the user saw the useless string
+// "Invalid JSON response" instead of what actually went wrong.
+//
+// P2002 is the common one: several routes check uniqueness with `deletedAt: null`
+// while the DB constraint is global, so re-creating a soft-deleted email, course code
+// or national ID passes the app check and then violates the index.
+
+type PrismaKnownError = { code?: unknown; meta?: { target?: unknown } };
+
+function prismaErrorToApiError(e: unknown): ApiError | null {
+  const err = e as PrismaKnownError;
+  if (typeof err?.code !== "string") return null;
+
+  const rawTarget = err.meta?.target;
+  const fields = Array.isArray(rawTarget)
+    ? rawTarget.filter((f): f is string => typeof f === "string")
+    : typeof rawTarget === "string"
+      ? [rawTarget]
+      : [];
+  const fieldList = fields.length > 0 ? fields.join(", ") : "value";
+
+  switch (err.code) {
+    case "P2002":
+      return new ApiError(
+        409,
+        `A record with this ${fieldList} already exists. Note that soft-deleted records still hold their unique values.`,
+        "DUPLICATE"
+      );
+    case "P2003":
+      return new ApiError(409, `Related record not found or still referenced (${fieldList})`, "FOREIGN_KEY");
+    case "P2025":
+      return new ApiError(404, "Record not found", "NOT_FOUND");
+    default:
+      return null;
+  }
+}
+
+// Converts any thrown error into the standard envelope. Used by every wrapper below
+// so no handler can leak a raw framework 500.
+export function errorToResponse(e: unknown): Response {
+  if (e instanceof ApiError) {
+    return fail(e.message, e.status, e.code);
+  }
+  const prismaError = prismaErrorToApiError(e);
+  if (prismaError) {
+    return fail(prismaError.message, prismaError.status, prismaError.code);
+  }
+  console.error("[API Error]", e);
+  return fail("Internal server error", 500);
 }
 
 // Re-export response helpers for convenience
@@ -194,11 +249,7 @@ export function withAuth<T>(handler: Handler<T>) {
       const result = await handler({ user, req, params });
       return result as unknown as Response;
     } catch (e) {
-      if (e instanceof ApiError) {
-        return fail(e.message, e.status);
-      }
-      console.error("[API Error]", e);
-      return fail("Internal server error", 500);
+      return errorToResponse(e);
     }
   };
 }
@@ -214,11 +265,109 @@ export function withModuleAction<T>(module: RouteKey, action: Action, handler: H
       const result = await handler({ user, req, params });
       return result as unknown as Response;
     } catch (e) {
-      if (e instanceof ApiError) {
-        return fail(e.message, e.status);
+      return errorToResponse(e);
+    }
+  };
+}
+
+// Wraps a raw Next route handler so anything it throws still comes back as the
+// standard `{ success: false, error }` envelope. The hand-rolled admin routes have no
+// try/catch of their own, so a Prisma error there produced a framework 500 with an
+// HTML body and the client reported "Invalid JSON response".
+export function withErrorEnvelope<Args extends unknown[]>(
+  handler: (...args: Args) => Promise<Response>
+): (...args: Args) => Promise<Response> {
+  return async (...args: Args) => {
+    try {
+      return await handler(...args);
+    } catch (e) {
+      return errorToResponse(e);
+    }
+  };
+}
+
+// Wraps a role-gated handler. Same shape as withModuleAction, for the admin routes
+// (users, roles, settings, login-history) that authorize on the fixed role enum.
+export function withRole<T>(roles: UserRole[], handler: Handler<T>) {
+  return async (
+    req: Request,
+    ctx: { params?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined> } = {}
+  ) => {
+    try {
+      const user = await requireRole(...roles);
+      const params = (ctx.params instanceof Promise ? await ctx.params : ctx.params) ?? {};
+      const result = await handler({ user, req, params });
+      return result as unknown as Response;
+    } catch (e) {
+      return errorToResponse(e);
+    }
+  };
+}
+
+// ─── Assessment routes ───────────────────────────────────────────────────────
+// Questions, test results and exam attempts all serve two modules: `pre-test` and
+// `final-test`. They used to be hardcoded to `pre-test`, so a role granted only
+// `final-test.*` could see the Final Test page (which authorizes client-side against
+// `final-test`) but got 403 on every request it made.
+//
+// The guard below admits a caller holding the action on *either* module and tells the
+// handler which test types they may touch, so the route can scope its query and reject
+// a record of the wrong type.
+
+export type TestType = "PRE_TEST" | "FINAL_TEST";
+
+export const TEST_TYPE_MODULE: Record<TestType, RouteKey> = {
+  PRE_TEST: "pre-test",
+  FINAL_TEST: "final-test",
+};
+
+export function allowedTestTypesFor(user: AuthUser, action: Action): TestType[] {
+  return (Object.keys(TEST_TYPE_MODULE) as TestType[]).filter((testType) => {
+    // Not named `module`: that identifier is reserved in this module scope by the
+    // bundler's CommonJS interop.
+    const routeKey = TEST_TYPE_MODULE[testType];
+    return (
+      canAccessModule(user.permissions, routeKey) &&
+      canPerformAction(user.permissions, routeKey, action)
+    );
+  });
+}
+
+// Builds the `testType` clause for an assessment list query. Returns null when the
+// caller explicitly asked for a test type they may not see, so the route can 403
+// rather than silently returning the other type's rows.
+export function testTypeWhere(
+  requested: string | undefined,
+  allowed: TestType[]
+): string | { in: TestType[] } | null {
+  if (!requested) return { in: allowed };
+  if (!allowed.includes(requested as TestType)) return null;
+  return requested;
+}
+
+type ExamHandler<T> = (ctx: {
+  user: AuthUser;
+  req: Request;
+  params: Record<string, string | string[] | undefined>;
+  allowedTestTypes: TestType[];
+}) => Promise<T>;
+
+export function withExamAction<T>(action: Action, handler: ExamHandler<T>) {
+  return async (
+    req: Request,
+    ctx: { params?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined> } = {}
+  ) => {
+    try {
+      const user = await requireAuth();
+      const allowedTestTypes = allowedTestTypesFor(user, action);
+      if (allowedTestTypes.length === 0) {
+        throw new ApiError(403, `Forbidden — cannot ${action} on pre-test or final-test`);
       }
-      console.error("[API Error]", e);
-      return fail("Internal server error", 500);
+      const params = (ctx.params instanceof Promise ? await ctx.params : ctx.params) ?? {};
+      const result = await handler({ user, req, params, allowedTestTypes });
+      return result as unknown as Response;
+    } catch (e) {
+      return errorToResponse(e);
     }
   };
 }

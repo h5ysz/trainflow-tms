@@ -2,18 +2,27 @@
 // Sprint 2 KPIs: pending/under-review/approved requests, scheduled sessions,
 // today's sessions, available trainers, trainer conflicts, companies, trainees
 import { db } from "@/lib/db";
-import { getCurrentUser, ok, fail } from "@/lib/auth/api";
+import { withModuleAction, ok } from "@/lib/auth/api";
 
-export async function GET() {
-  const user = await getCurrentUser();
-  if (!user) return fail("Unauthorized", 401);
-
+export const GET = withModuleAction("dashboard", "view", async ({ user }) => {
   const notDeleted = { deletedAt: null };
-  const companyFilter = user.role === "CONTRACTOR" && user.companyId
-    ? { companyId: user.companyId }
+
+  // A contractor may only see their own company's activity. Certificates, trainees
+  // and requests carry companyId directly; sessions don't, so they are scoped
+  // through the originating request or an enrolment belonging to the company.
+  const isContractor = user.role === "CONTRACTOR";
+  // A contractor with no company assigned must see nothing, not everything: this
+  // sentinel cannot match any uuid, so their scope is empty rather than absent.
+  const scopedCompanyId = user.companyId ?? "__no_company__";
+  const companyFilter = isContractor ? { companyId: scopedCompanyId } : {};
+  const sessionScope = isContractor
+    ? {
+        OR: [
+          { request: { companyId: scopedCompanyId } },
+          { enrollments: { some: { companyId: scopedCompanyId, deletedAt: null } } },
+        ],
+      }
     : {};
-  // Coordinator and Trainer have equivalent operational permissions — no trainer scoping
-  const trainerFilter = {};
 
   // ─── KPI counts (parallel for performance) ───────────────────────────
   const [
@@ -35,17 +44,17 @@ export async function GET() {
     sessionsThisYear,
     certsThisYear,
   ] = await Promise.all([
-    db.trainingSession.count({ where: { ...notDeleted, ...trainerFilter } }),
+    db.trainingSession.count({ where: { ...notDeleted, ...sessionScope } }),
     db.attendance.groupBy({
       by: ["traineeEmail"],
-      where: { deletedAt: null, session: { ...notDeleted, ...trainerFilter } },
+      where: { deletedAt: null, session: { ...notDeleted, ...sessionScope } },
     }).then((r) => r.length),
     // pendingRequests = DRAFT + SUBMITTED
     db.trainingRequest.count({
       where: {
         deletedAt: null,
         status: { in: ["DRAFT", "SUBMITTED"] },
-        ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+        ...companyFilter,
       },
     }),
     // underReviewRequests = UNDER_REVIEW
@@ -53,7 +62,7 @@ export async function GET() {
       where: {
         deletedAt: null,
         status: "UNDER_REVIEW",
-        ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+        ...companyFilter,
       },
     }),
     // approvedRequests = APPROVED (ready for scheduling)
@@ -61,18 +70,18 @@ export async function GET() {
       where: {
         deletedAt: null,
         status: "APPROVED",
-        ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+        ...companyFilter,
       },
     }),
     // scheduledSessions
     db.trainingSession.count({
-      where: { ...notDeleted, status: "SCHEDULED", ...trainerFilter },
+      where: { ...notDeleted, status: "SCHEDULED", ...sessionScope },
     }),
     // todaySessions — sessions starting today
     db.trainingSession.count({
       where: {
         ...notDeleted,
-        ...trainerFilter,
+        ...sessionScope,
         startDate: {
           gte: new Date(new Date().setHours(0, 0, 0, 0)),
           lt: new Date(new Date().setHours(23, 59, 59, 999)),
@@ -88,9 +97,12 @@ export async function GET() {
         validUntil: { gte: new Date(), lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
       },
     }),
-    db.trainer.count({ where: { ...notDeleted, status: "ACTIVE" } }),
+    // Trainer and company totals are org-wide operational metrics. A contractor has
+    // no business seeing them, and they cannot be meaningfully scoped to one company,
+    // so they are withheld rather than leaked. The UI hides the cards when null.
+    isContractor ? null : db.trainer.count({ where: { ...notDeleted, status: "ACTIVE" } }),
     // availableTrainers = ACTIVE trainers with no sessions starting in next 7 days
-    (async () => {
+    isContractor ? null : (async () => {
       const now = new Date();
       const sevenDaysLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
       const busyTrainerIds = await db.trainingSession.findMany({
@@ -110,7 +122,7 @@ export async function GET() {
       return activeTrainersList.filter((t) => !busySet.has(t.id)).length;
     })(),
     // trainerConflicts — count of overlapping session pairs per trainer
-    (async () => {
+    isContractor ? null : (async () => {
       // Get all scheduled/in-progress sessions with trainer assigned
       const sessions = await db.trainingSession.findMany({
         where: {
@@ -142,20 +154,20 @@ export async function GET() {
       return conflictPairs;
     })(),
     // companiesCount
-    db.company.count({ where: notDeleted }),
+    isContractor ? null : db.company.count({ where: notDeleted }),
     // traineesCount
     db.trainee.count({
       where: {
         ...notDeleted,
-        ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+        ...companyFilter,
       },
     }),
-    db.trainingSession.count({ where: { ...notDeleted, status: "COMPLETED", ...trainerFilter } }),
+    db.trainingSession.count({ where: { ...notDeleted, status: "COMPLETED", ...sessionScope } }),
     db.trainingSession.count({
       where: {
         ...notDeleted,
         startDate: { gte: new Date(new Date().getFullYear(), 0, 1) },
-        ...trainerFilter,
+        ...sessionScope,
       },
     }),
     db.certificate.count({
@@ -175,7 +187,7 @@ export async function GET() {
   twelveMonthsAgo.setHours(0, 0, 0, 0);
 
   const sessionsByMonthRaw = await db.trainingSession.findMany({
-    where: { deletedAt: null, startDate: { gte: twelveMonthsAgo }, ...trainerFilter },
+    where: { deletedAt: null, startDate: { gte: twelveMonthsAgo }, ...sessionScope },
     select: { startDate: true, status: true },
   });
 
@@ -193,17 +205,17 @@ export async function GET() {
 
   // Requests by status (new workflow states)
   const requestStatuses = ["DRAFT", "SUBMITTED", "UNDER_REVIEW", "APPROVED", "SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED", "REJECTED"];
-  const requestsByStatus: { status: string; count: number }[] = [];
-  for (const status of requestStatuses) {
-    const count = await db.trainingRequest.count({
-      where: {
-        deletedAt: null,
-        status: status as any,
-        ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
-      },
-    });
-    requestsByStatus.push({ status, count });
-  }
+  // One grouped query rather than nine sequential counts.
+  const statusGroups = await db.trainingRequest.groupBy({
+    by: ["status"],
+    where: { deletedAt: null, ...companyFilter },
+    _count: { _all: true },
+  });
+  const statusCounts = new Map<string, number>(statusGroups.map((g) => [g.status as string, g._count._all]));
+  const requestsByStatus = requestStatuses.map((status) => ({
+    status,
+    count: statusCounts.get(status) ?? 0,
+  }));
 
   // Certificates by course (top 5)
   const certsByCourseRaw = await db.certificate.groupBy({
@@ -238,7 +250,7 @@ export async function GET() {
       deletedAt: null,
       startDate: { gte: new Date() },
       status: "SCHEDULED",
-      ...trainerFilter,
+      ...sessionScope,
     },
     include: {
       course: { select: { id: true, title: true, code: true, refNumber: true } },
@@ -312,4 +324,4 @@ export async function GET() {
       createdAt: a.createdAt,
     })),
   });
-}
+});
