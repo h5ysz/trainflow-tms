@@ -102,7 +102,8 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
         traineeEmail: trainee.traineeEmail,
         finalScore,
         validUntil,
-        status: "VALID",
+        // Sprint 6: bulk-generated certs also start in PENDING_APPROVAL
+        status: "PENDING_APPROVAL",
         verificationToken,
         createdBy: user.id,
         updatedBy: user.id,

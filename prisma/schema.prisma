@@ -471,10 +471,37 @@ model Course {
   questions       Question[]
   certificates    Certificate[]
   trainerCertifications TrainerCertification[]
+  resources       CourseResource[]
 
   @@index([status])
   @@index([category])
   @@index([tenantId])
+}
+
+// Sprint 6: Course Resources — external materials (PDF, PPT, URL, QR link)
+// GCCLAB does NOT store the actual content. Each resource is a pointer to
+// an external URL (PowerPoint file, PDF, external link) or a QR-code image
+// URL pointing to external content.
+model CourseResource {
+  id          String   @id @default(uuid())
+  courseId    String
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  type        String   // "PDF" | "POWERPOINT" | "URL" | "QR_CODE"
+  title       String
+  titleAr     String?
+  url         String   // external URL (or QR code image URL)
+  description String?
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  // Audit
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  deletedAt   DateTime?
+
+  @@index([courseId])
+  @@index([type])
 }
 
 // Question Bank — questions can be course-specific OR shared in the bank
@@ -986,7 +1013,17 @@ model Certificate {
   finalScore      Int
   issuedAt        DateTime @default(now())
   validUntil      DateTime
-  status          String   @default("VALID") // VALID | EXPIRED | REVOKED
+  // Sprint 6: extended lifecycle.
+  //   PENDING_APPROVAL → APPROVED → ISSUED → (REVOKED | EXPIRED)
+  // Legacy "VALID" maps to ISSUED for backward compat with seeded data.
+  status          String   @default("PENDING_APPROVAL") // PENDING_APPROVAL | APPROVED | ISSUED | VALID | EXPIRED | REVOKED
+  // Sprint 6: approval workflow fields
+  approvedAt      DateTime?
+  approvedBy      String?
+  rejectionReason String?
+  revokedAt       DateTime?
+  revokedBy       String?
+  revokedReason   String?
   pdfUrl          String?
   pdfGeneratedAt  DateTime?
   // QR verification

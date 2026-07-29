@@ -229,6 +229,44 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
     userId: user.id,
   });
 
+  // Sprint 6: also update Certificate.status from APPROVED → ISSUED
+  // (legacy VALID certs are also bumped to ISSUED for consistency)
+  if (cert.status === "APPROVED" || cert.status === "VALID" || cert.status === "PENDING_APPROVAL") {
+    await db.certificate.update({
+      where: { id: cert.id },
+      data: { status: "ISSUED", updatedBy: user.id },
+    });
+  }
+
+  // ── Sprint 6: Notify the company coordinator that the cert was issued ──
+  try {
+    const companyUsers = await db.user.findMany({
+      where: {
+        companyId: cert.companyId ?? undefined,
+        role: "CONTRACTOR", // company-side users (coordinator / company user)
+        deletedAt: null,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+    for (const cu of companyUsers) {
+      await db.notification.create({
+        data: {
+          userId: cu.id,
+          title: "Certificate Issued",
+          titleAr: "تم إصدار الشهادة",
+          message: `Certificate ${cert.refNumber} for ${cert.traineeName} has been issued and is ready for download.`,
+          messageAr: `تم إصدار شهادة ${cert.refNumber} لـ ${cert.traineeName} وهي جاهزة للتحميل.`,
+          type: "SUCCESS",
+          category: "CERTIFICATE",
+          link: `/certificates`,
+        },
+      });
+    }
+  } catch {
+    // notification failure shouldn't block PDF generation
+  }
+
   // Audit
   await recordAudit({
     userId: user.id,

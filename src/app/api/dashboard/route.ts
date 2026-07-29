@@ -179,7 +179,68 @@ export const GET = withModuleAction("dashboard", "view", async ({ user }) => {
     }),
   ]);
 
-  // ─── Charts ──────────────────────────────────────────────────────────
+  // ─── Sprint 6: Training Execution + Certification workflow KPIs ───────
+  const [
+    registeredTrainees,        // total SessionEnrollments (registered)
+    checkedInTrainees,         // SessionEnrollments with attendanceStatus in PRESENT/LATE
+    preTestCompleted,          // SessionEnrollments with preTestStatus = COMPLETED
+    trainingInProgress,        // SessionEnrollments with enrollmentStatus = TRAINING
+    finalTestPassed,           // SessionEnrollments with finalTestStatus = PASSED
+    evaluationCompleted,       // SessionEnrollments with evaluationStatus = COMPLETED
+    certificatesPendingApproval, // Certificate.status = PENDING_APPROVAL
+    certificatesIssued,        // Certificate.status = ISSUED (new workflow) + legacy VALID
+  ] = await Promise.all([
+    db.sessionEnrollment.count({ where: { deletedAt: null, ...companyFilter } }),
+    db.sessionEnrollment.count({
+      where: {
+        deletedAt: null,
+        attendanceStatus: { in: ["PRESENT", "LATE"] },
+        ...companyFilter,
+      },
+    }),
+    db.sessionEnrollment.count({
+      where: {
+        deletedAt: null,
+        preTestStatus: "COMPLETED",
+        ...companyFilter,
+      },
+    }),
+    db.sessionEnrollment.count({
+      where: {
+        deletedAt: null,
+        enrollmentStatus: "TRAINING",
+        ...companyFilter,
+      },
+    }),
+    db.sessionEnrollment.count({
+      where: {
+        deletedAt: null,
+        finalTestStatus: "PASSED",
+        ...companyFilter,
+      },
+    }),
+    db.sessionEnrollment.count({
+      where: {
+        deletedAt: null,
+        evaluationStatus: "COMPLETED",
+        ...companyFilter,
+      },
+    }),
+    db.certificate.count({
+      where: {
+        deletedAt: null,
+        status: "PENDING_APPROVAL",
+        ...companyFilter,
+      },
+    }),
+    db.certificate.count({
+      where: {
+        deletedAt: null,
+        status: { in: ["ISSUED", "VALID"] },
+        ...companyFilter,
+      },
+    }),
+  ]);
   // Sessions by month (last 12 months)
   const twelveMonthsAgo = new Date();
   twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 11);
@@ -293,6 +354,16 @@ export const GET = withModuleAction("dashboard", "view", async ({ user }) => {
       activeTrainers,
       completionRate,
       avgScore,
+
+      // Sprint 6: Training Execution + Certification workflow KPIs
+      registeredTrainees,
+      checkedInTrainees,
+      preTestCompleted,
+      trainingInProgress,
+      finalTestPassed,
+      evaluationCompleted,
+      certificatesPendingApproval,
+      certificatesIssued,
     },
     charts: {
       sessionsByMonth,
