@@ -35,7 +35,8 @@ export type RouteKey =
   | "user-management"
   | "roles"
   | "worker-passports"
-  | "compliance-matrix";
+  | "compliance-matrix"
+  | "executive-dashboard";
 
 export type Action = "view" | "create" | "edit" | "delete";
 
@@ -55,7 +56,7 @@ export const ALL_MODULES: RouteKey[] = [
   "trainees", "courses", "requests", "sessions", "scheduling", "attendance", "qr-code",
   "pre-test", "final-test", "evaluation", "certificates", "reports", "report-schedules",
   "notifications", "audit-log", "settings", "user-approvals", "user-management", "roles",
-  "worker-passports", "compliance-matrix",
+  "worker-passports", "compliance-matrix", "executive-dashboard",
 ];
 
 // Module visibility per role
@@ -97,6 +98,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "roles",
     "worker-passports",
     "compliance-matrix",
+    "executive-dashboard",
   ],
   // Coordinator and Trainer share the SAME operational modules
   COORDINATOR: [
@@ -126,6 +128,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "user-approvals",
     "worker-passports",
     "compliance-matrix",
+    "executive-dashboard",
   ],
   TRAINER: [
     "dashboard",
@@ -152,6 +155,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "user-approvals",
     "worker-passports",
     "compliance-matrix",
+    "executive-dashboard",
   ],
   VIEWER: [
     "dashboard",
@@ -337,6 +341,7 @@ export const navItems: NavItem[] = [
   { key: "roles", labelKey: "nav.roles", icon: "ShieldCheck", group: "system" },
   { key: "worker-passports", labelKey: "nav.workerPassports", icon: "BookUser", group: "system" },
   { key: "compliance-matrix", labelKey: "nav.complianceMatrix", icon: "ClipboardCheck", group: "system" },
+  { key: "executive-dashboard", labelKey: "nav.executiveDashboard", icon: "TrendingUp", group: "system" },
   { key: "settings", labelKey: "nav.settings", icon: "Settings", group: "system" },
 ];
 
