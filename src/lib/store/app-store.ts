@@ -6,7 +6,7 @@ import type { Locale } from "@/lib/i18n/translations";
 import type { RouteKey } from "@/lib/auth/permissions";
 import { authApi, ApiError, setUnauthorizedHandler, type AuthUser } from "@/lib/api/client";
 
-interface AppState {
+export interface AppState {
   // Auth
   user: AuthUser | null;
   isAuthenticated: boolean;
@@ -129,6 +129,26 @@ export const useAppStore = create<AppState>()(
         // Persisted so a refresh on a detail route keeps its subject.
         routeParam: state.routeParam,
       }),
+      // Silently accept any persisted state from older store versions.
+      // Without this, Zustand logs: "State loaded from storage couldn't be
+      // migrated since no migrate function was provided" — harmless but noisy.
+      migrate: () => ({}) as Partial<AppState>,
+      // Drop any persisted state that doesn't match the current store shape
+      // (prevents stale fields like old theme/route from leaking in after
+      // schema changes between releases).
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<AppState>;
+        return {
+          ...current,
+          ...p,
+          // Always re-validate auth on hydration — never trust persisted
+          // user/session across reloads (token may have expired server-side).
+          user: null,
+          isAuthenticated: false,
+          authLoading: false,
+          authError: null,
+        };
+      },
     }
   )
 );
