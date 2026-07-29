@@ -279,6 +279,7 @@ model Company {
   examAttempts       ExamAttempt[]
   testResults        TestResult[]
   courseEvaluations  CourseEvaluation[]
+  workerPassports    WorkerPassport[]
 
   @@index([status])
   @@index([tenantId])
@@ -471,6 +472,7 @@ model Course {
   questions       Question[]
   certificates    Certificate[]
   trainerCertifications TrainerCertification[]
+  complianceRules ComplianceRule[]
 
   @@index([status])
   @@index([category])
@@ -1002,6 +1004,8 @@ model Certificate {
   deletedAt       DateTime?
 
   verifications   CertificateVerification[]
+  workerPassport  WorkerPassport? @relation("WorkerPassportCertificates", fields: [workerPassportId], references: [id], onDelete: SetNull)
+  workerPassportId String?
 
   @@index([sessionId])
   @@index([companyId])
@@ -1023,6 +1027,101 @@ model CertificateVerification {
 
   @@index([certificateId])
   @@index([verifiedAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WORKER TRAINING PASSPORT & COMPLIANCE MATRIX (Sprint 6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// One permanent digital passport per worker, keyed by National ID / Iqama.
+// Auto-generated when a certificate is first issued to a trainee whose
+// nationalId isn't yet linked to a passport. The worker does NOT create or
+// edit the passport — it is purely system-managed.
+model WorkerPassport {
+  id              String   @id @default(uuid())
+  passportNumber  String   @unique // WP-YYYY-NNNNNN
+  nationalId      String   @unique // National ID or Iqama (unique key)
+  fullName        String
+  companyId       String?
+  company         Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  jobTitle        String?
+  mobile          String?
+  email           String?
+  // QR code — separate from certificate QR. Points to /worker/{qrToken}
+  qrToken         String   @unique @default(uuid())
+  qrCodeUrl       String?
+  // Audit
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+
+  // Relations
+  certificates    Certificate[] @relation("WorkerPassportCertificates")
+
+  @@index([nationalId])
+  @@index([companyId])
+  @@index([qrToken])
+  @@index([passportNumber])
+}
+
+// Compliance Rule — admin-configurable mandatory course requirements.
+// Each rule maps a Course to a scope (All Workers / Company / Job Title / Project / Client).
+model ComplianceRule {
+  id              String   @id @default(uuid())
+  courseId        String
+  course          Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  isMandatory     Boolean  @default(true) // mandatory vs. recommended
+  isCoreMandatory Boolean  @default(false) // OHS/Fire Safety/First Aid — only SUPER_ADMIN can disable
+  validityMonths  Int      @default(24) // override course.validityMonths if set
+  // Scope: who does this rule apply to?
+  scopeType       String   @default("ALL") // ALL | COMPANY | JOB_TITLE | PROJECT | CLIENT
+  scopeValue      String?  // company ID, job title string, project name, or client name
+  scopeLabel      String?  // human-readable: "Acme Co." or "Electrician" or "Project X"
+  isActive        Boolean  @default(true)
+  // Audit
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+
+  versions        ComplianceRuleVersion[]
+
+  @@index([courseId])
+  @@index([scopeType])
+  @@index([isActive])
+  @@index([scopeType, scopeValue])
+}
+
+// Immutable audit trail for every compliance rule change.
+// Never deleted — full history of who changed what, when, and why.
+model ComplianceRuleVersion {
+  id              String   @id @default(uuid())
+  ruleId          String
+  rule            ComplianceRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  version         Int      @default(1)
+  // Snapshot of the rule at this version
+  courseId        String
+  isMandatory     Boolean
+  isCoreMandatory Boolean
+  validityMonths  Int
+  scopeType       String
+  scopeValue      String?
+  scopeLabel      String?
+  isActive        Boolean
+  // Change metadata
+  changedBy       String
+  changedAt       DateTime @default(now())
+  changeType      String   // CREATE | UPDATE | ACTIVATE | DEACTIVATE
+  reason          String?  // optional reason for the change
+  // Before/after diff (JSON)
+  previousValues  String?  // JSON string of previous field values
+
+  @@index([ruleId])
+  @@index([changedAt])
+  @@index([changeType])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

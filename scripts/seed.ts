@@ -13,6 +13,7 @@
 
 import { db } from "../src/lib/db";
 import { hashPassword } from "../src/lib/auth/jwt";
+import { nextRefNumber } from "../src/lib/api/ref-number";
 import type { UserRole } from "../src/lib/auth/permissions";
 
 async function main() {
@@ -300,6 +301,80 @@ async function main() {
   console.log(`   - Settings: ${defaultSettings.length}`);
   console.log(`   - Report Schedules: ${defaultSchedules.length}`);
   console.log(`   - Super Admin: 1 (no other business data seeded)`);
+
+  // ─── Sprint 6: Core Mandatory Courses + Compliance Rules ────────────
+  // These three courses are ALWAYS mandatory by default:
+  //   OHS Orientation, Fire Safety, First Aid
+  // Only SUPER_ADMIN can disable them.
+  const coreMandatoryCourses = [
+    { code: "OHS-001", title: "OHS Orientation", titleAr: "التوجيه المهني للسلامة", validityMonths: 24, durationHours: 4 },
+    { code: "FIRE-001", title: "Fire Safety", titleAr: "سلامة الإطفاء", validityMonths: 24, durationHours: 4 },
+    { code: "FA-001", title: "First Aid", titleAr: "الإسعافات الأولية", validityMonths: 24, durationHours: 8 },
+  ];
+
+  let coreCourseCount = 0;
+  let coreRuleCount = 0;
+  for (const cmc of coreMandatoryCourses) {
+    // Create the course if it doesn't exist
+    let course = await db.course.findUnique({ where: { code: cmc.code } });
+    if (!course) {
+      const courseRef = await nextRefNumber("COURSE");
+      course = await db.course.create({
+        data: {
+          refNumber: courseRef,
+          code: cmc.code,
+          title: cmc.title,
+          titleAr: cmc.titleAr,
+          validityMonths: cmc.validityMonths,
+          durationHours: cmc.durationHours,
+          passScore: 70,
+          status: "ACTIVE",
+          hasPreTest: true,
+          hasFinalTest: true,
+          hasEvaluation: true,
+        },
+      });
+      coreCourseCount++;
+    }
+
+    // Create the core mandatory compliance rule if it doesn't exist
+    const existingRule = await db.complianceRule.findFirst({
+      where: { courseId: course.id, scopeType: "ALL", deletedAt: null },
+    });
+    if (!existingRule) {
+      const rule = await db.complianceRule.create({
+        data: {
+          courseId: course.id,
+          isMandatory: true,
+          isCoreMandatory: true,
+          validityMonths: cmc.validityMonths,
+          scopeType: "ALL",
+          isActive: true,
+        },
+      });
+      // Record initial version
+      await db.complianceRuleVersion.create({
+        data: {
+          rule: { connect: { id: rule.id } },
+          version: 1,
+          courseId: course.id,
+          isMandatory: true,
+          isCoreMandatory: true,
+          validityMonths: cmc.validityMonths,
+          scopeType: "ALL",
+          scopeValue: null,
+          scopeLabel: null,
+          isActive: true,
+          changedBy: existingAdmin?.id ?? "seed",
+          changeType: "CREATE",
+          reason: "Core mandatory course — auto-seeded",
+        },
+      });
+      coreRuleCount++;
+    }
+  }
+  console.log(`   - Core Mandatory Courses: ${coreCourseCount} created (${coreMandatoryCourses.length} total)`);
+  console.log(`   - Core Compliance Rules: ${coreRuleCount} created`);
 }
 
 main()

@@ -24,7 +24,8 @@ export type RefEntityType =
   | "COMPANY"
   | "COURSE"
   | "SESSION"
-  | "TRAINEE";
+  | "TRAINEE"
+  | "WORKER_PASSPORT";
 
 const PREFIX: Record<RefEntityType, string> = {
   TRAINING_REQUEST: "TR",
@@ -35,12 +36,14 @@ const PREFIX: Record<RefEntityType, string> = {
   COURSE: "CRS",
   SESSION: "SES",
   TRAINEE: "TRA",
+  WORKER_PASSPORT: "WP",
 };
 
 const YEARLY: Set<RefEntityType> = new Set([
   "TRAINING_REQUEST",
   "CERTIFICATE",
   "EXAM",
+  "WORKER_PASSPORT",
 ]);
 
 function pad(n: number, width = 6): string {
