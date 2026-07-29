@@ -186,7 +186,9 @@ export const POST = withModuleAction("certificates", "create", async ({ req, use
       traineeEmail: traineeEmail ?? null,
       finalScore,
       validUntil,
-      status: "VALID",
+      // Sprint 6: certificates start in PENDING_APPROVAL — coordinator must approve
+      // before the trainee can download. Backward compat: legacy "VALID" maps to ISSUED.
+      status: "PENDING_APPROVAL",
       verificationToken,
       createdBy: user.id,
       updatedBy: user.id,
@@ -210,6 +212,34 @@ export const POST = withModuleAction("certificates", "create", async ({ req, use
     status: "GENERATED",
     userId: user.id,
   });
+
+  // ── Sprint 6: Notify all coordinators that a certificate is waiting for approval ──
+  try {
+    const coordinators = await db.user.findMany({
+      where: {
+        role: "COORDINATOR",
+        deletedAt: null,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+    for (const coord of coordinators) {
+      await db.notification.create({
+        data: {
+          userId: coord.id,
+          title: "Certificate Waiting for Approval",
+          titleAr: "شهادة بانتظار الاعتماد",
+          message: `Certificate ${cert.refNumber} for ${traineeName} (score: ${finalScore}%) is ready for your review.`,
+          messageAr: `شهادة ${cert.refNumber} لـ ${traineeName} (النتيجة: ${finalScore}%) بانتظار مراجعتك.`,
+          type: "INFO",
+          category: "CERTIFICATE",
+          link: `/certificates`,
+        },
+      });
+    }
+  } catch {
+    // notification failure shouldn't block the certificate creation
+  }
 
   // Audit: CERTIFICATE_GENERATE
   await audit({
