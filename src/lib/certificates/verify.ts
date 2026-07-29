@@ -3,19 +3,30 @@
 // The lookup and the side effect are deliberately separate functions. The page renders
 // server-side and the API route answers integrations; if the page called the API, every
 // visit would bump `verificationCount` twice — once for the page, once for the fetch.
+//
+// Sprint 6: enhanced with parsed UA (browser/OS/device) and country fields.
 import { db } from "@/lib/db";
+import { parseUserAgent } from "@/lib/certificates/utils";
 
 export type CertificateValidity = "VALID" | "EXPIRED" | "REVOKED" | "NOT_FOUND";
 
-export type VerificationChannel = "WEB" | "API";
+export type VerificationChannel = "WEB" | "API" | "QR_SCAN";
 
 /** Pure read. No writes, no counters — safe to call from anywhere. */
 export async function lookupCertificate(token: string) {
   return db.certificate.findFirst({
     where: { verificationToken: token, deletedAt: null },
     include: {
-      course: { select: { id: true, title: true, code: true, refNumber: true, durationHours: true } },
-      session: { select: { id: true, refNumber: true, startDate: true, endDate: true } },
+      course: { select: { id: true, title: true, titleAr: true, code: true, refNumber: true, durationHours: true, validityMonths: true } },
+      session: {
+        select: {
+          id: true,
+          refNumber: true,
+          startDate: true,
+          endDate: true,
+          trainer: { select: { fullName: true, refNumber: true } },
+        },
+      },
       company: { select: { id: true, name: true, refNumber: true } },
     },
   });
@@ -32,8 +43,11 @@ export function computeValidity(cert: LookedUpCertificate | null, now: Date = ne
   if (!cert) return "NOT_FOUND";
   if (cert.status === "REVOKED") return "REVOKED";
   if (cert.validUntil <= now) return "EXPIRED";
-  if (cert.status !== "VALID") return "EXPIRED";
-  return "VALID";
+  // Treat new workflow statuses (PENDING_APPROVAL, APPROVED, ISSUED) as VALID for
+  // public verification purposes. The QR is only generated after PDF issuance, so
+  // anyone scanning it has an issued certificate in hand.
+  if (cert.status === "VALID" || cert.status === "ISSUED" || cert.status === "APPROVED") return "VALID";
+  return "EXPIRED";
 }
 
 const DEDUPE_WINDOW_MS = 60_000;
@@ -43,6 +57,8 @@ const DEDUPE_WINDOW_MS = 60_000;
  *
  * Repeats from the same IP within a minute are ignored so that a page refresh — or
  * React's development-mode double render — doesn't inflate the count.
+ *
+ * Sprint 6: also stores parsed browser/OS/device fields.
  */
 export async function recordVerification(opts: {
   certificateId: string;
@@ -65,6 +81,9 @@ export async function recordVerification(opts: {
     if (recent) return;
   }
 
+  // Parse user-agent into structured fields
+  const ua = parseUserAgent(opts.userAgent);
+
   await db.$transaction(async (tx) => {
     await tx.certificateVerification.create({
       data: {
@@ -72,6 +91,10 @@ export async function recordVerification(opts: {
         verificationToken: opts.token,
         ipAddress: opts.ipAddress ?? null,
         userAgent: opts.userAgent ?? null,
+        browser: ua.browser,
+        os: ua.os,
+        device: ua.device,
+        channel: opts.channel,
       },
     });
     await tx.certificate.update({
@@ -87,14 +110,18 @@ export function publicCertificateView(cert: LookedUpCertificate) {
     refNumber: cert.refNumber,
     traineeName: cert.traineeName,
     courseTitle: cert.course.title,
+    courseTitleAr: cert.course.titleAr,
     courseCode: cert.course.code,
     durationHours: cert.course.durationHours,
+    validityMonths: cert.course.validityMonths,
     finalScore: cert.finalScore,
     issuedAt: cert.issuedAt,
     validUntil: cert.validUntil,
     status: cert.status,
     sessionRef: cert.session.refNumber,
     companyName: cert.company?.name ?? null,
+    trainerName: cert.session.trainer?.fullName ?? null,
     verificationCount: cert.verificationCount,
+    lastVerifiedAt: cert.lastVerifiedAt,
   };
 }

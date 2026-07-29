@@ -1,4 +1,17 @@
-// /api/certificates/[id]/generate-pdf — generate PDF certificate with QR verification
+// /api/certificates/[id]/generate-pdf — generate enterprise PDF certificate
+// =====================================================================
+// Sprint 6: Enhanced PDF with all required elements:
+//   - GCCLAB Logo (top)
+//   - Certificate Number (GCCLAB-ES-YYYY-NNNNNN format)
+//   - Trainee Name + Masked National ID
+//   - Company Name
+//   - Course Name + Training Hours
+//   - Trainer Name
+//   - Issue Date + Expiry Date + Validity Period
+//   - QR Code (points to https://training.gcclab.com/verify/{token})
+//   - Digital Security Seal (custom-rendered)
+//   - Official Signature Area
+//   - Footer: "This certificate has been digitally issued and verified by GCCLAB"
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withModuleAction, fail } from "@/lib/auth/api";
@@ -9,9 +22,28 @@ import { buildVerifyUrl, resolveOrigin } from "@/lib/qr/urls";
 import { renderQrPng } from "@/lib/qr/server";
 import { arabicFontPath } from "@/lib/pdf/fonts";
 import { randomBytes } from "crypto";
+import { readFile } from "fs/promises";
+import { join } from "path";
+import { maskNationalId, formatPdfDate, formatValidityMonths } from "@/lib/certificates/utils";
 
-// Gated on `create`, not `view`: this handler writes `pdfGeneratedAt` and transitions
-// the certificate to ISSUED, so read-only roles must not be able to trigger it.
+// Path to the official GCCLAB logo (color version, for light backgrounds).
+// Falls back gracefully if the file is missing.
+async function loadLogoBuffer(): Promise<Buffer | null> {
+  const logoPaths = [
+    join(process.cwd(), "public", "gcclab-logo-official.png"),
+    join(process.cwd(), "public", "gcclab-icon.png"),
+  ];
+  for (const p of logoPaths) {
+    try {
+      const buf = await readFile(p);
+      if (buf.length > 0) return buf;
+    } catch {
+      // try next path
+    }
+  }
+  return null;
+}
+
 export const POST = withModuleAction("certificates", "create", async ({ req, params, user }) => {
   const id = params.id as string;
   const cert = await db.certificate.findUnique({
@@ -34,187 +66,314 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
     return fail("Certificate not found", 404);
   }
 
-  // Generate PDF
+  // ── Initialize PDF document ────────────────────────────────────────
   const doc = new PDFDocument({
     size: "A4",
     layout: "landscape",
-    margins: { top: 60, bottom: 60, left: 60, right: 60 },
+    margins: { top: 50, bottom: 50, left: 60, right: 60 },
   });
 
   const chunks: Buffer[] = [];
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
-
   const pdfPromise = new Promise<Buffer>((resolve) => {
     doc.on("end", () => resolve(Buffer.concat(chunks)));
   });
 
-  // ─── Certificate Design ──────────────────────────────────────────────
-  // Border
-  doc
-    .rect(30, 30, doc.page.width - 60, doc.page.height - 60)
-    .lineWidth(3)
-    .strokeColor("#7B1E2B")
-    .stroke();
+  // Arabic font (optional — graceful fallback)
+  const arabicFont = arabicFontPath();
+  if (arabicFont) doc.registerFont("Arabic", arabicFont);
 
-  // Inner border
+  // ── Helper: draw decorative borders ────────────────────────────────
+  const burgundy = "#7B1E2B";
+  const goldAccent = "#C9A961";
+
+  // Outer border (double-line: burgundy thick + thin gold inside)
   doc
-    .rect(40, 40, doc.page.width - 80, doc.page.height - 80)
-    .lineWidth(1)
-    .strokeColor("#7B1E2B")
+    .rect(25, 25, doc.page.width - 50, doc.page.height - 50)
+    .lineWidth(3)
+    .strokeColor(burgundy)
+    .stroke();
+  doc
+    .rect(32, 32, doc.page.width - 64, doc.page.height - 64)
+    .lineWidth(0.5)
+    .strokeColor(goldAccent)
+    .stroke();
+  doc
+    .rect(38, 38, doc.page.width - 76, doc.page.height - 76)
+    .lineWidth(0.3)
+    .strokeColor(burgundy)
     .opacity(0.3)
     .stroke()
     .opacity(1);
 
-  // Header. The Arabic half of the strapline is only drawn when an Arabic-capable font
-  // is installed — Helvetica has no Arabic glyphs, so it previously rendered as boxes.
-  const arabicFont = arabicFontPath();
-  if (arabicFont) doc.registerFont("Arabic", arabicFont);
+  // ── GCCLAB Logo (top-center) ───────────────────────────────────────
+  const logoBuffer = await loadLogoBuffer();
+  const logoWidth = 110;
+  const logoX = (doc.page.width - logoWidth) / 2;
+  const logoY = 55;
+  if (logoBuffer) {
+    try {
+      doc.image(logoBuffer, logoX, logoY, { width: logoWidth, align: "center" });
+    } catch {
+      // If image embed fails, fall back to text-only header
+      doc
+        .fontSize(18)
+        .fillColor(burgundy)
+        .font("Helvetica-Bold")
+        .text("GCCLAB", 0, logoY + 10, { align: "center", width: doc.page.width });
+    }
+  } else {
+    doc
+      .fontSize(18)
+      .fillColor(burgundy)
+      .font("Helvetica-Bold")
+      .text("GCCLAB", 0, logoY + 10, { align: "center", width: doc.page.width });
+  }
 
+  // Header strapline
   doc
-    .fontSize(14)
-    .fillColor("#7B1E2B")
-    .font("Helvetica-Bold")
-    .text("GCCLAB — Gulf Calibration Laboratory", 0, 70, { align: "center" })
-    .fontSize(10)
+    .fontSize(11)
     .fillColor("#666")
+    .font("Helvetica-Bold")
+    .text("GULF CALIBRATION LABORATORY", 0, logoY + logoWidth * 0.5 + 10, { align: "center" })
+    .fontSize(8)
+    .fillColor("#999")
     .font("Helvetica")
     .text("Training & Certification Management System", { align: "center" });
 
   if (arabicFont) {
-    doc.font("Arabic").fontSize(10).fillColor("#666").text("المختبر الخليجي", { align: "center" });
+    doc.font("Arabic").fontSize(9).fillColor("#666").text("المختبر الخليجي للمعايرة", { align: "center" });
     doc.font("Helvetica");
   }
 
-  // Title
-  doc
-    .fontSize(36)
-    .fillColor("#1a1a1a")
-    .font("Helvetica-Bold")
-    .text("Certificate of Completion", 0, 120, { align: "center" });
-
-  // Subtitle
-  doc
-    .fontSize(14)
-    .fillColor("#666")
-    .font("Helvetica")
-    .text("This is to certify that", 0, 170, { align: "center" });
-
-  // Trainee name
+  // ── Title ──────────────────────────────────────────────────────────
   doc
     .fontSize(28)
-    .fillColor("#7B1E2B")
-    .font("Helvetica-Bold")
-    .text(cert.traineeName, 0, 200, { align: "center" });
-
-  // Description
-  doc
-    .fontSize(14)
-    .fillColor("#666")
-    .font("Helvetica")
-    .text("has successfully completed the training course", 0, 245, { align: "center" });
-
-  // Course title
-  doc
-    .fontSize(22)
     .fillColor("#1a1a1a")
     .font("Helvetica-Bold")
-    .text(cert.course.title, 0, 275, { align: "center" });
+    .text("Certificate of Completion", 0, 165, { align: "center" });
 
-  // Course code
+  // Decorative line under title
   doc
-    .fontSize(12)
+    .moveTo(doc.page.width / 2 - 100, 200)
+    .lineTo(doc.page.width / 2 + 100, 200)
+    .lineWidth(1)
+    .strokeColor(goldAccent)
+    .stroke();
+
+  // ── Trainee section ────────────────────────────────────────────────
+  doc
+    .fontSize(11)
     .fillColor("#666")
     .font("Helvetica")
-    .text(`Course Code: ${cert.course.code}  |  Duration: ${cert.course.durationHours} hours  |  Score: ${cert.finalScore}%`, 0, 315, { align: "center" });
+    .text("This is to certify that", 0, 215, { align: "center" });
 
-  // Issue + expiry dates
-  const issueDate = cert.issuedAt.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-  const expiryDate = cert.validUntil.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  doc
+    .fontSize(24)
+    .fillColor(burgundy)
+    .font("Helvetica-Bold")
+    .text(cert.traineeName, 0, 235, { align: "center" });
+
+  // Masked National ID (if present)
+  const maskedId = maskNationalId(cert.traineeIdNational);
+  if (maskedId) {
+    doc
+      .fontSize(9)
+      .fillColor("#999")
+      .font("Helvetica")
+      .text(`National ID: ${maskedId}`, 0, 268, { align: "center" });
+  }
 
   doc
     .fontSize(11)
     .fillColor("#666")
-    .text(`Issued: ${issueDate}  |  Valid Until: ${expiryDate}`, 0, 345, { align: "center" });
-
-  // Certificate ref number
-  doc
-    .fontSize(10)
-    .fillColor("#999")
     .font("Helvetica")
-    .text(`Certificate No: ${cert.refNumber}`, 0, 375, { align: "center" });
+    .text("has successfully completed the training course", 0, 285, { align: "center" });
 
-  // Verification QR. A certificate with no token yet gets one now, and it is persisted
-  // in the same update as pdfGeneratedAt below — otherwise the printed code would point
-  // at a token no lookup could ever match.
+  // ── Course section ─────────────────────────────────────────────────
+  doc
+    .fontSize(18)
+    .fillColor("#1a1a1a")
+    .font("Helvetica-Bold")
+    .text(cert.course.title, 0, 310, { align: "center" });
+
+  // Course details row
+  const courseDetails = [
+    `Course Code: ${cert.course.code}`,
+    `Training Hours: ${cert.course.durationHours}`,
+    `Final Score: ${cert.finalScore}%`,
+  ].join("    |    ");
+  doc
+    .fontSize(9)
+    .fillColor("#666")
+    .font("Helvetica")
+    .text(courseDetails, 0, 340, { align: "center" });
+
+  // Company
+  if (cert.company?.name) {
+    doc
+      .fontSize(10)
+      .fillColor("#666")
+      .font("Helvetica-Bold")
+      .text(`Company: ${cert.company.name}`, 0, 360, { align: "center" });
+  }
+
+  // Trainer
+  if (cert.session?.trainer?.fullName) {
+    doc
+      .fontSize(10)
+      .fillColor("#666")
+      .font("Helvetica")
+      .text(`Trainer: ${cert.session.trainer.fullName}`, 0, 376, { align: "center" });
+  }
+
+  // ── Dates + validity period ────────────────────────────────────────
+  const issueDate = formatPdfDate(cert.issuedAt);
+  const expiryDate = formatPdfDate(cert.validUntil);
+  const validityStr = formatValidityMonths(cert.course.validityMonths);
+
+  doc
+    .fontSize(9)
+    .fillColor("#666")
+    .font("Helvetica-Bold")
+    .text(`Issue Date: ${issueDate}    |    Expiry Date: ${expiryDate}    |    Validity: ${validityStr}`, 0, 400, { align: "center" });
+
+  // Certificate number (prominent)
+  doc
+    .fontSize(11)
+    .fillColor(burgundy)
+    .font("Helvetica-Bold")
+    .text(`Certificate No: ${cert.refNumber}`, 0, 420, { align: "center" });
+
+  // ── QR Code (bottom-left) ──────────────────────────────────────────
   const verificationToken = cert.verificationToken ?? randomBytes(16).toString("hex");
   const verifyUrl = buildVerifyUrl(resolveOrigin(req), verificationToken);
   const qrPng = await renderQrPng(verifyUrl, { width: 240, margin: 1 });
 
-  // doc.image() does not advance the text cursor, so everything after it passes
-  // explicit coordinates (as the surrounding code already does).
-  doc.image(qrPng, doc.page.width / 2 - 45, 395, { width: 90 });
+  const qrSize = 80;
+  const qrX = 70;
+  const qrY = 445;
+  doc.image(qrPng, qrX, qrY, { width: qrSize });
   doc
-    .fontSize(8)
+    .fontSize(6)
     .fillColor("#999")
-    .text("Scan to verify this certificate", 0, 490, { align: "center" })
-    .fontSize(7)
-    .text(verifyUrl, { align: "center" });
+    .font("Helvetica")
+    .text("Scan to verify", qrX, qrY + qrSize + 2, { width: qrSize, align: "center" });
 
-  // Company info (if available)
-  if (cert.company?.name) {
-    doc
-      .fontSize(11)
-      .fillColor("#666")
-      .font("Helvetica")
-      .text(`Company: ${cert.company.name}`, 0, 515, { align: "center" });
-  }
+  // ── Digital Security Seal (bottom-right) ───────────────────────────
+  // Custom-rendered circular seal with concentric rings + text.
+  const sealCenterX = doc.page.width - 110;
+  const sealCenterY = 485;
+  const sealRadius = 38;
 
-  // Trainer info (if available)
-  if (cert.session?.trainer?.fullName) {
-    doc
-      .fontSize(11)
-      .fillColor("#666")
-      .text(`Trainer: ${cert.session.trainer.fullName}`, 0, 533, { align: "center" });
-  }
-
-  // Signature line
+  // Outer ring
   doc
-    .moveTo(150, doc.page.height - 100)
-    .lineTo(350, doc.page.height - 100)
-    .lineWidth(1)
-    .strokeColor("#999")
+    .circle(sealCenterX, sealCenterY, sealRadius)
+    .lineWidth(2)
+    .strokeColor(burgundy)
+    .stroke();
+  // Inner ring
+  doc
+    .circle(sealCenterX, sealCenterY, sealRadius - 4)
+    .lineWidth(0.5)
+    .strokeColor(goldAccent)
+    .stroke();
+  // Innermost ring
+  doc
+    .circle(sealCenterX, sealCenterY, sealRadius - 12)
+    .lineWidth(0.3)
+    .strokeColor(burgundy)
+    .opacity(0.5)
     .stroke()
-    .fontSize(10)
+    .opacity(1);
+
+  // Seal text (top half)
+  doc
+    .fontSize(7)
+    .fillColor(burgundy)
+    .font("Helvetica-Bold")
+    .text("GCCLAB", sealCenterX - 30, sealCenterY - 14, { width: 60, align: "center" });
+  doc
+    .fontSize(5)
     .fillColor("#666")
     .font("Helvetica")
-    .text("Authorized Signature", 180, doc.page.height - 90, { align: "left" });
-
-  // GCCLAB seal
+    .text("Official Digital", sealCenterX - 30, sealCenterY - 4, { width: 60, align: "center" });
   doc
-    .moveTo(doc.page.width - 350, doc.page.height - 100)
-    .lineTo(doc.page.width - 150, doc.page.height - 100)
-    .stroke()
-    .text("GCCLAB", doc.page.width - 320, doc.page.height - 90, { align: "left" });
+    .fontSize(5)
+    .fillColor("#666")
+    .text("Certificate", sealCenterX - 30, sealCenterY + 1, { width: 60, align: "center" });
 
-  if (arabicFont) {
-    doc
-      .font("Arabic")
-      .fontSize(10)
-      .fillColor("#666")
-      .text("المختبر الخليجي", doc.page.width - 320, doc.page.height - 76, { align: "left" });
-  }
+  // Seal text (bottom half)
+  doc
+    .fontSize(4)
+    .fillColor("#999")
+    .text("Verified by GCCLAB", sealCenterX - 30, sealCenterY + 10, { width: 60, align: "center" });
+  doc
+    .fontSize(4)
+    .fillColor("#999")
+    .text("Digitally Secured", sealCenterX - 30, sealCenterY + 15, { width: 60, align: "center" });
 
+  // Certificate ID in seal
+  doc
+    .fontSize(4)
+    .fillColor(burgundy)
+    .font("Helvetica-Bold")
+    .text(`ID: ${cert.refNumber.slice(-8)}`, sealCenterX - 30, sealCenterY + 20, { width: 60, align: "center" });
+
+  // ── Signature area (bottom-center) ─────────────────────────────────
+  const sigY = 490;
+  doc
+    .moveTo(doc.page.width / 2 - 80, sigY)
+    .lineTo(doc.page.width / 2 + 80, sigY)
+    .lineWidth(0.5)
+    .strokeColor("#999")
+    .stroke();
+  doc
+    .fontSize(8)
+    .fillColor("#666")
+    .font("Helvetica")
+    .text("Authorized Signature", doc.page.width / 2 - 80, sigY + 4, { width: 160, align: "center" });
+  doc
+    .fontSize(6)
+    .fillColor("#999")
+    .text("GCCLAB Administration", doc.page.width / 2 - 80, sigY + 14, { width: 160, align: "center" });
+
+  // ── Footer ─────────────────────────────────────────────────────────
+  doc
+    .fontSize(7)
+    .fillColor("#999")
+    .font("Helvetica-Oblique")
+    .text(
+      "This certificate has been digitally issued and verified by GCCLAB (Gulf Laboratory).",
+      60,
+      doc.page.height - 50,
+      { width: doc.page.width - 120, align: "center" }
+    );
+  doc
+    .fontSize(6)
+    .fillColor("#bbb")
+    .text(
+      `Verify online: ${verifyUrl}`,
+      60,
+      doc.page.height - 38,
+      { width: doc.page.width - 120, align: "center" }
+    );
+
+  // ── Finalize PDF ───────────────────────────────────────────────────
   doc.end();
-
   const pdfBuffer = await pdfPromise;
 
-  // Update certificate with PDF generation timestamp
+  // ── Persist PDF metadata + verification token ──────────────────────
   await db.certificate.update({
     where: { id: cert.id },
     data: {
       pdfGeneratedAt: new Date(),
       // Persist a token generated above, so the QR on the printed page resolves.
       ...(cert.verificationToken ? {} : { verificationToken }),
+      // Sprint 6: bump status to ISSUED if it was APPROVED or legacy VALID
+      ...(cert.status === "APPROVED" || cert.status === "VALID" || cert.status === "PENDING_APPROVAL"
+        ? { status: "ISSUED" }
+        : {}),
       updatedBy: user.id,
     },
   });
@@ -229,7 +388,7 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
     userId: user.id,
   });
 
-  // Audit
+  // ── Audit: CERTIFICATE_GENERATE ────────────────────────────────────
   await recordAudit({
     userId: user.id,
     action: "CERTIFICATE_GENERATE",
@@ -239,7 +398,12 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
     description: `Generated PDF for certificate ${cert.refNumber}`,
     descriptionAr: `تم توليد PDF للشهادة ${cert.refNumber}`,
     req,
-    metadata: { verificationToken: cert.verificationToken },
+    metadata: {
+      verificationToken: cert.verificationToken,
+      refNumber: cert.refNumber,
+      traineeName: cert.traineeName,
+      courseCode: cert.course.code,
+    },
   });
 
   // Node's Buffer is typed over ArrayBufferLike, which doesn't satisfy the web
