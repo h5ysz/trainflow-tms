@@ -177,6 +177,10 @@ async function main() {
 
   const superAdminRole = await db.role.findUnique({ where: { code: "SUPER_ADMIN" } });
 
+  // SUPER_ADMIN_PASSWORD is authoritative, including for an account that already
+  // exists. Skipping the update when the row is present is how a super admin seeded
+  // from an old committed default survived into a deploy that had set the env var:
+  // the operator believed they had changed the password, and had not.
   const existingAdmin = await db.user.findUnique({ where: { email: adminEmail } });
   if (!existingAdmin) {
     await db.user.create({
@@ -191,9 +195,32 @@ async function main() {
       },
     });
     console.log(`   ✓ Created Super Admin: ${adminEmail}`);
-    console.log(`   → Password taken from SUPER_ADMIN_PASSWORD (not logged).`);
   } else {
-    console.log(`   → Super Admin already exists: ${adminEmail}`);
+    await db.user.update({
+      where: { id: existingAdmin.id },
+      data: {
+        passwordHash,
+        role: "SUPER_ADMIN" as UserRole,
+        roleId: superAdminRole?.id,
+        isActive: true,
+        deletedAt: null,
+        lockedUntil: null,
+        failedLoginAttempts: 0,
+      },
+    });
+    console.log(`   ✓ Super Admin exists: ${adminEmail} — password reset from env.`);
+  }
+  console.log(`   → Password taken from SUPER_ADMIN_PASSWORD (not logged).`);
+
+  // Any *other* super admin is an account this seed did not create and cannot
+  // vouch for — historically the committed demo account with a repo-published
+  // password. Deactivating rather than deleting preserves audit-log references.
+  const strayAdmins = await db.user.updateMany({
+    where: { role: "SUPER_ADMIN", email: { not: adminEmail }, isActive: true },
+    data: { isActive: false },
+  });
+  if (strayAdmins.count > 0) {
+    console.log(`   ! Deactivated ${strayAdmins.count} other super admin account(s).`);
   }
 
   // ─────────────────────────────────────────────────────────────────
