@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+# scripts/push-as-branch.sh
+# =====================================================================
+# Push local changes as a feature branch + open a Pull Request.
+#
+# NEVER pushes to main directly. Always:
+#   1. Refuses to run if current branch is main/master
+#   2. Creates (or reuses) a feature branch named "agent/<topic>"
+#   3. Commits any uncommitted changes with a default message
+#      (or uses COMMIT_MSG env var if provided)
+#   4. Pushes the branch to origin
+#   5. Opens a Pull Request via GitHub API (or prints the compare URL)
+#
+# Usage:
+#   bash scripts/push-as-branch.sh <topic> [commit-message]
+#
+# Examples:
+#   bash scripts/push-as-branch.sh fix-login-bug "Fix login form validation"
+#   bash scripts/push-as-branch.sh add-export-feature "Add CSV export to user management"
+#
+# Env vars:
+#   GH_TOKEN  — required for opening PR via API (falls back to ~/.git-credentials)
+# =====================================================================
+set -euo pipefail
+
+PROJECT_DIR="/home/z/my-project"
+cd "$PROJECT_DIR"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+log()  { echo -e "${GREEN}✓${NC} $1"; }
+warn() { echo -e "${YELLOW}⚠${NC} $1"; }
+err()  { echo -e "${RED}✗${NC} $1" >&2; }
+info() { echo -e "${BLUE}ℹ${NC} $1"; }
+
+# ── Validate args ──────────────────────────────────────────────────────
+if [ $# -lt 1 ]; then
+  err "Usage: bash scripts/push-as-branch.sh <topic> [commit-message]"
+  err "  topic           — short kebab-case identifier (e.g. fix-login-validation)"
+  err "  commit-message  — optional commit message (defaults to 'Update <topic>')"
+  exit 1
+fi
+
+TOPIC="$1"
+COMMIT_MSG="${2:-Update: $TOPIC}"
+
+# Validate topic format (kebab-case, no spaces)
+if ! echo "$TOPIC" | grep -qE '^[a-z0-9][a-z0-9-]*$'; then
+  err "Topic must be kebab-case (lowercase, hyphens, no spaces): $TOPIC"
+  err "Example: fix-login-validation"
+  exit 1
+fi
+
+# ── Check current branch ───────────────────────────────────────────────
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+if [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ]; then
+  warn "Currently on protected branch '$CURRENT_BRANCH' — switching to a feature branch"
+  BRANCH_NAME="agent/$TOPIC"
+
+  # Make sure main is up to date before branching
+  info "Syncing main first..."
+  bash "$PROJECT_DIR/scripts/sync-from-github.sh" >/dev/null 2>&1 || {
+    warn "Sync failed — continuing anyway (your local main may be behind)"
+  }
+
+  # Check if branch already exists locally
+  if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME"; then
+    info "Branch $BRANCH_NAME exists locally — switching to it"
+    git checkout "$BRANCH_NAME"
+    # Rebase on main to get latest
+    git rebase main 2>&1 | tail -3 || warn "Rebase had conflicts — resolve manually"
+  else
+    info "Creating new branch: $BRANCH_NAME"
+    git checkout -b "$BRANCH_NAME"
+  fi
+else
+  BRANCH_NAME="$CURRENT_BRANCH"
+  info "Already on feature branch: $BRANCH_NAME"
+fi
+
+echo ""
+echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+info "Branch:       $BRANCH_NAME"
+info "Commit msg:   $COMMIT_MSG"
+echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo ""
+
+# ── Stage changes ──────────────────────────────────────────────────────
+if [ -n "$(git status --porcelain)" ]; then
+  CHANGES=$(git status --porcelain | wc -l)
+  info "Staging $CHANGES uncommitted change(s)..."
+  git add -A
+  log "All changes staged"
+
+  info "Committing with message: \"$COMMIT_MSG\""
+  git commit -m "$COMMIT_MSG" 2>&1 | tail -3
+  log "Commit created"
+else
+  info "No uncommitted changes — skipping commit"
+fi
+echo ""
+
+# ── Push the branch ────────────────────────────────────────────────────
+info "Pushing $BRANCH_NAME to origin..."
+if git show-ref --verify --quiet "refs/remotes/origin/$BRANCH_NAME"; then
+  # Remote branch exists — push with --set-upstream
+  git push -u origin "$BRANCH_NAME" 2>&1 | tail -5
+else
+  # New remote branch
+  git push -u origin "$BRANCH_NAME" 2>&1 | tail -5
+fi
+log "Branch pushed to GitHub"
+echo ""
+
+# ── Try to open a Pull Request via API ─────────────────────────────────
+REMOTE_URL=$(git remote get-url origin)
+# Extract owner/repo from URL like https://github.com/OWNER/REPO.git
+OWNER_REPO=$(echo "$REMOTE_URL" | sed -E 's|.*github\.com[:/]([^/]+/[^/]+?)(\.git)?$|\1|')
+
+# Get token from env or ~/.git-credentials
+TOKEN="${GH_TOKEN:-}"
+if [ -z "$TOKEN" ] && [ -f ~/.git-credentials ]; then
+  # Parse token from ~/.git-credentials (format: https://user:token@github.com)
+  TOKEN=$(grep -oE ':[^@]+@' ~/.git-credentials | head -1 | tr -d ':@')
+fi
+
+if [ -n "$TOKEN" ]; then
+  info "Opening Pull Request via GitHub API..."
+  PR_TITLE="$COMMIT_MSG"
+  PR_BODY="Auto-generated PR from agent work on branch \`$BRANCH_NAME\`.
+
+## Changes
+- $COMMIT_MSG
+
+## Branch
+\`$BRANCH_NAME\` → \`main\`
+
+---
+_Generated by scripts/push-as-branch.sh_"
+
+  PR_RESPONSE=$(curl -s -X POST \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/repos/$OWNER_REPO/pulls" \
+    -d "$(python3 -c "
+import json, sys
+print(json.dumps({
+    'title': sys.argv[1],
+    'body': sys.argv[2],
+    'head': sys.argv[3],
+    'base': 'main'
+}))
+" "$PR_TITLE" "$PR_BODY" "$BRANCH_NAME")")
+
+  PR_URL=$(echo "$PR_RESPONSE" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('html_url', ''))" 2>/dev/null || echo "")
+  PR_NUMBER=$(echo "$PR_RESPONSE" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('number', ''))" 2>/dev/null || echo "")
+
+  if [ -n "$PR_URL" ] && [ "$PR_URL" != "None" ]; then
+    log "Pull Request #$PR_NUMBER opened!"
+    echo ""
+    echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}║  Pull Request Ready for Review                                ║${NC}"
+    echo -e "${GREEN}╠═══════════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}║  PR #$PR_NUMBER                                               ║${NC}"
+    echo -e "${GREEN}║  $PR_URL${NC}"
+    echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    info "Review and merge on GitHub. After merge, run:  bash scripts/welcome.sh"
+    exit 0
+  else
+    warn "Could not open PR via API (token may lack PR permission)"
+    echo "$PR_RESPONSE" | head -c 300
+    echo ""
+  fi
+else
+  warn "No GitHub token available — cannot open PR via API"
+fi
+
+# Fallback: print the compare URL so user can open PR manually
+COMPARE_URL="https://github.com/$OWNER_REPO/compare/main...$BRANCH_NAME?expand=1"
+echo ""
+echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════${NC}"
+echo -e "${GREEN}║  Branch pushed — open PR manually                             ║${NC}"
+echo -e "${GREEN}╠═══════════════════════════════════════════════════════════════${NC}"
+echo -e "${GREEN}║  Branch:  $BRANCH_NAME${NC}"
+echo -e "${GREEN}║  Compare: $COMPARE_URL${NC}"
+echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════${NC}"
+echo ""
+info "Click the compare URL above, review the diff, then click 'Create pull request'"
