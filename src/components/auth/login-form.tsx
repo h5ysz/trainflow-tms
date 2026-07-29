@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { useAppStore } from "@/lib/store/app-store";
 import { Button } from "@/components/ui/button";
@@ -9,10 +9,47 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AlertCircle, Loader2, ArrowRight, Languages } from "lucide-react";
 import Image from "next/image";
+import { api } from "@/lib/api/client";
+
+interface BrandingSettings {
+  companyNameEn?: string;
+  companyNameAr?: string;
+  logoWhiteUrl?: string;
+  logoUrl?: string;
+  faviconUrl?: string;
+  primaryColor?: string;
+  supportEmail?: string;
+  supportPhone?: string;
+}
 
 export function LoginForm() {
   const { t, locale, setLocale } = useI18n();
   const { signIn, authLoading, authError } = useAppStore();
+  const [branding, setBranding] = useState<BrandingSettings>({});
+
+  // Fetch public branding settings on mount (no auth required).
+  // Falls back to hardcoded defaults if the API is unavailable.
+  useEffect(() => {
+    api.get<Record<string, string>>("/settings/public")
+      .then((map) => setBranding({
+        companyNameEn: map["branding.companyNameEn"],
+        companyNameAr: map["branding.companyNameAr"],
+        logoWhiteUrl: map["branding.logoWhiteUrl"],
+        logoUrl: map["branding.logoUrl"],
+        faviconUrl: map["branding.faviconUrl"],
+        primaryColor: map["branding.primaryColor"],
+        supportEmail: map["branding.supportEmail"],
+        supportPhone: map["branding.supportPhone"],
+      }))
+      .catch(() => {
+        // Silent — fall back to hardcoded defaults already in the JSX.
+      });
+  }, []);
+
+  const supportEmail = branding.supportEmail || "support@gcclab.com";
+  const companyNameEn = branding.companyNameEn || "GCC Lab";
+  const companyNameAr = branding.companyNameAr || "المختبر الخليجي";
+  const logoWhiteSrc = branding.logoWhiteUrl || "/gcclab-logo-white.png";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -44,8 +81,8 @@ export function LoginForm() {
         {/* Top — Logo */}
         <div className="relative z-10">
           <Image
-            src="/gcclab-logo-white.png"
-            alt="GCC Lab"
+            src={logoWhiteSrc}
+            alt={locale === "en" ? companyNameEn : companyNameAr}
             width={260}
             height={74}
             className="object-contain"
@@ -211,8 +248,8 @@ export function LoginForm() {
             <div className="text-center pt-3 border-t">
               <p className="text-xs text-muted-foreground">
                 {locale === "en"
-                  ? "Need help? Contact support@gcclab.com"
-                  : "تحتاج مساعدة؟ اتصل بـ support@gcclab.com"}
+                  ? `Need help? Contact ${supportEmail}`
+                  : `تحتاج مساعدة؟ اتصل بـ ${supportEmail}`}
               </p>
             </div>
           </div>

@@ -64,3 +64,10 @@ workspace-*.tar
 # vitest integration scratch database + coverage output
 /.tmp/
 /coverage/
+
+# Local SQLite database (contains user data, audit logs)
+db/*.db
+db/*.db-journal
+
+# Download directory (generated screenshots, PDFs, exports)
+/download/
