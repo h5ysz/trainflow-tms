@@ -33,7 +33,9 @@ export type RouteKey =
   | "settings"
   | "user-approvals"
   | "user-management"
-  | "roles";
+  | "roles"
+  | "worker-passports"
+  | "compliance-matrix";
 
 export type Action = "view" | "create" | "edit" | "delete";
 
@@ -53,6 +55,7 @@ export const ALL_MODULES: RouteKey[] = [
   "trainees", "courses", "requests", "sessions", "scheduling", "attendance", "qr-code",
   "pre-test", "final-test", "evaluation", "certificates", "reports", "report-schedules",
   "notifications", "audit-log", "settings", "user-approvals", "user-management", "roles",
+  "worker-passports", "compliance-matrix",
 ];
 
 // Module visibility per role
@@ -92,6 +95,8 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "user-approvals",
     "user-management",
     "roles",
+    "worker-passports",
+    "compliance-matrix",
   ],
   // Coordinator and Trainer share the SAME operational modules
   COORDINATOR: [
@@ -119,6 +124,8 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "notifications",
     "audit-log",
     "user-approvals",
+    "worker-passports",
+    "compliance-matrix",
   ],
   TRAINER: [
     "dashboard",
@@ -143,6 +150,8 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "notifications",
     "audit-log",
     "user-approvals",
+    "worker-passports",
+    "compliance-matrix",
   ],
   VIEWER: [
     "dashboard",
@@ -173,6 +182,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "requests",
     "certificates",
     "notifications",
+    "worker-passports",
   ],
 };
 
@@ -325,6 +335,8 @@ export const navItems: NavItem[] = [
   { key: "user-approvals", labelKey: "nav.userApprovals", icon: "UserPlus", group: "system" },
   { key: "user-management", labelKey: "nav.userManagement", icon: "ShieldCheck", group: "system" },
   { key: "roles", labelKey: "nav.roles", icon: "ShieldCheck", group: "system" },
+  { key: "worker-passports", labelKey: "nav.workerPassports", icon: "BookUser", group: "system" },
+  { key: "compliance-matrix", labelKey: "nav.complianceMatrix", icon: "ClipboardCheck", group: "system" },
   { key: "settings", labelKey: "nav.settings", icon: "Settings", group: "system" },
 ];
 
