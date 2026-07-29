@@ -471,10 +471,33 @@ model Course {
   questions       Question[]
   certificates    Certificate[]
   trainerCertifications TrainerCertification[]
+  resources       CourseResource[]
 
   @@index([status])
   @@index([category])
   @@index([tenantId])
+}
+
+// Sprint 6: Course Resources — external materials (PDF, PPT, URL, QR link)
+model CourseResource {
+  id          String   @id @default(uuid())
+  courseId    String
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  type        String   // "PDF" | "POWERPOINT" | "URL" | "QR_CODE"
+  title       String
+  titleAr     String?
+  url         String
+  description String?
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  deletedAt   DateTime?
+
+  @@index([courseId])
+  @@index([type])
 }
 
 // Question Bank — questions can be course-specific OR shared in the bank
@@ -972,7 +995,7 @@ model CourseEvaluation {
 
 model Certificate {
   id              String   @id @default(uuid())
-  refNumber       String   @unique // CERT-YYYY-000001
+  refNumber       String   @unique // GCCLAB-ES-YYYY-000001 (Sprint 6 enterprise format)
   sessionId       String
   session         TrainingSession @relation(fields: [sessionId], references: [id])
   courseId        String
@@ -986,7 +1009,23 @@ model Certificate {
   finalScore      Int
   issuedAt        DateTime @default(now())
   validUntil      DateTime
-  status          String   @default("VALID") // VALID | EXPIRED | REVOKED
+  // Sprint 6: extended lifecycle.
+  //   PENDING_APPROVAL → APPROVED → ISSUED → (EXPIRED | REVOKED)
+  //   EXPIRING_SOON is computed dynamically (within 30 days of validUntil).
+  //   Legacy "VALID" maps to ISSUED for backward compat with seeded data.
+  status          String   @default("PENDING_APPROVAL") // PENDING_APPROVAL | APPROVED | ISSUED | VALID | EXPIRED | REVOKED
+  // Sprint 6: approval workflow fields
+  approvedAt      DateTime?
+  approvedBy      String?
+  rejectionReason String?
+  revokedAt       DateTime?
+  revokedBy       String?
+  revokedReason   String?
+  // Sprint 6: renewal tracking — when a new cert renews an old one, link them.
+  renewedFromId   String?  // points to the previous (now-archived) certificate
+  renewedFrom     Certificate? @relation("CertRenewalChain", fields: [renewedFromId], references: [id])
+  renewedBy       Certificate[] @relation("CertRenewalChain")
+  version         Int      @default(1) // 1 = original, 2 = first renewal, etc.
   pdfUrl          String?
   pdfGeneratedAt  DateTime?
   // QR verification
@@ -1008,9 +1047,13 @@ model Certificate {
   @@index([status])
   @@index([verificationToken])
   @@index([attendanceId])
+  @@index([renewedFromId])
+  @@index([traineeEmail])
+  @@index([traineeIdNational])
 }
 
 // Public QR verification log (mobile-friendly)
+// Sprint 6: extended with parsed UA fields (browser/OS/device) + country lookup.
 model CertificateVerification {
   id              String   @id @default(uuid())
   certificateId   String
@@ -1019,10 +1062,17 @@ model CertificateVerification {
   ipAddress       String?
   userAgent       String?
   countryCode     String?
+  countryName     String?  // Sprint 6: human-readable country name
+  // Sprint 6: parsed from userAgent (best-effort, no external deps)
+  browser         String?  // e.g. "Chrome 120"
+  os              String?  // e.g. "Windows 10"
+  device          String?  // e.g. "Desktop" | "iPhone" | "Android"
+  channel         String   @default("WEB") // WEB | API | QR_SCAN
   verifiedAt      DateTime @default(now())
 
   @@index([certificateId])
   @@index([verifiedAt])
+  @@index([ipAddress])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

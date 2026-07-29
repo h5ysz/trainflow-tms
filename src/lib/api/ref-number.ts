@@ -28,7 +28,10 @@ export type RefEntityType =
 
 const PREFIX: Record<RefEntityType, string> = {
   TRAINING_REQUEST: "TR",
-  CERTIFICATE: "CERT",
+  // Sprint 6: enterprise certificate number format.
+  // Old: CERT-YYYY-000001 (still readable by the system for legacy certs)
+  // New: GCCLAB-ES-YYYY-000001 (the "ES" segment = "Enterprise Safety")
+  CERTIFICATE: "GCCLAB-ES",
   EXAM: "EXAM",
   TRAINER: "TRN",
   COMPANY: "COM",
