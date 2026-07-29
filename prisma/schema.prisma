@@ -1167,14 +1167,21 @@ model AuditLog {
   id            String   @id @default(uuid())
   userId        String?
   user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  action        String // LOGIN | LOGOUT | CREATE | UPDATE | DELETE | STATUS_CHANGE | EXAM_SUBMIT | CERTIFICATE_GENERATE | APPROVE | REJECT | ISSUE | REVOKE | QR_REGENERATE
-  entity        String // COMPANY | TRAINER | COURSE | REQUEST | SESSION | CERTIFICATE | USER | SETTING | EXAM | ATTENDANCE
+  action        String // LOGIN | LOGOUT | FAILED_LOGIN | CREATE | UPDATE | DELETE | APPROVE | REJECT | ISSUE_CERT | RENEW_CERT | GENERATE_QR | VERIFY_QR | CREATE_WORKER | UPDATE_WORKER | DELETE_WORKER | CREATE_COMPANY | UPDATE_COMPANY | COMPLIANCE_CHANGE | PERMISSION_CHANGE | STATUS_CHANGE | EXAM_SUBMIT | CERTIFICATE_GENERATE | ISSUE | REVOKE | QR_REGENERATE | EXPORT
+  entity        String // COMPANY | TRAINER | TRAINEE | COURSE | REQUEST | SESSION | CERTIFICATE | USER | ROLE | SETTING | EXAM | ATTENDANCE | EVALUATION | WORKER_PASSPORT | COMPLIANCE_RULE | QR_CODE
   entityId      String?
   entityRef     String? // human-readable ref number (TR-..., CERT-..., etc.)
   description   String
   descriptionAr String?
   ipAddress     String?
   userAgent     String?
+  // Sprint 6: Enterprise Audit Trail — extended fields
+  userRole      String? // role of the user at time of action
+  browser       String? // parsed from UA
+  device        String? // parsed from UA
+  oldValue      String? // JSON: previous field values (for UPDATE/DELETE)
+  newValue      String? // JSON: new field values (for CREATE/UPDATE)
+  reason        String? // optional reason for the action
   metadata      String? // JSON: before/after diff for UPDATE, old/new status for STATUS_CHANGE
   createdAt     DateTime @default(now())
 
@@ -1182,6 +1189,7 @@ model AuditLog {
   @@index([entity])
   @@index([action])
   @@index([createdAt])
+  @@index([ipAddress])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
