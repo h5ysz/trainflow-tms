@@ -471,10 +471,33 @@ model Course {
   questions       Question[]
   certificates    Certificate[]
   trainerCertifications TrainerCertification[]
+  resources       CourseResource[]
 
   @@index([status])
   @@index([category])
   @@index([tenantId])
+}
+
+// Sprint 6: Course Resources — external materials (PDF, PPT, URL, QR link)
+model CourseResource {
+  id          String   @id @default(uuid())
+  courseId    String
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  type        String   // "PDF" | "POWERPOINT" | "URL" | "QR_CODE"
+  title       String
+  titleAr     String?
+  url         String
+  description String?
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  deletedAt   DateTime?
+
+  @@index([courseId])
+  @@index([type])
 }
 
 // Question Bank — questions can be course-specific OR shared in the bank
