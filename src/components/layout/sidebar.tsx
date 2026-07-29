@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Building2, Contact, Users, Award, UserSquare, BookOpen,
   ClipboardList, CalendarDays, CalendarRange, CalendarClock, UserCheck, QrCode,
   FilePen, FileCheck2, Star, BadgeCheck, BarChart3, ScrollText,
-  Bell, Settings, UserPlus, ShieldCheck, BookUser, ClipboardCheck, TrendingUp,
+  Bell, Settings, UserPlus, ShieldCheck, BookUser, ClipboardCheck, TrendingUp, RefreshCw,
   type LucideIcon,
 } from "lucide-react";
 
@@ -17,7 +17,7 @@ const ICONS: Record<string, LucideIcon> = {
   LayoutDashboard, Building2, Contact, Users, Award, UserSquare, BookOpen,
   ClipboardList, CalendarDays, CalendarRange, CalendarClock, UserCheck, QrCode,
   FilePen, FileCheck2, Star, BadgeCheck, BarChart3, ScrollText,
-  Bell, Settings, UserPlus, ShieldCheck, BookUser, ClipboardCheck, TrendingUp,
+  Bell, Settings, UserPlus, ShieldCheck, BookUser, ClipboardCheck, TrendingUp, RefreshCw,
 };
 
 const GROUP_ORDER: NavItem["group"][] = ["dashboard", "training", "assessment", "reports", "system"];

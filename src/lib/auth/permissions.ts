@@ -36,7 +36,8 @@ export type RouteKey =
   | "roles"
   | "worker-passports"
   | "compliance-matrix"
-  | "executive-dashboard";
+  | "executive-dashboard"
+  | "renewal-dashboard";
 
 export type Action = "view" | "create" | "edit" | "delete";
 
@@ -56,7 +57,7 @@ export const ALL_MODULES: RouteKey[] = [
   "trainees", "courses", "requests", "sessions", "scheduling", "attendance", "qr-code",
   "pre-test", "final-test", "evaluation", "certificates", "reports", "report-schedules",
   "notifications", "audit-log", "settings", "user-approvals", "user-management", "roles",
-  "worker-passports", "compliance-matrix", "executive-dashboard",
+  "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard",
 ];
 
 // Module visibility per role
@@ -99,6 +100,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "worker-passports",
     "compliance-matrix",
     "executive-dashboard",
+    "renewal-dashboard",
   ],
   // Coordinator and Trainer share the SAME operational modules
   COORDINATOR: [
@@ -129,6 +131,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "worker-passports",
     "compliance-matrix",
     "executive-dashboard",
+    "renewal-dashboard",
   ],
   TRAINER: [
     "dashboard",
@@ -156,6 +159,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "worker-passports",
     "compliance-matrix",
     "executive-dashboard",
+    "renewal-dashboard",
   ],
   VIEWER: [
     "dashboard",
@@ -187,6 +191,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "certificates",
     "notifications",
     "worker-passports",
+    "renewal-dashboard",
   ],
 };
 
@@ -342,6 +347,7 @@ export const navItems: NavItem[] = [
   { key: "worker-passports", labelKey: "nav.workerPassports", icon: "BookUser", group: "system" },
   { key: "compliance-matrix", labelKey: "nav.complianceMatrix", icon: "ClipboardCheck", group: "system" },
   { key: "executive-dashboard", labelKey: "nav.executiveDashboard", icon: "TrendingUp", group: "system" },
+  { key: "renewal-dashboard", labelKey: "nav.renewalDashboard", icon: "RefreshCw", group: "system" },
   { key: "settings", labelKey: "nav.settings", icon: "Settings", group: "system" },
 ];
 

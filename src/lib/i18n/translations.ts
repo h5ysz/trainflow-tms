@@ -68,6 +68,7 @@ export const dict = {
     "nav.workerPassports": "Worker Passports",
     "nav.complianceMatrix": "Compliance Matrix",
     "nav.executiveDashboard": "Executive Dashboard",
+    "nav.renewalDashboard": "Renewal Center",
 
     // Common actions
     "action.create": "Create",
@@ -933,6 +934,7 @@ export const dict = {
     "nav.workerPassports": "جوازات العمال",
     "nav.complianceMatrix": "مصفوفة الامتثال",
     "nav.executiveDashboard": "لوحة الامتثال التنفيذية",
+    "nav.renewalDashboard": "مركز التجديد",
 
     // Common actions
     "action.create": "إنشاء",

@@ -34,6 +34,7 @@ import { RolesRoute } from "./roles";
 import { WorkerPassportsRoute } from "./worker-passports";
 import { ComplianceMatrixRoute } from "./compliance-matrix";
 import { ExecutiveDashboardRoute } from "./executive-dashboard";
+import { RenewalDashboardRoute } from "./renewal-dashboard";
 import type { RouteKey } from "@/lib/auth/permissions";
 
 const ROUTES: Record<RouteKey, React.ComponentType> = {
@@ -67,6 +68,7 @@ const ROUTES: Record<RouteKey, React.ComponentType> = {
   "worker-passports": WorkerPassportsRoute,
   "compliance-matrix": ComplianceMatrixRoute,
   "executive-dashboard": ExecutiveDashboardRoute,
+  "renewal-dashboard": RenewalDashboardRoute,
   settings: SettingsRoute,
 };
 

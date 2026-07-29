@@ -988,7 +988,13 @@ model Certificate {
   finalScore        Int
   issuedAt          DateTime        @default(now())
   validUntil        DateTime
-  status            String          @default("VALID") // VALID | EXPIRED | REVOKED
+  status            String          @default("VALID") // VALID | EXPIRED | REVOKED | RENEWED
+  // Sprint 6: renewal chain
+  renewedFromId     String?
+  renewedFrom       Certificate?    @relation("CertRenewalChain", fields: [renewedFromId], references: [id], onDelete: SetNull)
+  renewedBy         Certificate[]   @relation("CertRenewalChain")
+  version           Int             @default(1) // 1 = original, 2+ = renewals
+  renewedAt         DateTime?
   pdfUrl            String?
   pdfGeneratedAt    DateTime?
   // QR verification
@@ -1012,9 +1018,9 @@ model Certificate {
   @@index([status])
   @@index([verificationToken])
   @@index([attendanceId])
+  @@index([renewedFromId])
+  @@index([validUntil])
 }
-
-// Public QR verification log (mobile-friendly)
 model CertificateVerification {
   id                String      @id @default(uuid())
   certificateId     String
