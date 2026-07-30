@@ -290,23 +290,24 @@ model Company {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Trainee {
-  id          String    @id @default(uuid())
-  refNumber   String    @unique // TRA-000001
-  fullName    String
-  nationalId  String // National ID / Iqama — unique (duplicates prevented at app level)
-  nationality String?
-  jobTitle    String?
-  mobile      String?
-  email       String?
-  companyId   String
-  status      String    @default("ACTIVE") // ACTIVE | INACTIVE
-  notes       String?
+  id              String    @id @default(uuid())
+  refNumber       String    @unique // TRA-000001
+  fullName        String
+  nationalId      String // National ID / Iqama — unique (duplicates prevented at app level)
+  nationality     String?
+  jobTitle        String?
+  mobile          String?
+  email           String?
+  companyId       String
+  status          String    @default("ACTIVE") // ACTIVE | INACTIVE
+  notes           String?
+  idAttachmentUrl String? // URL/path to uploaded ID or Iqama document (PDF/JPG/PNG)
   // Audit
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  createdBy   String?
-  updatedBy   String?
-  deletedAt   DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
 
   company            Company                        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   requestCourses     TrainingRequestCourseTrainee[]

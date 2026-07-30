@@ -17,6 +17,7 @@ import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/lib/store/app-store";
 import { canPerformAction } from "@/lib/auth/permissions";
+import { TraineeEntrySection, type TraineeEntry } from "@/components/common/trainee-entry-section";
 
 interface RequestImportResult {
   requestsCreated: number;
@@ -147,6 +148,7 @@ export function TrainingRequestsRoute() {
   const [previewData, setPreviewData] = useState<ImportPreview | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [trainees, setTrainees] = useState<TraineeEntry[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
@@ -362,12 +364,31 @@ export function TrainingRequestsRoute() {
       toast({ title: t("misc.error"), description: "Course is required", variant: "destructive" });
       return;
     }
+    // Validate trainees — require at least 1 valid trainee
+    const validTrainees = trainees.filter((t) => t.valid);
+    if (validTrainees.length === 0) {
+      toast({ title: t("misc.error"), description: "At least 1 valid trainee is required", variant: "destructive" });
+      return;
+    }
     setSubmitting(true);
     try {
-      await api.post("/requests", formData);
+      // Auto-calculate traineeCount from valid trainees
+      const payload = {
+        ...formData,
+        traineeCount: validTrainees.length,
+        trainees: validTrainees.map((t) => ({
+          fullName: t.fullName,
+          nationalId: t.nationalId,
+          nationality: t.nationality || null,
+          jobTitle: t.jobTitle || null,
+          idAttachmentUrl: t.idAttachmentUrl,
+        })),
+      };
+      await api.post("/requests", payload);
       toast({ title: t("misc.success"), description: t("misc.createSuccess") });
       setDialogOpen(false);
       setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: "en", status: "DRAFT" });
+      setTrainees([]);
       refetch();
     } catch (e) {
       toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
@@ -466,9 +487,7 @@ export function TrainingRequestsRoute() {
                 </SelectContent>
               </Select>
             </Field>
-            <Field label={t("requests.traineeCount")} required>
-              <Input type="number" min={1} value={formData.traineeCount as number} onChange={(e) => setField("traineeCount", parseInt(e.target.value, 10) || 1)} />
-            </Field>
+            {/* Trainee count is now auto-calculated from the TraineeEntrySection below */}
             <Field label={t("requests.priority")}>
               <Select value={formData.priority as string} onValueChange={(v) => setField("priority", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -497,6 +516,22 @@ export function TrainingRequestsRoute() {
               </Select>
             </Field>
           </FormGrid>
+
+          {/* Trainee Entry Section — 3 methods: Excel Import / Manual Entry / Copy & Paste */}
+          <div className="border-t pt-4">
+            <div className="text-sm font-medium mb-3">
+              {t("requests.trainees") || "Trainees"}
+              <span className="ms-2 text-xs text-muted-foreground">
+                ({trainees.filter((tr) => tr.valid).length} valid / {trainees.length} total)
+              </span>
+            </div>
+            <TraineeEntrySection
+              trainees={trainees}
+              onChange={setTrainees}
+              companyId={formData.companyId as string | undefined}
+            />
+          </div>
+
           <Field label={t("requests.notes")}>
             <Textarea rows={3} placeholder={t("requests.notes")} value={(formData.notes as string) ?? ""} onChange={(e) => setField("notes", e.target.value)} />
           </Field>
