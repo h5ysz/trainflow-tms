@@ -194,7 +194,7 @@ function check(name: string, ok: boolean, detail: string) {
     const ver = await req("GET", `/api/exam-attempts/${preAttempt.id}`);
     const qs = ver.json?.data?.questionSet ?? [];
     const qList = await req("GET", `/api/questions?courseId=${courseId}&testType=PRE_TEST&pageSize=100`);
-    const qMap = new Map((qList.json?.data ?? []).map((q: any) => [q.id, q]));
+    const qMap = new Map<string, any>((qList.json?.data ?? []).map((q: any) => [q.id, q]));
     const answers = qs.map((qsi: any) => {
       const q = qMap.get(qsi.questionId);
       const correctOrig = q?.correctAnswers?.[0] ?? 0;
@@ -215,7 +215,7 @@ function check(name: string, ok: boolean, detail: string) {
     const ver = await req("GET", `/api/exam-attempts/${finalAttempt.id}`);
     const qs = ver.json?.data?.questionSet ?? [];
     const qList = await req("GET", `/api/questions?courseId=${courseId}&testType=FINAL_TEST&pageSize=100`);
-    const qMap = new Map((qList.json?.data ?? []).map((q: any) => [q.id, q]));
+    const qMap = new Map<string, any>((qList.json?.data ?? []).map((q: any) => [q.id, q]));
     const answers = qs.map((qsi: any) => {
       const q = qMap.get(qsi.questionId);
       const correctOrig = q?.correctAnswers?.[0] ?? 0;
