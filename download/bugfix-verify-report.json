@@ -1,0 +1,151 @@
+{
+  "branch": "local/contractor-portal-enhancements",
+  "timestamp": "2026-07-30T01:29:47.545Z",
+  "summary": {
+    "passed": 28,
+    "failed": 0,
+    "total": 28
+  },
+  "checks": [
+    {
+      "name": "1. Admin login",
+      "ok": true,
+      "detail": "HTTP 200 role=SUPER_ADMIN"
+    },
+    {
+      "name": "2. Create Company",
+      "ok": true,
+      "detail": "ref=COM-000001"
+    },
+    {
+      "name": "3a. Create Course",
+      "ok": true,
+      "detail": "code=BUGFIX-001"
+    },
+    {
+      "name": "3b. Certify Trainer",
+      "ok": true,
+      "detail": "HTTP 201"
+    },
+    {
+      "name": "3c. Create 10 Trainees",
+      "ok": true,
+      "detail": "created=10/10"
+    },
+    {
+      "name": "3d. Create Questions",
+      "ok": true,
+      "detail": "10 questions (5 PRE + 5 FINAL)"
+    },
+    {
+      "name": "4a. Submit Request",
+      "ok": true,
+      "detail": "ref=TR-2026-000001"
+    },
+    {
+      "name": "4b. Add Course+Trainees to Request",
+      "ok": true,
+      "detail": "10 trainees linked"
+    },
+    {
+      "name": "5. Approve Request",
+      "ok": true,
+      "detail": "status=APPROVED"
+    },
+    {
+      "name": "6a. Generate Session",
+      "ok": true,
+      "detail": "ref=SES-000001"
+    },
+    {
+      "name": "6b. Start Session",
+      "ok": true,
+      "detail": "lifecycle=STARTED"
+    },
+    {
+      "name": "7a. Check-in Trainee 1",
+      "ok": true,
+      "detail": "preTestAssigned=true"
+    },
+    {
+      "name": "8. Complete Session",
+      "ok": true,
+      "detail": "lifecycle=COMPLETED"
+    },
+    {
+      "name": "9. Submit PRE_TEST",
+      "ok": true,
+      "detail": "score=0%"
+    },
+    {
+      "name": "10. Submit FINAL_TEST",
+      "ok": true,
+      "detail": "score=100% passed=true"
+    },
+    {
+      "name": "11. Submit Course Evaluation",
+      "ok": true,
+      "detail": "id=9d386651-7063-4913-aa20-de5fb3124de1"
+    },
+    {
+      "name": "12a. Certificate Generated",
+      "ok": "CERT-2026-000001",
+      "detail": "ref=CERT-2026-000001 generated=1"
+    },
+    {
+      "name": "12b. Passport Auto-Created & Linked (NEW FIELD)",
+      "ok": true,
+      "detail": "passportId=424b9cfd-5c9d-4461-96b0-5cbb6f922b17 passportNumber=WP-2026-000001"
+    },
+    {
+      "name": "12c. passportsLinked in Response",
+      "ok": true,
+      "detail": "passportsLinked=1"
+    },
+    {
+      "name": "13a. Passport Listed in API",
+      "ok": true,
+      "detail": "total=1 found=true passportNumber=WP-2026-000001"
+    },
+    {
+      "name": "13b. Passport has QR Token",
+      "ok": true,
+      "detail": "qrToken=(present, len=36)"
+    },
+    {
+      "name": "14. Certificate.workerPassportId Persisted in DB",
+      "ok": true,
+      "detail": "cert.workerPassportId=424b9cfd-5c9d-4461-96b0-5cbb6f922b17 passport.id=424b9cfd-5c9d-4461-96b0-5cbb6f922b17"
+    },
+    {
+      "name": "15a. Passport Detail Fetched",
+      "ok": true,
+      "detail": "ref=WP-2026-000001"
+    },
+    {
+      "name": "15b. Passport Includes Certificate in History",
+      "ok": true,
+      "detail": "historyLen=1 activeLen=1"
+    },
+    {
+      "name": "16a. Compliance Percent is Number",
+      "ok": true,
+      "detail": "percent=0"
+    },
+    {
+      "name": "16b. Compliance has Required/Completed counts",
+      "ok": true,
+      "detail": "required=3 completed=0 missing=3 expired=0"
+    },
+    {
+      "name": "17. Certificate QR Verification Still Works",
+      "ok": true,
+      "detail": "valid=true validity=VALID"
+    },
+    {
+      "name": "18. Idempotency: No Duplicate Passport on Re-Generation",
+      "ok": true,
+      "detail": "passportCount=1 (must be exactly 1)"
+    }
+  ]
+}

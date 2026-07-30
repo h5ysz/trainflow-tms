@@ -65,6 +65,10 @@ export const dict = {
     "nav.userApprovals": "User Approvals",
     "nav.userManagement": "User Management",
     "nav.roles": "Roles & Permissions",
+    "nav.workerPassports": "Worker Passports",
+    "nav.complianceMatrix": "Compliance Matrix",
+    "nav.executiveDashboard": "Executive Dashboard",
+    "nav.renewalDashboard": "Renewal Center",
 
     // Common actions
     "action.create": "Create",
@@ -927,6 +931,10 @@ export const dict = {
     "nav.userApprovals": "اعتماد المستخدمين",
     "nav.userManagement": "إدارة المستخدمين",
     "nav.roles": "الأدوار والصلاحيات",
+    "nav.workerPassports": "جوازات العمال",
+    "nav.complianceMatrix": "مصفوفة الامتثال",
+    "nav.executiveDashboard": "لوحة الامتثال التنفيذية",
+    "nav.renewalDashboard": "مركز التجديد",
 
     // Common actions
     "action.create": "إنشاء",
