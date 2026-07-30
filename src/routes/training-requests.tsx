@@ -370,11 +370,28 @@ export function TrainingRequestsRoute() {
       toast({ title: t("misc.error"), description: "At least 1 valid trainee is required", variant: "destructive" });
       return;
     }
+    // Enhancement 7: Safety — block submission if there are invalid trainees or duplicates
+    const invalidCount = trainees.length - validTrainees.length;
+    const duplicateIds = new Set<string>();
+    const idMap = new Map<string, number>();
+    trainees.forEach((t) => {
+      const key = t.nationalId?.trim().toLowerCase();
+      if (key) { idMap.set(key, (idMap.get(key) ?? 0) + 1); if ((idMap.get(key) ?? 0) > 1) duplicateIds.add(key); }
+    });
+    if (invalidCount > 0) {
+      toast({ title: t("misc.error"), description: `Cannot submit: ${invalidCount} trainee(s) have missing required fields`, variant: "destructive" });
+      return;
+    }
+    if (duplicateIds.size > 0) {
+      toast({ title: t("misc.error"), description: `Cannot submit: ${duplicateIds.size} duplicate ID(s) found`, variant: "destructive" });
+      return;
+    }
     setSubmitting(true);
     try {
       // Auto-calculate traineeCount from valid trainees
       const payload = {
         ...formData,
+        status: formData.status ?? "SUBMITTED",
         traineeCount: validTrainees.length,
         trainees: validTrainees.map((t) => ({
           fullName: t.fullName,
@@ -386,6 +403,40 @@ export function TrainingRequestsRoute() {
       };
       await api.post("/requests", payload);
       toast({ title: t("misc.success"), description: t("misc.createSuccess") });
+      setDialogOpen(false);
+      setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: "en", status: "DRAFT" });
+      setTrainees([]);
+      refetch();
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Enhancement 2: Save Draft — saves with status DRAFT, all trainees, attachments, course, dates, notes
+  // The contractor can return later and continue editing via the edit dialog
+  const handleSaveDraft = async () => {
+    if (!formData.courseId) {
+      toast({ title: t("misc.error"), description: "Course is required to save a draft", variant: "destructive" });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const payload = {
+        ...formData,
+        status: "DRAFT",
+        traineeCount: trainees.length,
+        trainees: trainees.map((t) => ({
+          fullName: t.fullName,
+          nationalId: t.nationalId,
+          nationality: t.nationality || null,
+          jobTitle: t.jobTitle || null,
+          idAttachmentUrl: t.idAttachmentUrl,
+        })),
+      };
+      await api.post("/requests", payload);
+      toast({ title: t("misc.success"), description: "Draft saved — you can return later to continue editing" });
       setDialogOpen(false);
       setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: "en", status: "DRAFT" });
       setTrainees([]);
@@ -529,6 +580,7 @@ export function TrainingRequestsRoute() {
               trainees={trainees}
               onChange={setTrainees}
               companyId={formData.companyId as string | undefined}
+              onSaveDraft={() => void handleSaveDraft()}
             />
           </div>
 
