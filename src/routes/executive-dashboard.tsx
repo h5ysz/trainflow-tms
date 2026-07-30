@@ -86,31 +86,53 @@ export function ExecutiveDashboardRoute() {
   const { locale } = useI18n();
   const { navigate } = useAppStore();
   const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ companyId: "", courseId: "", dateFrom: "", dateTo: "" });
+  // Bumping refreshKey forces the effect to re-run, enabling manual refetch
+  // from the "Apply" button without re-introducing setState-in-effect.
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      if (filters.companyId) params.set("companyId", filters.companyId);
-      if (filters.courseId) params.set("courseId", filters.courseId);
-      if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
-      if (filters.dateTo) params.set("dateTo", filters.dateTo);
-      const resp = await fetch(`/api/compliance/executive-dashboard?${params}`, { credentials: "same-origin" });
-      const json = await resp.json();
-      if (json.success) setData(json.data);
-      else setError(json.error || "Failed to load");
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }, [filters]);
+  // Effect: kicks off the fetch whenever filters change OR refresh is clicked.
+  // Per the React 19 `react-hooks/set-state-in-effect` rule, setState is NEVER
+  // called synchronously in the effect body — all state transitions happen
+  // inside the async .then()/.catch()/.finally() callbacks, which the rule
+  // allows.
+  const filtersKey = JSON.stringify(filters);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    let cancelled = false;
+
+    const params = new URLSearchParams();
+    if (filters.companyId) params.set("companyId", filters.companyId);
+    if (filters.courseId) params.set("courseId", filters.courseId);
+    if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
+    if (filters.dateTo) params.set("dateTo", filters.dateTo);
+
+    // Chain .then() callbacks so no setState runs synchronously in the effect.
+    fetch(`/api/compliance/executive-dashboard?${params}`, { credentials: "same-origin" })
+      .then((resp) => resp.json())
+      .then((json) => {
+        if (cancelled) return;
+        if (json.success) {
+          setData(json.data);
+          setError(null);
+        } else {
+          setError(json.error || "Failed to load");
+        }
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setError((e as Error).message);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [filtersKey, refreshKey]);
 
   const k = data?.kpis;
   const c = data?.charts;
@@ -152,7 +174,7 @@ export function ExecutiveDashboardRoute() {
           onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
           className="h-9 max-w-[150px]"
         />
-        <Button size="sm" onClick={fetchData} disabled={loading}>
+        <Button size="sm" onClick={refresh} disabled={loading}>
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Filter className="h-4 w-4" />}
           {locale === "en" ? "Apply" : "تطبيق"}
         </Button>

@@ -53,23 +53,41 @@ export function RenewalDashboardRoute() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("today");
+  // Bumping refreshKey forces the effect to re-run, enabling manual refetch
+  // from the "Refresh" button without re-introducing setState-in-effect.
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const resp = await fetch("/api/renewal/dashboard", { credentials: "same-origin" });
-      const json = await resp.json();
-      if (json.success) setData(json.data);
-      else setError(json.error || "Failed to load");
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // Effect: kicks off the fetch on mount and whenever refresh is clicked.
+  // Per the React 19 `react-hooks/set-state-in-effect` rule, setState is NEVER
+  // called synchronously in the effect body — all state transitions happen
+  // inside the async .then()/.catch()/.finally() callbacks, which the rule
+  // allows.
+  useEffect(() => {
+    let cancelled = false;
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+    fetch("/api/renewal/dashboard", { credentials: "same-origin" })
+      .then((resp) => resp.json())
+      .then((json) => {
+        if (cancelled) return;
+        if (json.success) {
+          setData(json.data);
+          setError(null);
+        } else {
+          setError(json.error || "Failed to load");
+        }
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setError((e as Error).message);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [refreshKey]);
 
   const tabs: Array<{ key: TabKey; labelEn: string; labelAr: string; count: number; color: string }> = [
     { key: "today", labelEn: "Expiring Today", labelAr: "تنتهي اليوم", count: data?.summary.expiringTodayCount ?? 0, color: "text-red-600" },
@@ -91,7 +109,7 @@ export function RenewalDashboardRoute() {
         title={locale === "en" ? "Renewal Center" : "مركز التجديد"}
         subtitle={locale === "en" ? "Monitor certificate expiries and manage renewals" : "مراقبة انتهاء الشهادات وإدارة التجديدات"}
         actions={
-          <Button size="sm" variant="outline" onClick={fetchData} disabled={loading} className="gap-1.5">
+          <Button size="sm" variant="outline" onClick={refresh} disabled={loading} className="gap-1.5">
             <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
             {locale === "en" ? "Refresh" : "تحديث"}
           </Button>
