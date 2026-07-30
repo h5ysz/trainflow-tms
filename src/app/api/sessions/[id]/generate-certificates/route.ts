@@ -4,6 +4,7 @@ import { withModuleAction, ok, fail, audit } from "@/lib/auth/api";
 import { checkCertificateEligibility } from "@/lib/api/certificate-eligibility";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { randomBytes } from "crypto";
+import { linkCertificateToPassport } from "@/lib/worker/passport-service";
 
 function genVerificationToken(): string {
   return randomBytes(12).toString("hex");
@@ -32,6 +33,8 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
     traineeName: string;
     eligible: boolean;
     certificateRef?: string;
+    passportId?: string | null;
+    passportNumber?: string | null;
     reasons?: string[];
   }> = [];
 
@@ -115,13 +118,68 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
       data: { certificateId: cert.id, updatedBy: user.id },
     });
 
+    // Auto-create / reuse Worker Passport and link the certificate to it.
+    // Idempotent: same nationalId always resolves to the same passport.
+    // Returns null only when the certificate has no nationalId (no key for passport).
+    let passportId: string | null = null;
+    let passportNumber: string | null = null;
+    try {
+      passportId = await linkCertificateToPassport(
+        {
+          id: cert.id,
+          traineeName: cert.traineeName,
+          traineeIdNational: cert.traineeIdNational,
+          traineeEmail: cert.traineeEmail,
+          companyId: cert.companyId,
+        },
+        user.id
+      );
+
+      if (passportId) {
+        const passport = await db.workerPassport.findUnique({
+          where: { id: passportId },
+          select: { passportNumber: true },
+        });
+        passportNumber = passport?.passportNumber ?? null;
+
+        await audit({
+          user,
+          action: "CERTIFICATE_GENERATE",
+          entity: "WORKER_PASSPORT",
+          entityId: passportId,
+          entityRef: passportNumber ?? passportId,
+          description: `Linked certificate ${cert.refNumber} to worker passport ${passportNumber ?? passportId} for ${cert.traineeName}`,
+          descriptionAr: `ربط الشهادة ${cert.refNumber} بجواز العامل ${passportNumber ?? passportId} لـ ${cert.traineeName}`,
+          req,
+          metadata: {
+            certificateId: cert.id,
+            certificateRef: cert.refNumber,
+            passportId,
+            passportNumber,
+            nationalId: cert.traineeIdNational,
+          },
+        });
+      }
+    } catch (e) {
+      // Passport linkage must not roll back the certificate that was just issued.
+      // Log the failure and continue; the certificate is valid on its own.
+      console.error(
+        `[generate-certificates] Failed to link certificate ${cert.refNumber} to worker passport:`,
+        e
+      );
+    }
+
     results.push({
       traineeName: trainee.traineeName,
       eligible: true,
       certificateRef: cert.refNumber,
+      passportId,
+      passportNumber,
     });
     generated++;
   }
+
+  const passportsLinked = results.filter((r) => r.passportId).length;
 
   await audit({
     user,
@@ -129,10 +187,10 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
     entity: "CERTIFICATE",
     entityId: sessionId,
     entityRef: session.refNumber,
-    description: `Bulk certificate generation: ${generated} issued, ${skipped} skipped for session ${session.refNumber}`,
-    descriptionAr: `توليد جماعي للشهادات: ${generated} صادر، ${skipped} متخطى للجلسة ${session.refNumber}`,
+    description: `Bulk certificate generation: ${generated} issued, ${skipped} skipped, ${passportsLinked} passports linked for session ${session.refNumber}`,
+    descriptionAr: `توليد جماعي للشهادات: ${generated} صادر، ${skipped} متخطى، ${passportsLinked} جواز مرتبط للجلسة ${session.refNumber}`,
     req,
-    metadata: { generated, skipped, total: presentTrainees.length },
+    metadata: { generated, skipped, passportsLinked, total: presentTrainees.length },
   });
 
   return ok({
@@ -140,6 +198,7 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
     totalTrainees: presentTrainees.length,
     generated,
     skipped,
+    passportsLinked,
     results,
   });
 });
