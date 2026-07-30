@@ -56,7 +56,15 @@ export function RenewalDashboardRoute() {
   // Bumping refreshKey forces the effect to re-run, enabling manual refetch
   // from the "Refresh" button without re-introducing setState-in-effect.
   const [refreshKey, setRefreshKey] = useState(0);
-  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  // "Refresh" is the only thing that triggers a refetch, and it is an event handler —
+  // so `loading` is raised here rather than in the effect. That keeps the spinner and
+  // the disabled guard working on every fetch (not just the first) without putting a
+  // synchronous setState back into the effect body.
+  const refresh = useCallback(() => {
+    setLoading(true);
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   // Effect: kicks off the fetch on mount and whenever refresh is clicked.
   // Per the React 19 `react-hooks/set-state-in-effect` rule, setState is NEVER

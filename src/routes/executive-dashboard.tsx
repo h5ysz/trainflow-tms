@@ -92,7 +92,19 @@ export function ExecutiveDashboardRoute() {
   // Bumping refreshKey forces the effect to re-run, enabling manual refetch
   // from the "Apply" button without re-introducing setState-in-effect.
   const [refreshKey, setRefreshKey] = useState(0);
-  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  // Editing a filter and clicking "Apply" are the only two things that trigger a
+  // refetch, and both are event handlers — so `loading` is raised here rather than
+  // in the effect. That keeps the spinner honest on every fetch (not just the first)
+  // without putting a synchronous setState back into the effect body.
+  const refresh = useCallback(() => {
+    setLoading(true);
+    setRefreshKey((k) => k + 1);
+  }, []);
+  const updateFilter = useCallback((patch: Partial<typeof filters>) => {
+    setLoading(true);
+    setFilters((f) => ({ ...f, ...patch }));
+  }, []);
 
   // Effect: kicks off the fetch whenever filters change OR refresh is clicked.
   // Per the React 19 `react-hooks/set-state-in-effect` rule, setState is NEVER
@@ -153,25 +165,25 @@ export function ExecutiveDashboardRoute() {
         <Input
           placeholder={locale === "en" ? "Company ID" : "معرف الشركة"}
           value={filters.companyId}
-          onChange={(e) => setFilters({ ...filters, companyId: e.target.value })}
+          onChange={(e) => updateFilter({ companyId: e.target.value })}
           className="h-9 max-w-[160px]"
         />
         <Input
           placeholder={locale === "en" ? "Course ID" : "معرف الدورة"}
           value={filters.courseId}
-          onChange={(e) => setFilters({ ...filters, courseId: e.target.value })}
+          onChange={(e) => updateFilter({ courseId: e.target.value })}
           className="h-9 max-w-[160px]"
         />
         <Input
           type="date"
           value={filters.dateFrom}
-          onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
+          onChange={(e) => updateFilter({ dateFrom: e.target.value })}
           className="h-9 max-w-[150px]"
         />
         <Input
           type="date"
           value={filters.dateTo}
-          onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
+          onChange={(e) => updateFilter({ dateTo: e.target.value })}
           className="h-9 max-w-[150px]"
         />
         <Button size="sm" onClick={refresh} disabled={loading}>
