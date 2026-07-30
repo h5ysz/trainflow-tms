@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge, PriorityBadge } from "@/components/common/status-badge";
-import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Check, X, RotateCcw, ArrowRight, FileText, Download, Upload } from "lucide-react";
+import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Check, X, RotateCcw, ArrowRight, FileText, Download, Upload, FileSpreadsheet, AlertTriangle, UserCheck, Copy } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
@@ -22,6 +22,32 @@ interface RequestImportResult {
   requestsCreated: number;
   traineesLinked: number;
   errors: { row: number; message: string }[];
+}
+
+interface ImportPreviewRow {
+  rowNumber: number;
+  name: string;
+  nationalId: string;
+  nationality: string | null;
+  jobTitle: string | null;
+  companyName: string;
+  courseTitle: string;
+  phone: string | null;
+  email: string | null;
+  valid: boolean;
+  errors: string[];
+}
+
+interface ImportPreview {
+  totalRows: number;
+  validRows: number;
+  invalidRows: number;
+  duplicateNationalIds: { nationalId: string; rows: number[] }[];
+  rows: ImportPreviewRow[];
+  missingRequiredColumns: { field: string; canonicalAlias: string }[];
+  matchedColumns: { field: string; header: string }[];
+  unmatchedHeaders: string[];
+  traineeCount: number;
 }
 
 interface CompanyOption { id: string; name: string; refNumber: string; }
@@ -117,6 +143,10 @@ export function TrainingRequestsRoute() {
   const [companies, setCompanies] = useReactState<CompanyOption[]>([]);
   const [courses, setCourses] = useReactState<CourseOption[]>([]);
   const [importing, setImporting] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewData, setPreviewData] = useState<ImportPreview | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
@@ -184,9 +214,27 @@ export function TrainingRequestsRoute() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+
+    // V2: Call preview endpoint first to validate + show preview before saving
+    setPendingFile(file);
+    setPreviewLoading(true);
+    try {
+      const result = await api.postFile<ImportPreview>("/requests/import/preview", file);
+      setPreviewData(result);
+      setPreviewOpen(true);
+    } catch (err) {
+      toast({ title: t("misc.error"), description: (err as Error).message, variant: "destructive" });
+      setPendingFile(null);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    if (!pendingFile) return;
     setImporting(true);
     try {
-      const result = await api.postFile<RequestImportResult>("/requests/import", file);
+      const result = await api.postFile<RequestImportResult>("/requests/import", pendingFile);
       toast({
         title: t("misc.success"),
         description: t("requests.import.success", {
@@ -195,12 +243,21 @@ export function TrainingRequestsRoute() {
         }),
         variant: result.errors.length > 0 ? "destructive" : "default",
       });
+      setPreviewOpen(false);
+      setPreviewData(null);
+      setPendingFile(null);
       refetch();
     } catch (err) {
       toast({ title: t("misc.error"), description: (err as Error).message, variant: "destructive" });
     } finally {
       setImporting(false);
     }
+  };
+
+  const handleCancelPreview = () => {
+    setPreviewOpen(false);
+    setPreviewData(null);
+    setPendingFile(null);
   };
 
   const columns: Column<Request>[] = [
@@ -335,8 +392,9 @@ export function TrainingRequestsRoute() {
             {canCreate && (
               <>
                 <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={(e) => void handleImportFile(e)} />
-                <Button variant="outline" onClick={handleImportClick} disabled={importing}>
-                  <Upload className="h-4 w-4 me-1.5" />{t("requests.import")}
+                <Button variant="outline" onClick={handleImportClick} disabled={importing || previewLoading}>
+                  {previewLoading ? <FileSpreadsheet className="h-4 w-4 me-1.5 animate-pulse" /> : <Upload className="h-4 w-4 me-1.5" />}
+                  {previewLoading ? (t("requests.import.previewing") || "Previewing...") : t("requests.import")}
                 </Button>
               </>
             )}
@@ -545,6 +603,180 @@ export function TrainingRequestsRoute() {
           </div>
         )}
       </FormDialog>
+
+      {/* V2: Import Preview Dialog — shows validation results before saving */}
+      {previewOpen && previewData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-background border rounded-lg shadow-lg max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="border-b p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="h-5 w-5 text-primary" />
+                <h2 className="text-lg font-semibold">
+                  {t("requests.import.preview") || "Import Preview"}
+                </h2>
+              </div>
+              <Button variant="ghost" size="sm" onClick={handleCancelPreview}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Summary stats */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="border rounded-md p-3">
+                  <div className="text-xs text-muted-foreground">{t("requests.import.totalRows") || "Total Rows"}</div>
+                  <div className="text-2xl font-bold">{previewData.totalRows}</div>
+                </div>
+                <div className="border rounded-md p-3 border-green-500/30 bg-green-500/5">
+                  <div className="text-xs text-muted-foreground flex items-center gap-1"><UserCheck className="h-3 w-3" /> {t("requests.import.validRows") || "Valid"}</div>
+                  <div className="text-2xl font-bold text-green-600">{previewData.validRows}</div>
+                </div>
+                <div className="border rounded-md p-3 border-red-500/30 bg-red-500/5">
+                  <div className="text-xs text-muted-foreground flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> {t("requests.import.invalidRows") || "Invalid"}</div>
+                  <div className="text-2xl font-bold text-red-600">{previewData.invalidRows}</div>
+                </div>
+                <div className="border rounded-md p-3 border-blue-500/30 bg-blue-500/5">
+                  <div className="text-xs text-muted-foreground flex items-center gap-1"><Users className="h-3 w-3" /> {t("requests.import.traineeCount") || "Trainees"}</div>
+                  <div className="text-2xl font-bold text-blue-600">{previewData.traineeCount}</div>
+                </div>
+              </div>
+
+              {/* Missing required columns */}
+              {previewData.missingRequiredColumns.length > 0 && (
+                <div className="border border-red-500/30 bg-red-500/5 rounded-md p-3">
+                  <div className="flex items-center gap-2 text-red-700 font-medium text-sm mb-2">
+                    <AlertCircle className="h-4 w-4" />
+                    {t("requests.import.missingColumns") || "Missing required columns"}
+                  </div>
+                  <ul className="text-xs space-y-1">
+                    {previewData.missingRequiredColumns.map((m, i) => (
+                      <li key={i} className="text-red-700">
+                        • <strong>{m.field}</strong> — {t("requests.import.acceptedAlias") || "accepted header"}: <code className="bg-red-500/10 px-1 rounded">{m.canonicalAlias}</code>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Duplicate national IDs */}
+              {previewData.duplicateNationalIds.length > 0 && (
+                <div className="border border-orange-500/30 bg-orange-500/5 rounded-md p-3">
+                  <div className="flex items-center gap-2 text-orange-700 font-medium text-sm mb-2">
+                    <Copy className="h-4 w-4" />
+                    {t("requests.import.duplicateIds") || "Duplicate National IDs"}
+                  </div>
+                  <ul className="text-xs space-y-1 max-h-32 overflow-y-auto">
+                    {previewData.duplicateNationalIds.map((d, i) => (
+                      <li key={i} className="text-orange-700">
+                        • <code className="bg-orange-500/10 px-1 rounded">{d.nationalId}</code> — {t("requests.import.rows") || "rows"}: {d.rows.join(", ")}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Matched columns */}
+              {previewData.matchedColumns.length > 0 && (
+                <div className="border rounded-md p-3">
+                  <div className="text-xs font-medium text-muted-foreground mb-2">{t("requests.import.matchedColumns") || "Matched columns"}</div>
+                  <div className="flex flex-wrap gap-2">
+                    {previewData.matchedColumns.map((c, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 text-xs bg-green-500/10 text-green-700 border border-green-500/20 rounded px-2 py-0.5">
+                        <Check className="h-3 w-3" />
+                        {c.field}: <code className="bg-green-500/10 px-1 rounded">{c.header}</code>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Unmatched headers */}
+              {previewData.unmatchedHeaders.length > 0 && (
+                <div className="border rounded-md p-3">
+                  <div className="text-xs font-medium text-muted-foreground mb-2">{t("requests.import.unmatchedHeaders") || "Unmatched headers (ignored)"}</div>
+                  <div className="flex flex-wrap gap-2">
+                    {previewData.unmatchedHeaders.map((h, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 text-xs bg-muted text-muted-foreground border rounded px-2 py-0.5">
+                        {h}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Row preview table */}
+              {previewData.rows.length > 0 && (
+                <div className="border rounded-md overflow-hidden">
+                  <div className="bg-muted/50 px-3 py-2 text-xs font-medium text-muted-foreground">
+                    {t("requests.import.rowPreview") || "Row preview (first 20 rows)"}
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/30 sticky top-0">
+                        <tr>
+                          <th className="text-start p-2 font-medium">Row</th>
+                          <th className="text-start p-2 font-medium">{t("requests.traineeName") || "Name"}</th>
+                          <th className="text-start p-2 font-medium">{t("requests.nationalId") || "National ID"}</th>
+                          <th className="text-start p-2 font-medium">{t("requests.company") || "Company"}</th>
+                          <th className="text-start p-2 font-medium">{t("requests.course") || "Course"}</th>
+                          <th className="text-start p-2 font-medium">{t("requests.import.status") || "Status"}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewData.rows.slice(0, 20).map((r) => (
+                          <tr key={r.rowNumber} className="border-t">
+                            <td className="p-2 text-muted-foreground">{r.rowNumber}</td>
+                            <td className="p-2">{r.name || <span className="text-red-500">—</span>}</td>
+                            <td className="p-2 font-mono">{r.nationalId || <span className="text-red-500">—</span>}</td>
+                            <td className="p-2">{r.companyName || <span className="text-red-500">—</span>}</td>
+                            <td className="p-2">{r.courseTitle || <span className="text-red-500">—</span>}</td>
+                            <td className="p-2">
+                              {r.valid ? (
+                                <span className="inline-flex items-center gap-1 text-green-600"><Check className="h-3 w-3" /> OK</span>
+                              ) : (
+                                <span className="text-red-600" title={r.errors.join("; ")}>{r.errors[0]}</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {previewData.rows.length > 20 && (
+                    <div className="px-3 py-1 text-xs text-muted-foreground border-t">
+                      + {previewData.rows.length - 20} more rows...
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="border-t p-4 flex items-center justify-between">
+              <div className="text-xs text-muted-foreground">
+                {pendingFile && <span className="font-mono">{pendingFile.name}</span>}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={handleCancelPreview} disabled={importing}>
+                  {t("misc.cancel") || "Cancel"}
+                </Button>
+                <Button
+                  onClick={handleConfirmImport}
+                  disabled={importing || previewData.validRows === 0 || previewData.missingRequiredColumns.length > 0}
+                >
+                  {importing ? (
+                    <><FileSpreadsheet className="h-4 w-4 me-1.5 animate-pulse" /> {t("requests.import.importing") || "Importing..."}</>
+                  ) : (
+                    <><Upload className="h-4 w-4 me-1.5" /> {t("requests.import.confirm") || "Confirm Import"} ({previewData.validRows} {t("requests.import.trainees") || "trainees"})</>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

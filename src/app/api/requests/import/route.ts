@@ -4,12 +4,23 @@
 // each company (one TrainingRequestCourse per course). Unmatched
 // company/course/trainee records are auto-created, matching the behavior of
 // /api/sessions/import.
+//
+// V2: Header-based column matching (column order doesn't matter). Accepts
+// Arabic + English aliases for each field. See src/lib/requests/import-export.ts
+// COLUMN_ALIASES for the full alias list.
+//
+// The UI should call /api/requests/import/preview FIRST to validate the file
+// and show the user a preview. This endpoint does the actual save.
 import ExcelJS from "exceljs";
 import { db } from "@/lib/db";
 import { withModuleAction, ok, fail, audit } from "@/lib/auth/api";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { generateCourseCode } from "@/lib/api/course-code";
-import { REQUEST_COLUMNS, parseRegistrationRow, type ParsedRegistrationRow } from "@/lib/requests/import-export";
+import {
+  resolveColumnMapping,
+  parseRegistrationRowByMapping,
+  type ParsedRegistrationRow,
+} from "@/lib/requests/import-export";
 
 interface RowWithMeta extends ParsedRegistrationRow {
   rowNumber: number;
@@ -25,7 +36,6 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
   const buffer = Buffer.from(await file.arrayBuffer());
   const workbook = new ExcelJS.Workbook();
   try {
-     
     await workbook.xlsx.load(buffer as any);
   } catch {
     return fail("Could not read the uploaded file — expected a .xlsx spreadsheet", 422, "VALIDATION_ERROR");
@@ -34,7 +44,41 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
   const worksheet = workbook.worksheets[0];
   if (!worksheet) return fail("The uploaded workbook has no sheets", 422, "VALIDATION_ERROR");
 
-  const rawRows = worksheet.rowCount > 1 ? (worksheet.getRows(2, worksheet.rowCount - 1) ?? []) : [];
+  // Read headers from row 1
+  if (worksheet.rowCount < 2) {
+    return fail("The file appears to be empty (no header row + data rows)", 422, "VALIDATION_ERROR");
+  }
+
+  const headerRow = worksheet.getRow(1);
+  const headerCount = headerRow.cellCount;
+  const headers: string[] = [];
+  for (let i = 1; i <= headerCount; i++) {
+    const cell = headerRow.getCell(i);
+    headers.push(cellToString(cell.value) ?? "");
+  }
+
+  // Resolve column mapping by header names
+  const mappingResult = resolveColumnMapping(headers);
+
+  // If required columns are missing, return an error listing the missing headers
+  if (mappingResult.missingRequired.length > 0) {
+    const missing = mappingResult.missingRequired
+      .map((m) => `${m.field} (accepted: ${m.canonicalAlias})`)
+      .join("; ");
+    return fail(
+      `Missing required column(s): ${missing}. Please check the file headers and try again.`,
+      422,
+      "MISSING_REQUIRED_COLUMNS",
+      { missingRequired: mappingResult.missingRequired }
+    );
+  }
+
+  const mapping = mappingResult.mapping;
+
+  // Parse data rows (row 2+)
+  const dataRows = worksheet.rowCount > 1
+    ? (worksheet.getRows(2, worksheet.rowCount - 1) ?? [])
+    : [];
 
   const result = {
     requestsCreated: 0,
@@ -43,13 +87,17 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
   };
 
   const validRows: RowWithMeta[] = [];
-  for (const row of rawRows) {
+  for (const row of dataRows) {
     if (row.actualCellCount === 0) continue;
-    const rawValues = REQUEST_COLUMNS.map((_, idx) => row.getCell(idx + 1).value);
-    const parsed = parseRegistrationRow(rawValues);
+    const parsed = parseRegistrationRowByMapping(mapping, (idx) => row.getCell(idx + 1).value);
     if (!parsed.name || !parsed.nationalId || !parsed.companyName || !parsed.courseTitle) {
       if (parsed.name || parsed.nationalId || parsed.companyName || parsed.courseTitle) {
-        result.errors.push({ row: row.number, message: "Missing name, national ID, company, or course title" });
+        const missing: string[] = [];
+        if (!parsed.name) missing.push("name");
+        if (!parsed.nationalId) missing.push("national ID");
+        if (!parsed.companyName) missing.push("company name");
+        if (!parsed.courseTitle) missing.push("course title");
+        result.errors.push({ row: row.number, message: `Missing required field(s): ${missing.join(", ")}` });
       }
       continue;
     }
@@ -96,6 +144,7 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
             requestedBy: user.id,
             preferredLocation: first.region,
             status: "DRAFT",
+            traineeCount: groupRows.length, // auto-populated from imported rows
             createdBy: user.id,
             updatedBy: user.id,
           },
@@ -156,6 +205,7 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
                   refNumber: traineeRefNumber,
                   fullName: row.name,
                   nationalId: row.nationalId,
+                  nationality: row.nationality,
                   jobTitle: row.jobTitle,
                   mobile: row.phone,
                   email: row.email,
@@ -214,3 +264,11 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
 
   return ok(result);
 });
+
+function cellToString(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "object" && v !== null && "text" in v) return String((v as { text: unknown }).text).trim() || null;
+  if (typeof v === "object" && v !== null && "result" in v) return String((v as { result: unknown }).result).trim() || null;
+  const s = String(v).trim();
+  return s === "" ? null : s;
+}
