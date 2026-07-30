@@ -22,7 +22,7 @@ import { ProfileDialog } from "./profile-dialog";
 import {
   Search, Bell, Sun, Moon, Languages, Menu, ChevronDown,
   UserCircle, Settings, LogOut, ShieldCheck, UserCog, GraduationCap, Building2,
-  Loader2, Eye,
+  Loader2, Eye, Building, ScrollText,
 } from "lucide-react";
 import { canAccessModule, type UserRole } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
@@ -32,8 +32,10 @@ import { useToast } from "@/hooks/use-toast";
 
 const ROLE_ICONS: Record<UserRole, typeof ShieldCheck> = {
   SUPER_ADMIN: ShieldCheck,
+  COMPANY_ADMIN: Building,
   COORDINATOR: UserCog,
   TRAINER: GraduationCap,
+  AUDITOR: ScrollText,
   VIEWER: Eye,
   CONTRACTOR: Building2,
 };

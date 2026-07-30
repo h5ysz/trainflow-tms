@@ -14,12 +14,14 @@ import {
 } from "@/components/ui/dialog";
 import { RoleBadge } from "@/components/common/status-badge";
 import { canAccessModule, type UserRole } from "@/lib/auth/permissions";
-import { Settings, ShieldCheck, UserCog, GraduationCap, Building2, Eye } from "lucide-react";
+import { Settings, ShieldCheck, UserCog, GraduationCap, Building2, Eye, Building, ScrollText } from "lucide-react";
 
 const ROLE_ICONS: Record<UserRole, typeof ShieldCheck> = {
   SUPER_ADMIN: ShieldCheck,
+  COMPANY_ADMIN: Building,
   COORDINATOR: UserCog,
   TRAINER: GraduationCap,
+  AUDITOR: ScrollText,
   VIEWER: Eye,
   CONTRACTOR: Building2,
 };

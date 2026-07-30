@@ -40,7 +40,7 @@ interface RoleRow {
 const ADMIN_ONLY_MODULES = new Set<RouteKey>(["settings", "user-management", "roles"]);
 
 // Reserve SUPER_ADMIN for the real Super Admin system role.
-const ASSIGNABLE_BASE_TYPES: UserRole[] = ["COORDINATOR", "TRAINER", "CONTRACTOR", "VIEWER"];
+const ASSIGNABLE_BASE_TYPES: UserRole[] = ["COMPANY_ADMIN", "COORDINATOR", "TRAINER", "AUDITOR", "CONTRACTOR", "VIEWER"];
 
 export function RolesRoute() {
   const { t, locale } = useI18n();

@@ -1,11 +1,13 @@
 // GCCLAB TMS — RBAC permission matrix
 // Modules + actions per role.
 // SUPER_ADMIN: full access (everything)
+// COMPANY_ADMIN: company-scoped management (no system config, no roles)
 // COORDINATOR: almost everything except system settings
 // TRAINER: limited to delivery / assessment modules
+// AUDITOR: read-only across operational + reporting + audit modules
 // CONTRACTOR: limited to their own requests / certificates / notifications
 
-export type UserRole = "SUPER_ADMIN" | "COORDINATOR" | "TRAINER" | "CONTRACTOR" | "VIEWER";
+export type UserRole = "SUPER_ADMIN" | "COMPANY_ADMIN" | "COORDINATOR" | "TRAINER" | "AUDITOR" | "CONTRACTOR" | "VIEWER";
 
 export type RouteKey =
   | "dashboard"
@@ -102,6 +104,34 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "executive-dashboard",
     "renewal-dashboard",
   ],
+  // Company Admin: company-scoped management — operational modules + user-approvals +
+  // user-management (read-only) + report-schedules. Excludes system config (settings/roles)
+  // and training-delivery operations (qr-code/pre-test/final-test/evaluation).
+  COMPANY_ADMIN: [
+    "dashboard",
+    "companies",
+    "company-contacts",
+    "trainers",
+    "trainer-qualifications",
+    "trainees",
+    "courses",
+    "requests",
+    "sessions",
+    "session-detail",
+    "scheduling",
+    "attendance",
+    "certificates",
+    "reports",
+    "report-schedules",
+    "notifications",
+    "audit-log",
+    "user-approvals",
+    "user-management",
+    "worker-passports",
+    "compliance-matrix",
+    "executive-dashboard",
+    "renewal-dashboard",
+  ],
   // Coordinator and Trainer share the SAME operational modules
   COORDINATOR: [
     "dashboard",
@@ -184,6 +214,35 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "notifications",
     "audit-log",
   ],
+  // Auditor: read-only across all operational + reporting + audit modules.
+  // Excludes user-management, settings, roles, report-schedules (mutation modules).
+  AUDITOR: [
+    "dashboard",
+    "companies",
+    "company-contacts",
+    "trainers",
+    "trainer-qualifications",
+    "trainees",
+    "courses",
+    "requests",
+    "sessions",
+    "session-detail",
+    "scheduling",
+    "attendance",
+    "qr-code",
+    "pre-test",
+    "final-test",
+    "exam-attempts",
+    "evaluation",
+    "certificates",
+    "reports",
+    "notifications",
+    "audit-log",
+    "worker-passports",
+    "compliance-matrix",
+    "executive-dashboard",
+    "renewal-dashboard",
+  ],
   CONTRACTOR: [
     "dashboard",
     "trainees",
@@ -223,9 +282,66 @@ const OPERATIONAL_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
   "audit-log": ["view"],
 };
 
+// Company Admin permissions — manage companies (edit only, no create/delete),
+// full CRUD on trainees/requests/company-contacts/report-schedules, view-only on
+// training-delivery modules (sessions/attendance/certificates/etc.), and limited
+// user-approvals/user-management (read + approve, no full user CRUD).
+const COMPANY_ADMIN_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
+  companies: ["view", "edit"],
+  "company-contacts": ["view", "create", "edit", "delete"],
+  trainers: ["view"],
+  "trainer-qualifications": ["view"],
+  trainees: ["view", "create", "edit"],
+  courses: ["view"],
+  requests: ["view", "create", "edit"],
+  sessions: ["view"],
+  scheduling: ["view"],
+  attendance: ["view"],
+  certificates: ["view"],
+  reports: ["view"],
+  "report-schedules": ["view", "create", "edit", "delete"],
+  notifications: ["view"],
+  "audit-log": ["view"],
+  "user-approvals": ["view", "create", "edit"],
+  "user-management": ["view"],
+  "worker-passports": ["view"],
+  "compliance-matrix": ["view"],
+  "executive-dashboard": ["view"],
+  "renewal-dashboard": ["view"],
+};
+
+// Auditor permissions — strictly view-only across every accessible module.
+const AUDITOR_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
+  companies: ["view"],
+  "company-contacts": ["view"],
+  trainers: ["view"],
+  "trainer-qualifications": ["view"],
+  trainees: ["view"],
+  courses: ["view"],
+  requests: ["view"],
+  sessions: ["view"],
+  scheduling: ["view"],
+  attendance: ["view"],
+  "qr-code": ["view"],
+  "pre-test": ["view"],
+  "final-test": ["view"],
+  evaluation: ["view"],
+  certificates: ["view"],
+  reports: ["view"],
+  notifications: ["view"],
+  "audit-log": ["view"],
+  "worker-passports": ["view"],
+  "compliance-matrix": ["view"],
+  "executive-dashboard": ["view"],
+  "renewal-dashboard": ["view"],
+};
+
 export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action[]>>> = {
   SUPER_ADMIN: {
     // Super admin can do everything — including Settings (exclusive)
+  },
+  COMPANY_ADMIN: {
+    ...COMPANY_ADMIN_PERMISSIONS,
   },
   COORDINATOR: {
     ...OPERATIONAL_PERMISSIONS,
@@ -235,6 +351,9 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
   TRAINER: {
     ...OPERATIONAL_PERMISSIONS,
     "user-approvals": ["view", "create", "edit"],
+  },
+  AUDITOR: {
+    ...AUDITOR_PERMISSIONS,
   },
   VIEWER: {
     companies: ["view"],
@@ -353,4 +472,28 @@ export const navItems: NavItem[] = [
 
 export function getNavForRole(permissions: string[]): NavItem[] {
   return navItems.filter((item) => canAccessModule(permissions, item.key));
+}
+
+/**
+ * Build the canonical `permissions` JSON array (of "module.action" strings) for a
+ * given role, derived from `actionPermissions`. Used by scripts/seed.ts so the
+ * DB-stored Role.permissions stays in sync with this table — single source of truth.
+ *
+ * Returns ["*"] for SUPER_ADMIN (wildcard — everything).
+ */
+export function buildPermissionStringsForRole(role: UserRole): string[] {
+  if (role === "SUPER_ADMIN") return ["*"];
+  const actions = actionPermissions[role];
+  if (!actions) return [];
+  const strings: string[] = [];
+  for (const [module, acts] of Object.entries(actions)) {
+    if (!acts || acts.length === 0) continue;
+    if (acts.length === ACTIONS.length) {
+      // All 4 actions → use the "module.*" wildcard form
+      strings.push(`${module}.*`);
+    } else {
+      for (const a of acts) strings.push(`${module}.${a}`);
+    }
+  }
+  return strings;
 }

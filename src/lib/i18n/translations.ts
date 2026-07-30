@@ -24,13 +24,17 @@ export const dict = {
 
     // Roles
     "role.SUPER_ADMIN": "Super Admin",
+    "role.COMPANY_ADMIN": "Company Admin",
     "role.COORDINATOR": "Coordinator",
     "role.TRAINER": "Trainer",
+    "role.AUDITOR": "Auditor",
     "role.CONTRACTOR": "Contractor",
     "role.VIEWER": "Viewer",
     "role.SUPER_ADMIN.desc": "Full system access including settings",
+    "role.COMPANY_ADMIN.desc": "Manage assigned companies and view reports",
     "role.COORDINATOR.desc": "Manage training operations (no settings)",
     "role.TRAINER.desc": "Deliver sessions and grade assessments",
+    "role.AUDITOR.desc": "Read-only compliance and audit access",
     "role.CONTRACTOR.desc": "Submit and track training requests",
 
     // Navigation groups
@@ -890,13 +894,17 @@ export const dict = {
 
     // Roles
     "role.SUPER_ADMIN": "مدير النظام",
+    "role.COMPANY_ADMIN": "مدير الشركة",
     "role.COORDINATOR": "منسق التدريب",
     "role.TRAINER": "المدرب",
+    "role.AUDITOR": "المدقق",
     "role.CONTRACTOR": "المقاول (الشركة)",
     "role.VIEWER": "مشاهد",
     "role.SUPER_ADMIN.desc": "صلاحية كاملة على النظام بما في ذلك الإعدادات",
+    "role.COMPANY_ADMIN.desc": "إدارة الشركات المخصصة وعرض التقارير",
     "role.COORDINATOR.desc": "إدارة العمليات التدريبية (دون الإعدادات)",
     "role.TRAINER.desc": "تقديم الجلسات وتقييم الاختبارات",
+    "role.AUDITOR.desc": "وصول للقراءة فقط للامتثال والتدقيق",
     "role.CONTRACTOR.desc": "تقديم ومتابعة طلبات التدريب",
 
     // Navigation groups

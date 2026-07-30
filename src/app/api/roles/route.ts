@@ -10,7 +10,7 @@ const ALLOWED_SORT_FIELDS = ["code", "name", "createdAt"];
 // Base types a *new custom* role may pick — SUPER_ADMIN is reserved for the
 // real Super Admin system role so a custom role can never acquire the
 // platform-admin-exclusive gates (settings/users/roles) just by being assigned.
-const ASSIGNABLE_BASE_TYPES: UserRole[] = ["COORDINATOR", "TRAINER", "CONTRACTOR", "VIEWER"];
+const ASSIGNABLE_BASE_TYPES: UserRole[] = ["COMPANY_ADMIN", "COORDINATOR", "TRAINER", "AUDITOR", "CONTRACTOR", "VIEWER"];
 
 function validatePermissions(perms: unknown): string[] | null {
   if (!Array.isArray(perms)) return null;

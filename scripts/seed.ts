@@ -2,7 +2,8 @@
 // =====================================================================
 // Per architecture requirements, we seed ONLY:
 //   - Super Admin account
-//   - System Roles
+//   - System Roles (SUPER_ADMIN + COMPANY_ADMIN + COORDINATOR + TRAINER + AUDITOR)
+//   - Default user accounts for the 4 non-super-admin system roles
 //   - Permissions
 //   - System Settings
 //   - Arabic and English languages
@@ -10,11 +11,17 @@
 // NO sample companies, trainers, courses, requests, sessions, attendance,
 // certificates, or exams are seeded. The application starts completely empty
 // in production form, ready for real business data entry.
+//
+// IDEMPOTENCY: Re-running this seed is safe. Existing roles are NOT overwritten
+// (only created if missing). Existing users are NOT overwritten (only created if
+// missing). The SUPER_ADMIN account is the sole exception — its password is
+// always reset from SUPER_ADMIN_PASSWORD env var (preserving existing behavior).
 
 import { db } from "../src/lib/db";
 import { hashPassword } from "../src/lib/auth/jwt";
 import { nextRefNumber } from "../src/lib/api/ref-number";
-import type { UserRole } from "../src/lib/auth/permissions";
+import { buildPermissionStringsForRole, type UserRole } from "../src/lib/auth/permissions";
+import { randomBytes } from "crypto";
 
 async function main() {
   console.log("🌱 Seeding GCCLAB TMS (clean — no fake business data)...\n");
@@ -38,10 +45,13 @@ async function main() {
   // ─────────────────────────────────────────────────────────────────
   // 2) SYSTEM ROLES
   // ─────────────────────────────────────────────────────────────────
-  // Only Super Admin is seeded as a system role — by design. Every other role
-  // (Coordinator/Trainer/Contractor/Viewer/anything else) is created by the
-  // Super Admin through the Roles page, with whatever permissions they choose;
-  // this script must never auto-create operational roles again.
+  // SUPER_ADMIN is always re-synced (its permissions are ["*"] and it stays
+  // isSystem=true) — preserving the original behavior.
+  //
+  // The 4 operational system roles (COMPANY_ADMIN, COORDINATOR, TRAINER, AUDITOR)
+  // are CREATED IF MISSING but NEVER OVERWRITTEN. If the admin has customized a
+  // role's permissions via the UI, re-running this seed will not undo those
+  // changes. The `update: {}` (empty) on the upsert enforces this.
   //
   // `permissions` here is the LIVE, DB-driven RBAC source (src/lib/auth/api.ts
   // resolveEffectivePermissions() reads it per-request). `baseType` is what a
@@ -55,14 +65,51 @@ async function main() {
       description: "Platform administration: settings, users, roles, branding, integrations. Also has all operational permissions.",
       permissions: ["*"], isSystem: true,
     },
+    {
+      code: "COMPANY_ADMIN", name: "Company Admin", nameAr: "مدير الشركة", baseType: "COMPANY_ADMIN" as const,
+      description: "Company-scoped management: manage companies, trainees, requests, report schedules. View-only on training delivery. No system settings or roles.",
+      permissions: buildPermissionStringsForRole("COMPANY_ADMIN"), isSystem: true,
+    },
+    {
+      code: "COORDINATOR", name: "Coordinator", nameAr: "منسق التدريب", baseType: "COORDINATOR" as const,
+      description: "Training operations: full CRUD on companies, trainers, trainees, courses, requests, sessions, attendance, exams, certificates. No system settings.",
+      permissions: buildPermissionStringsForRole("COORDINATOR"), isSystem: true,
+    },
+    {
+      code: "TRAINER", name: "Trainer", nameAr: "المدرب", baseType: "TRAINER" as const,
+      description: "Training delivery: manage sessions, attendance, pre-test, final-test, evaluations, certificates. No report scheduling, no system settings.",
+      permissions: buildPermissionStringsForRole("TRAINER"), isSystem: true,
+    },
+    {
+      code: "AUDITOR", name: "Auditor", nameAr: "المدقق", baseType: "AUDITOR" as const,
+      description: "Read-only compliance and audit access across all operational and reporting modules. Cannot mutate any data.",
+      permissions: buildPermissionStringsForRole("AUDITOR"), isSystem: true,
+    },
   ];
+  let rolesCreated = 0;
+  let rolesSkipped = 0;
   for (const r of roles) {
-    await db.role.upsert({
-      where: { code: r.code },
-      update: { name: r.name, nameAr: r.nameAr, description: r.description, permissions: r.permissions, baseType: r.baseType, isSystem: true },
-      create: r,
-    });
+    const existing = await db.role.findUnique({ where: { code: r.code } });
+    if (existing) {
+      // SUPER_ADMIN is always re-synced (preserves original behavior).
+      // All other system roles are skipped — manual customizations preserved.
+      if (r.code === "SUPER_ADMIN") {
+        await db.role.update({
+          where: { code: r.code },
+          data: { name: r.name, nameAr: r.nameAr, description: r.description, permissions: r.permissions, baseType: r.baseType, isSystem: true },
+        });
+        console.log(`   ✓ Super Admin role re-synced`);
+      } else {
+        console.log(`   → ${r.code} role exists — skipped (preserving manual changes)`);
+      }
+      rolesSkipped++;
+    } else {
+      await db.role.create({ data: r });
+      console.log(`   ✓ Created ${r.code} system role (${r.permissions.length} permissions)`);
+      rolesCreated++;
+    }
   }
+  console.log(`   → ${rolesCreated} created, ${rolesSkipped} skipped/existing`);
 
   // Backfill roleId for any user whose roleId is null but whose role enum
   // matches a seeded system Role code — self-heals users created before
@@ -225,6 +272,115 @@ async function main() {
   }
 
   // ─────────────────────────────────────────────────────────────────
+  // 5b) DEFAULT ROLE USERS (COMPANY_ADMIN, COORDINATOR, TRAINER, AUDITOR)
+  // ─────────────────────────────────────────────────────────────────
+  // One default user per operational system role. Created IF MISSING only —
+  // existing users are NEVER overwritten (per idempotency requirement).
+  //
+  // Passwords are TEMPORARY: a random 24-char hex string generated at seed
+  // time, printed ONCE to the console, and hashed into the DB. The operator
+  // must copy the password from the seed output and use it for first login.
+  // forcePasswordChange=true forces a password change on first login so the
+  // temporary password is never used long-term.
+  //
+  // Set SEED_DEFAULT_USERS=false in the env to skip creating these users
+  // (useful for production deploys where the operator creates users manually).
+  console.log("→ Default role users (COMPANY_ADMIN, COORDINATOR, TRAINER, AUDITOR)");
+  const seedDefaultUsers = process.env.SEED_DEFAULT_USERS !== "false";
+  let usersCreated = 0;
+  let usersSkipped = 0;
+
+  if (!seedDefaultUsers) {
+    console.log("   → Skipped (SEED_DEFAULT_USERS=false)");
+  } else {
+    const defaultUsers = [
+      {
+        email: "company.admin@gcclab.com",
+        fullName: "Default Company Admin",
+        role: "COMPANY_ADMIN" as UserRole,
+        language: "en",
+      },
+      {
+        email: "coordinator@gcclab.com",
+        fullName: "Default Coordinator",
+        role: "COORDINATOR" as UserRole,
+        language: "en",
+      },
+      {
+        email: "trainer@gcclab.com",
+        fullName: "Default Trainer",
+        role: "TRAINER" as UserRole,
+        language: "en",
+      },
+      {
+        email: "auditor@gcclab.com",
+        fullName: "Default Auditor",
+        role: "AUDITOR" as UserRole,
+        language: "en",
+      },
+    ];
+
+    const createdPasswords: Array<{ email: string; password: string }> = [];
+
+    for (const u of defaultUsers) {
+      const existing = await db.user.findUnique({ where: { email: u.email } });
+      if (existing) {
+        console.log(`   → ${u.email} exists — skipped (preserving existing account)`);
+        usersSkipped++;
+        continue;
+      }
+
+      // Look up the system role to link roleId
+      const roleRow = await db.role.findUnique({ where: { code: u.role } });
+      if (!roleRow) {
+        console.error(`   ✗ Could not find system role '${u.role}' — run seed again after role creation`);
+        continue;
+      }
+
+      // Generate a temporary password (24 hex chars = 96 bits of entropy)
+      const tempPassword = randomBytes(12).toString("hex");
+      const tempHash = await hashPassword(tempPassword);
+
+      await db.user.create({
+        data: {
+          email: u.email,
+          fullName: u.fullName,
+          passwordHash: tempHash,
+          role: u.role,
+          roleId: roleRow.id,
+          language: u.language,
+          isActive: true,
+          accountStatus: "ACTIVE",
+          forcePasswordChange: true, // must change on first login
+        },
+      });
+      console.log(`   ✓ Created ${u.role} user: ${u.email}`);
+      createdPasswords.push({ email: u.email, password: tempPassword });
+      usersCreated++;
+    }
+
+    console.log(`   → ${usersCreated} created, ${usersSkipped} skipped/existing`);
+
+    // Print temporary passwords ONCE so the operator can copy them.
+    // These are NEVER written to a file — only stdout. The operator must
+    // record them immediately. After first login + password change, they
+    // are no longer valid.
+    if (createdPasswords.length > 0) {
+      console.log("");
+      console.log("   ╔══════════════════════════════════════════════════════════════╗");
+      console.log("   ║  TEMPORARY PASSWORDS — RECORD THESE NOW                  ║");
+      console.log("   ║  (Not stored anywhere else. Lost passwords require       ║");
+      console.log("   ║   a manual reset via the Super Admin UI.)               ║");
+      console.log("   ╠══════════════════════════════════════════════════════════════╣");
+      for (const { email, password } of createdPasswords) {
+        console.log(`   ║  ${email.padEnd(34)} → ${password}  ║`);
+      }
+      console.log("   ╚══════════════════════════════════════════════════════════════╝");
+      console.log("");
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
   // 6) DEFAULT REPORT SCHEDULES
   // ─────────────────────────────────────────────────────────────────
   console.log("→ Default report schedules (timing from Settings)");
@@ -296,11 +452,17 @@ async function main() {
 
   console.log(`\n✅ Clean seed completed`);
   console.log(`   - Languages: ${languages.length} (English, Arabic)`);
-  console.log(`   - Roles: ${roles.length} (Super Admin only — create others via the Roles page)`);
+  console.log(`   - Roles: ${roles.length} system roles (SUPER_ADMIN + COMPANY_ADMIN + COORDINATOR + TRAINER + AUDITOR)`);
+  console.log(`     · ${rolesCreated} created, ${rolesSkipped} skipped/existing`);
   console.log(`   - Permissions: ${permCount}`);
   console.log(`   - Settings: ${defaultSettings.length}`);
   console.log(`   - Report Schedules: ${defaultSchedules.length}`);
-  console.log(`   - Super Admin: 1 (no other business data seeded)`);
+  console.log(`   - Super Admin: 1 (password from SUPER_ADMIN_PASSWORD env)`);
+  if (seedDefaultUsers) {
+    console.log(`   - Default role users: ${usersCreated} created, ${usersSkipped} skipped/existing`);
+  } else {
+    console.log(`   - Default role users: skipped (SEED_DEFAULT_USERS=false)`);
+  }
 
   // ─── Sprint 6: Core Mandatory Courses + Compliance Rules ────────────
   // These three courses are ALWAYS mandatory by default:

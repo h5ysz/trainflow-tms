@@ -105,8 +105,10 @@ export function RoleBadge({
   const { t } = useI18n();
   const styles: Record<string, string> = {
     SUPER_ADMIN: "bg-primary/10 text-primary border-primary/20",
+    COMPANY_ADMIN: "bg-primary/10 text-primary border-primary/20",
     COORDINATOR: "bg-info/10 text-info border-info/20",
     TRAINER: "bg-warning/10 text-warning border-warning/20",
+    AUDITOR: "bg-secondary/10 text-secondary-foreground border-secondary/20",
     CONTRACTOR: "bg-success/10 text-success border-success/20",
     VIEWER: "bg-muted text-muted-foreground border-border",
   };
