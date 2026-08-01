@@ -11,11 +11,12 @@ export function useIsMobile() {
       setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
     }
     mql.addEventListener("change", onChange)
-    // Synchronising with an external system (matchMedia) is precisely what effects
-    // are for; the initial read has to happen after mount because there is no window
-    // during SSR.
-    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
-    return () => mql.removeEventListener("change", onChange)
+    // Defer initial read to avoid synchronous setState-in-effect
+    const handle = setTimeout(onChange, 0)
+    return () => {
+      clearTimeout(handle)
+      mql.removeEventListener("change", onChange)
+    }
   }, [])
 
   return !!isMobile

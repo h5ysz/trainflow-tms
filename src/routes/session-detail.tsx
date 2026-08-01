@@ -133,7 +133,10 @@ export function SessionDetailRoute() {
   }, [sessionId]);
 
   // Async data load; state is written from inside the awaited call.
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const handle = setTimeout(() => { void load(); }, 0);
+    return () => clearTimeout(handle);
+  }, [load]);
 
   useEffect(() => {
     if (!enrollOpen) return;

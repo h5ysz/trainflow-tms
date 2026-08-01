@@ -135,7 +135,8 @@ export function NotificationsRoute() {
 
   useEffect(() => {
     // Async data load; state is written from the promise callbacks.
-    void load(tab === "unread" ? "unread" : undefined);
+    const handle = setTimeout(() => { void load(tab === "unread" ? "unread" : undefined); }, 0);
+    return () => clearTimeout(handle);
   }, [tab]);
 
   const reload = () => load(tab === "unread" ? "unread" : undefined);

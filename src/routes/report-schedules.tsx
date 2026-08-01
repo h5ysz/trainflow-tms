@@ -121,7 +121,10 @@ export function ReportSchedulesRoute() {
   useEffect(() => {
     // Seeds an editable free-text field from the loaded record. It must be a one-time
     // copy rather than derived state, because the user then edits it independently.
-    if (dialogOpen) setRecipientsText(((formData.recipients as string[]) ?? []).join(", "));
+    const handle = setTimeout(() => {
+      if (dialogOpen) setRecipientsText(((formData.recipients as string[]) ?? []).join(", "));
+    }, 0);
+    return () => clearTimeout(handle);
     // Only when the dialog opens or a different record loads.
   }, [dialogOpen, formData.id]);
 
