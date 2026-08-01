@@ -78,8 +78,10 @@ export async function getApplicableRules(worker: {
         return worker.jobTitle && rule.scopeValue === worker.jobTitle;
       case "PROJECT":
       case "CLIENT":
-        // Project/Client scoping is handled via worker's project/client assignment
-        // (not yet implemented — for now, these rules apply to all workers)
+        // Project/Client scoping: the schema supports scopeValue for PROJECT/CLIENT
+        // rules, but worker→project/client assignment is not modeled in the current
+        // schema. These rules currently apply to all workers. When project tracking
+        // is added, extend workerMatchesRule() to filter by project/client.
         return true;
       default:
         return false;

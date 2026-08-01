@@ -12,13 +12,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/common/status-badge";
-import { CalendarDays, Plus, BookOpen, GraduationCap, MapPin, Users, AlertCircle, Download, Upload } from "lucide-react";
+import { CalendarDays, Plus, BookOpen, GraduationCap, MapPin, Users, AlertCircle, Download, Upload, Layers } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api } from "@/lib/api/client";
 import { useAppStore } from "@/lib/store/app-store";
 import { useEntityActions } from "@/hooks/use-entity-actions";
 import { useToast } from "@/hooks/use-toast";
 import { toDateTimeInput } from "@/lib/utils";
+import { AssembleSessionDialog } from "@/components/common/assemble-session-dialog";
 
 interface CourseOption { id: string; title: string; code: string; }
 interface TrainerOption { id: string; fullName: string; }
@@ -73,6 +74,7 @@ export function TrainingSessionsRoute() {
   const [courses, setCourses] = useState<CourseOption[]>([]);
   const [trainers, setTrainers] = useState<TrainerOption[]>([]);
   const [importing, setImporting] = useState(false);
+  const [assembleOpen, setAssembleOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
@@ -214,6 +216,11 @@ export function TrainingSessionsRoute() {
                 </Button>
               </>
             )}
+            {canCreate && (
+              <Button variant="outline" onClick={() => setAssembleOpen(true)}>
+                <Layers className="h-4 w-4 me-1.5" />{t("session.assemble")}
+              </Button>
+            )}
             {canCreate && <Button onClick={() => openCreate(NEW_SESSION)}><Plus className="h-4 w-4 me-1.5" />{t("sessions.new")}</Button>}
           </>
         }
@@ -294,10 +301,10 @@ export function TrainingSessionsRoute() {
               </Select>
             </Field>
             <Field label={t("sessions.durationHours")}>
-              <Input type="number" min={1} value={formData.durationHours as number} onChange={(e) => setField("durationHours", parseInt(e.target.value, 10) || 6)} />
+              <Input type="number" min={1} value={(formData.durationHours as number) ?? 6} onChange={(e) => setField("durationHours", parseInt(e.target.value, 10) || 6)} />
             </Field>
             <Field label={t("sessions.capacity")}>
-              <Input type="number" min={1} value={formData.capacity as number} onChange={(e) => setField("capacity", parseInt(e.target.value, 10) || 20)} />
+              <Input type="number" min={1} value={(formData.capacity as number) ?? 20} onChange={(e) => setField("capacity", parseInt(e.target.value, 10) || 20)} />
             </Field>
             <Field label={t("sessions.startDate")} required>
               <Input type="datetime-local" value={(formData.startDate as string) ?? ""} onChange={(e) => setField("startDate", e.target.value)} />
@@ -306,7 +313,7 @@ export function TrainingSessionsRoute() {
               <Input type="datetime-local" value={(formData.endDate as string) ?? ""} onChange={(e) => setField("endDate", e.target.value)} />
             </Field>
             <Field label={t("sessions.language")}>
-              <Select value={formData.language as string} onValueChange={(v) => setField("language", v)}>
+              <Select value={(formData.language as string) ?? "en"} onValueChange={(v) => setField("language", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="en">English</SelectItem>
@@ -315,7 +322,7 @@ export function TrainingSessionsRoute() {
               </Select>
             </Field>
             <Field label={t("sessions.expectedTrainees")}>
-              <Input type="number" min={0} value={formData.expectedTrainees as number} onChange={(e) => setField("expectedTrainees", parseInt(e.target.value, 10) || 0)} />
+              <Input type="number" min={0} value={(formData.expectedTrainees as number) ?? 0} onChange={(e) => setField("expectedTrainees", parseInt(e.target.value, 10) || 0)} />
             </Field>
             <Field label={t("sessions.instituteName")}>
               <Input placeholder="GCC Lab" value={(formData.instituteName as string) ?? ""} onChange={(e) => setField("instituteName", e.target.value)} />
@@ -349,6 +356,17 @@ export function TrainingSessionsRoute() {
         destructive
         loading={deleting}
         onConfirm={() => void confirmDelete()}
+      />
+
+      <AssembleSessionDialog
+        open={assembleOpen}
+        onOpenChange={setAssembleOpen}
+        onAssembled={(session) => {
+          setAssembleOpen(false);
+          // Navigate to the newly-assembled session's detail page.
+          navigate("session-detail", session.id);
+          refetch();
+        }}
       />
     </div>
   );

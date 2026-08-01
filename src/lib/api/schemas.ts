@@ -33,6 +33,12 @@ export const traineeUpsertSchema = z.object({
   companyId: z.string().trim().min(1),
   status: z.string().trim().max(50).optional(),
   notes: z.string().max(2000).optional().nullable(),
+  // URL to the uploaded ID/Iqama scan. Coordinators can replace or clear it
+  // at any time per the redesigned workflow (item #6 — full editing rights).
+  idAttachmentUrl: z.string().trim().max(500).optional().nullable(),
+  // Optional personal info for future compliance modules.
+  dateOfBirth: z.string().trim().optional().nullable(),
+  idExpiry: z.string().trim().optional().nullable(),
 });
 
 // Partial variant for PUT (all fields optional except we still constrain shapes).

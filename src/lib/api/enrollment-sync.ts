@@ -11,6 +11,17 @@
 import { db } from "@/lib/db";
 
 /**
+ * Normalize a name for fuzzy matching: trim, lowercase, collapse internal
+ * whitespace. The public check-in form lets trainees type their name freely,
+ * so exact equality misses trailing spaces / double spaces / missing middle
+ * names. This normaliser is the same one used by check-in-service.ts.
+ */
+function nameKey(name: string | null | undefined): string {
+  if (!name) return "";
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/**
  * Find a SessionEnrollment by (sessionId, traineeId) or by attendanceId.
  */
 export async function findEnrollment(opts: {
@@ -27,14 +38,15 @@ export async function findEnrollment(opts: {
       select: { sessionId: true, traineeName: true, traineeIdNational: true },
     });
     if (attendance) {
-      // Find enrollment by session + trainee name match
+      // Find enrollment by session + normalised name match OR nationalId match
       const enrollments = await db.sessionEnrollment.findMany({
         where: { sessionId: attendance.sessionId, deletedAt: null },
         include: { trainee: { select: { fullName: true, nationalId: true } } },
       });
+      const attNameKey = nameKey(attendance.traineeName);
       const match = enrollments.find(
         (e) =>
-          e.trainee.fullName === attendance.traineeName ||
+          nameKey(e.trainee.fullName) === attNameKey ||
           (attendance.traineeIdNational && e.trainee.nationalId === attendance.traineeIdNational)
       );
       if (match) return { id: match.id, sessionId: match.sessionId, traineeId: match.traineeId };
@@ -55,9 +67,10 @@ export async function findEnrollment(opts: {
       where: { sessionId: opts.sessionId, deletedAt: null },
       include: { trainee: { select: { fullName: true, nationalId: true } } },
     });
+    const optNameKey = nameKey(opts.traineeName);
     const match = enrollments.find(
       (e) =>
-        (opts.traineeName && e.trainee.fullName === opts.traineeName) ||
+        (optNameKey && nameKey(e.trainee.fullName) === optNameKey) ||
         (opts.traineeIdNational && e.trainee.nationalId === opts.traineeIdNational)
     );
     if (match) return { id: match.id, sessionId: match.sessionId, traineeId: match.traineeId };
@@ -125,13 +138,22 @@ export async function syncPreTestStatus(opts: {
 
   if (!enrollment) return;
 
-  // Only advance forward (don't regress from COMPLETED to PENDING)
-  if (opts.status === "PENDING") {
-    const current = await db.sessionEnrollment.findUnique({
-      where: { id: enrollment.id },
-      select: { preTestStatus: true },
-    });
-    if (current?.preTestStatus === "COMPLETED") return;
+  // ── Regression guard ──────────────────────────────────────────────────
+  // Don't regress from a terminal/progressed state. Ordinal: NOT_REQUIRED < PENDING < IN_PROGRESS < COMPLETED.
+  // This prevents a later sync call (e.g. from a catch block setting NOT_REQUIRED)
+  // from overwriting a COMPLETED status.
+  const PRE_TEST_ORDINAL: Record<string, number> = {
+    NOT_REQUIRED: 0,
+    PENDING: 1,
+    IN_PROGRESS: 2,
+    COMPLETED: 3,
+  };
+  const current = await db.sessionEnrollment.findUnique({
+    where: { id: enrollment.id },
+    select: { preTestStatus: true },
+  });
+  if (current && (PRE_TEST_ORDINAL[opts.status] ?? 0) < (PRE_TEST_ORDINAL[current.preTestStatus] ?? 0)) {
+    return; // Don't regress
   }
 
   // If trainee has checked in, move enrollmentStatus to TRAINING when pre-test starts
@@ -172,6 +194,24 @@ export async function syncFinalTestStatus(opts: {
   });
 
   if (!enrollment) return;
+
+  // ── Regression guard ──────────────────────────────────────────────────
+  // Don't regress from a terminal state. Ordinal: NOT_REQUIRED < PENDING < IN_PROGRESS < PASSED/FAILED.
+  // PASSED and FAILED are both terminal (ordinal 3) — neither regresses the other.
+  const FINAL_TEST_ORDINAL: Record<string, number> = {
+    NOT_REQUIRED: 0,
+    PENDING: 1,
+    IN_PROGRESS: 2,
+    PASSED: 3,
+    FAILED: 3,
+  };
+  const current = await db.sessionEnrollment.findUnique({
+    where: { id: enrollment.id },
+    select: { finalTestStatus: true },
+  });
+  if (current && (FINAL_TEST_ORDINAL[opts.status] ?? 0) < (FINAL_TEST_ORDINAL[current.finalTestStatus] ?? 0)) {
+    return; // Don't regress
+  }
 
   await db.sessionEnrollment.update({
     where: { id: enrollment.id },

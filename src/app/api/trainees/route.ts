@@ -18,6 +18,8 @@ export const GET = withModuleAction("trainees", "view", async ({ req, user }) =>
       { email: { contains: q.search } },
       { mobile: { contains: q.search } },
       { refNumber: { contains: q.search } },
+      { jobTitle: { contains: q.search } },
+      { company: { name: { contains: q.search } } },
     ];
   }
   if (q.filters.status) where.status = q.filters.status;
@@ -70,15 +72,23 @@ export const GET = withModuleAction("trainees", "view", async ({ req, user }) =>
 
 export const POST = withModuleAction("trainees", "create", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
-  const { fullName, nationalId, nationality, jobTitle, mobile, email, companyId, status, notes } = body;
+  const { fullName, nationalId, nationality, jobTitle, mobile, email, companyId, status, notes, idAttachmentUrl, dateOfBirth, idExpiry } = body;
 
-  if (!fullName || !nationalId || !companyId) {
+  // ── Contractor scoping ───────────────────────────────────────────────
+  // Contractors can only create trainees for their OWN company. If a
+  // contractor supplies a different companyId, we override it to their own.
+  // This mirrors the scoping in POST /api/requests.
+  const finalCompanyId = user.role === "CONTRACTOR" && user.companyId ? user.companyId : companyId;
+
+  if (!fullName || !nationalId || !finalCompanyId) {
     return fail("fullName, nationalId, and companyId are required", 422, "VALIDATION_ERROR");
   }
 
   // Prevent duplicate National ID (excluding soft-deleted records)
+  // Scoped to the same company — two companies can have trainees with the
+  // same nationalId (e.g. re-hire across companies).
   const existing = await db.trainee.findFirst({
-    where: { nationalId, deletedAt: null },
+    where: { nationalId, companyId: finalCompanyId, deletedAt: null },
   });
   if (existing) {
     return fail(`Trainee with National ID "${nationalId}" already exists (${existing.refNumber})`, 400, "DUPLICATE_NATIONAL_ID", {
@@ -88,7 +98,7 @@ export const POST = withModuleAction("trainees", "create", async ({ req, user })
   }
 
   // Validate company exists
-  const company = await db.company.findFirst({ where: { id: companyId, deletedAt: null } });
+  const company = await db.company.findFirst({ where: { id: finalCompanyId, deletedAt: null } });
   if (!company) return fail("Company not found", 404);
 
   const refNumber = await nextRefNumber("TRAINEE");
@@ -102,9 +112,12 @@ export const POST = withModuleAction("trainees", "create", async ({ req, user })
       jobTitle: jobTitle ?? null,
       mobile: mobile ?? null,
       email: email ?? null,
-      companyId,
+      companyId: finalCompanyId,
       status: status ?? "ACTIVE",
       notes: notes ?? null,
+      idAttachmentUrl: idAttachmentUrl ?? null,
+      dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+      idExpiry: idExpiry ? new Date(idExpiry) : null,
       createdBy: user.id,
       updatedBy: user.id,
     },

@@ -25,6 +25,10 @@ interface RequestCourseOption {
   traineeCount: number;
   defaultCapacity: number | null;
   alreadyGenerated: boolean;
+  /** New field — suggested split when traineeCount > defaultCapacity.
+   *  E.g. 37 trainees / 20 capacity → [20, 17]. Empty array means no split needed. */
+  suggestedSplit?: number[];
+  suggestedSessionCount?: number;
 }
 
 interface GeneratePlan {
@@ -139,7 +143,13 @@ export function GenerateSessionsDialog({
 
     setSubmitting(true);
     try {
-      const res = await api.post<{ generatedCount: number }>(`/requests/${requestId}/generate-sessions`, {
+      const res = await api.post<{ generatedCount: number; enrollmentSummary?: Array<{ sessionRef: string; enrolled: number }> }>(`/requests/${requestId}/generate-sessions`, {
+        // autoSplit + autoEnroll default to true on the backend, but we send
+        // them explicitly so the contract is clear. The backend will create
+        // N sessions per selected course when trainees exceed capacity,
+        // and pre-enroll the trainees into the resulting sessions.
+        autoSplit: true,
+        autoEnroll: true,
         sessions: selected.map((c) => {
           const s = specs[c.requestCourseId];
           return {
@@ -154,9 +164,13 @@ export function GenerateSessionsDialog({
           };
         }),
       });
+      const totalEnrolled = res.enrollmentSummary?.reduce((sum, e) => sum + e.enrolled, 0) ?? 0;
       toast({
         title: t("misc.success"),
-        description: t("requests.generate.success", { count: res.generatedCount }),
+        description: t("requests.generate.successWithEnrollment", {
+          count: res.generatedCount,
+          enrolled: totalEnrolled,
+        }),
       });
       onOpenChange(false);
       onGenerated();
@@ -209,6 +223,8 @@ export function GenerateSessionsDialog({
           {plan.courses.map((c) => {
             const s = specs[c.requestCourseId];
             if (!s) return null;
+            const split = c.suggestedSplit ?? [];
+            const willSplit = split.length > 1;
             return (
               <div key={c.requestCourseId} className="rounded-lg border p-4 space-y-3">
                 <label className="flex items-start gap-3 cursor-pointer">
@@ -225,6 +241,33 @@ export function GenerateSessionsDialog({
                     </span>
                   </span>
                 </label>
+
+                {/* Auto-split preview — shown when the trainee count exceeds
+                    the session capacity. The coordinator can see exactly how
+                    many sessions will be created and how trainees will be
+                    distributed. */}
+                {willSplit && s.include && (
+                  <div className="rounded-md border border-info/40 bg-info/10 p-2.5 text-xs">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="h-3.5 w-3.5 text-info shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <div className="font-medium text-info">
+                          {t("requests.generate.splitPreview", {
+                            trainees: c.traineeCount,
+                            capacity: s.capacity,
+                            sessions: split.length,
+                          })}
+                        </div>
+                        <div className="text-muted-foreground">
+                          {t("requests.generate.splitSizes", { sizes: split.join(" + ") })}
+                        </div>
+                        <div className="text-muted-foreground">
+                          {t("requests.generate.splitAutoEnroll")}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {s.include && (
                   <FormGrid cols={3}>

@@ -38,17 +38,9 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
   const session = await db.trainingSession.findUnique({ where: { id } });
   if (!session || session.deletedAt) return fail("Session not found", 404);
 
-  // Validate transition
+  // No lifecycle transition validation — coordinators can fire any lifecycle
+  // event at any time. Every change is audit-logged.
   const currentStatus = session.lifecycleStatus ?? "NOT_STARTED";
-  const allowed = LIFECYCLE_TRANSITIONS[currentStatus] ?? [];
-  if (!allowed.includes(eventType)) {
-    return fail(
-      `Invalid lifecycle transition: ${currentStatus} → ${eventType}. Allowed: ${allowed.join(", ") || "none"}`,
-      400,
-      "INVALID_TRANSITION",
-      { from: currentStatus, to: eventType, allowed }
-    );
-  }
 
   const now = new Date();
   const newLifecycleStatus = getLifecycleStatus(eventType);

@@ -1,23 +1,30 @@
 "use client";
 
-import { useState, useEffect, useRef, useState as useReactState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
 import { FormDialog, Field, FormGrid } from "@/components/common/form-dialog";
-import { GenerateSessionsDialog } from "@/components/common/generate-sessions-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge, PriorityBadge } from "@/components/common/status-badge";
+<<<<<<< Updated upstream
 import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Check, X, RotateCcw, ArrowRight, FileText, Download, Upload, FileSpreadsheet, AlertTriangle, UserCheck, Copy } from "lucide-react";
+=======
+import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Download, Upload, Eye } from "lucide-react";
+>>>>>>> Stashed changes
 import { useList } from "@/lib/api/hooks";
 import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/lib/store/app-store";
 import { canPerformAction } from "@/lib/auth/permissions";
 import { TraineeEntrySection, type TraineeEntry } from "@/components/common/trainee-entry-section";
+<<<<<<< Updated upstream
+=======
+import { RequestReviewDialog, type RequestListRow as ReviewRequestListRow } from "@/components/common/request-review-dialog";
+>>>>>>> Stashed changes
 
 interface RequestImportResult {
   requestsCreated: number;
@@ -53,87 +60,23 @@ interface ImportPreview {
 
 interface CompanyOption { id: string; name: string; refNumber: string; }
 interface CourseOption { id: string; title: string; code: string; refNumber: string; }
-interface Request {
-  id: string;
-  refNumber: string;
-  companyName?: string | null;
-  companyRef?: string | null;
-  courseTitle?: string | null;
-  courseCode?: string | null;
-  courseRef?: string | null;
-  traineeCount: number;
-  preferredDateFrom?: string | null;
-  preferredDateTo?: string | null;
-  preferredLocation?: string | null;
-  preferredLanguage?: string | null;
-  notes?: string | null;
-  status: string;
-  priority: string;
-  submittedAt?: string | null;
-  reviewedAt?: string | null;
-  approvedAt?: string | null;
-  scheduledAt?: string | null;
-  startedAt?: string | null;
-  completedAt?: string | null;
-  rejectedAt?: string | null;
-  rejectionReason?: string | null;
-  createdAt: string;
-}
+// Shape of a request row as returned by GET /api/requests (list).
+// Matches `RequestListRow` exported from request-review-dialog so the review
+// dialog can consume rows directly without re-shaping.
+type Request = ReviewRequestListRow;
 
 const PRIORITIES = ["LOW", "NORMAL", "HIGH", "URGENT"];
-
-// Transitions a requester may perform on their own request without `requests.edit`.
-// Mirrors SELF_SERVICE_TRANSITIONS in /api/requests/[id]/transition.
-const SELF_SERVICE_TRANSITIONS: Record<string, string[]> = {
-  DRAFT: ["SUBMITTED", "CANCELLED"],
-  SUBMITTED: ["CANCELLED"],
-  REJECTED: ["SUBMITTED"],
-};
-
-// Workflow transition matrix (mirror of backend)
-const NEXT_ACTIONS: Record<string, { status: string; labelKey: string; variant: "default" | "outline" | "ghost"; tone?: "success" | "destructive" | "info" | "warning" }[]> = {
-  DRAFT: [
-    { status: "SUBMITTED", labelKey: "workflow.submit", variant: "default", tone: "info" },
-    { status: "CANCELLED", labelKey: "workflow.cancel", variant: "ghost", tone: "destructive" },
-  ],
-  SUBMITTED: [
-    { status: "UNDER_REVIEW", labelKey: "workflow.review", variant: "default", tone: "info" },
-    { status: "CANCELLED", labelKey: "workflow.cancel", variant: "ghost", tone: "destructive" },
-  ],
-  UNDER_REVIEW: [
-    { status: "APPROVED", labelKey: "workflow.approve", variant: "default", tone: "success" },
-    { status: "REJECTED", labelKey: "workflow.reject", variant: "ghost", tone: "destructive" },
-    { status: "CANCELLED", labelKey: "workflow.cancel", variant: "ghost", tone: "destructive" },
-  ],
-  APPROVED: [
-    { status: "SCHEDULED", labelKey: "workflow.schedule", variant: "default", tone: "info" },
-    { status: "CANCELLED", labelKey: "workflow.cancel", variant: "ghost", tone: "destructive" },
-  ],
-  SCHEDULED: [
-    { status: "IN_PROGRESS", labelKey: "workflow.start", variant: "default", tone: "info" },
-    { status: "CANCELLED", labelKey: "workflow.cancel", variant: "ghost", tone: "destructive" },
-  ],
-  IN_PROGRESS: [
-    { status: "COMPLETED", labelKey: "workflow.complete", variant: "default", tone: "success" },
-    { status: "CANCELLED", labelKey: "workflow.cancel", variant: "ghost", tone: "destructive" },
-  ],
-  COMPLETED: [],
-  CANCELLED: [],
-  REJECTED: [
-    { status: "SUBMITTED", labelKey: "workflow.resubmit", variant: "default", tone: "info" },
-  ],
-};
 
 export function TrainingRequestsRoute() {
   const { t } = useI18n();
   const { toast } = useToast();
   const { user } = useAppStore();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
-  const [rejectTarget, setRejectTarget] = useState<Request | null>(null);
-  const [rejectReason, setRejectReason] = useState("");
-  const [detailsTarget, setDetailsTarget] = useState<Request | null>(null);
-  const [generateTarget, setGenerateTarget] = useState<Request | null>(null);
+  // Single state for the Coordinator Review dialog. Every workflow action —
+  // submit, start review, approve, return, reject, create session, cancel,
+  // resubmit — is driven from inside that dialog now, so the old
+  // rejectTarget / detailsTarget / generateTarget trio is gone.
+  const [reviewTarget, setReviewTarget] = useState<Request | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState<Record<string, unknown>>({
     priority: "NORMAL",
@@ -141,13 +84,16 @@ export function TrainingRequestsRoute() {
     preferredLanguage: "en",
     status: "DRAFT",
   });
-  const [companies, setCompanies] = useReactState<CompanyOption[]>([]);
-  const [courses, setCourses] = useReactState<CourseOption[]>([]);
+  const [companies, setCompanies] = useState<CompanyOption[]>([]);
+  const [courses, setCourses] = useState<CourseOption[]>([]);
   const [importing, setImporting] = useState(false);
+<<<<<<< Updated upstream
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewData, setPreviewData] = useState<ImportPreview | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+=======
+>>>>>>> Stashed changes
   const [trainees, setTrainees] = useState<TraineeEntry[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -156,6 +102,7 @@ export function TrainingRequestsRoute() {
 
   const canCreate = user ? canPerformAction(user.permissions, "requests", "create") : false;
   const canEdit = user ? canPerformAction(user.permissions, "requests", "edit") : false;
+  const canCreateSession = user ? canPerformAction(user.permissions, "sessions", "create") : false;
 
   useEffect(() => {
     if (dialogOpen) {
@@ -171,44 +118,6 @@ export function TrainingRequestsRoute() {
       }
     }
   }, [dialogOpen, companies.length, courses.length]);
-
-  const handleTransition = async (req: Request, newStatus: string) => {
-    if (newStatus === "REJECTED") {
-      setRejectTarget(req);
-      setRejectDialogOpen(true);
-      return;
-    }
-    // Turning an APPROVED request into sessions is a real scheduling decision, not a
-    // status flip — collect the dates and shifts first.
-    if (newStatus === "SCHEDULED" && req.status === "APPROVED") {
-      setGenerateTarget(req);
-      return;
-    }
-    try {
-      // The dedicated transition endpoint accepts the requester's own workflow moves
-      // (submit / cancel / resubmit) without requiring requests.edit, which contractors
-      // do not have. Reviewers keep using PUT, which carries the richer edit payload.
-      await api.post(`/requests/${req.id}/transition`, { status: newStatus });
-      toast({ title: t("misc.success"), description: t("misc.updateSuccess") });
-      refetch();
-    } catch (e) {
-      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
-    }
-  };
-
-  const handleRejectSubmit = async () => {
-    if (!rejectTarget) return;
-    try {
-      await api.put(`/requests/${rejectTarget.id}`, { status: "REJECTED", rejectionReason: rejectReason || "Rejected" });
-      toast({ title: t("misc.success"), description: t("workflow.reject") });
-      setRejectDialogOpen(false);
-      setRejectTarget(null);
-      setRejectReason("");
-      refetch();
-    } catch (e) {
-      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
-    }
-  };
 
   const handleImportClick = () => fileInputRef.current?.click();
 
@@ -325,37 +234,22 @@ export function TrainingRequestsRoute() {
       header: t("action.actions"),
       headerClassName: "text-end",
       className: "text-end",
-      cell: (r) => {
-        const actions = NEXT_ACTIONS[r.status] ?? [];
-        if (actions.length === 0) {
-          return (
-            <Button variant="ghost" size="sm" className="h-8" onClick={() => setDetailsTarget(r)}>
-              {t("action.details")}
-            </Button>
-          );
-        }
-        return (
-          <div className="flex justify-end gap-1 flex-wrap">
-            {actions.map((a) => (
-              <Button
-                key={a.status}
-                variant={a.variant}
-                size="sm"
-                className={`h-8 ${a.tone === "success" ? "text-success" : a.tone === "destructive" ? "text-destructive" : a.tone === "info" ? "text-info" : ""}`}
-                onClick={() => handleTransition(r, a.status)}
-                // Offer only transitions the caller can actually complete: everything
-                // if they hold requests.edit, otherwise just their own submit/cancel.
-                disabled={!canEdit && !(SELF_SERVICE_TRANSITIONS[r.status] ?? []).includes(a.status)}
-              >
-                {a.status === "SUBMITTED" && r.status === "REJECTED" && <RotateCcw className="h-3.5 w-3.5 me-1" />}
-                {a.status === "APPROVED" && <Check className="h-3.5 w-3.5 me-1" />}
-                {a.status === "REJECTED" && <X className="h-3.5 w-3.5 me-1" />}
-                {t(a.labelKey as never)}
-              </Button>
-            ))}
-          </div>
-        );
-      },
+      cell: (r) => (
+        <div className="flex justify-end gap-1">
+          {/* Primary action — opens the full Coordinator Review screen.
+              The review dialog is the single surface for viewing trainees,
+              attachments, validation, and driving every workflow transition. */}
+          <Button
+            variant="default"
+            size="sm"
+            className="h-8"
+            onClick={() => setReviewTarget(r)}
+          >
+            <Eye className="h-3.5 w-3.5 me-1" />
+            {t("requests.review.openReview")}
+          </Button>
+        </div>
+      ),
     },
   ];
 
@@ -388,6 +282,7 @@ export function TrainingRequestsRoute() {
     }
     setSubmitting(true);
     try {
+<<<<<<< Updated upstream
       // Auto-calculate traineeCount from valid trainees
       const payload = {
         ...formData,
@@ -402,10 +297,16 @@ export function TrainingRequestsRoute() {
         })),
       };
       await api.post("/requests", payload);
+=======
+      const validTrainees = trainees.filter((tr) => tr.valid);
+      if (validTrainees.length === 0) { toast({ title: t("misc.error"), description: "At least 1 valid trainee is required", variant: "destructive" }); return; }
+      await api.post("/requests", { ...formData, traineeCount: validTrainees.length, trainees: validTrainees.map((tr) => ({ fullName: tr.fullName, nationalId: tr.nationalId, nationality: tr.nationality || null, jobTitle: tr.jobTitle || null, idAttachmentUrl: tr.idAttachmentUrl })) });
+>>>>>>> Stashed changes
       toast({ title: t("misc.success"), description: t("misc.createSuccess") });
       setDialogOpen(false);
       setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: "en", status: "DRAFT" });
       setTrainees([]);
+<<<<<<< Updated upstream
       refetch();
     } catch (e) {
       toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
@@ -440,6 +341,8 @@ export function TrainingRequestsRoute() {
       setDialogOpen(false);
       setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: "en", status: "DRAFT" });
       setTrainees([]);
+=======
+>>>>>>> Stashed changes
       refetch();
     } catch (e) {
       toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
@@ -503,7 +406,8 @@ export function TrainingRequestsRoute() {
         title={t("requests.new")}
         description={t("requests.subtitle")}
         icon={ClipboardList}
-        size="lg"
+        size="full"
+        allowMaximize
         onSubmit={handleSubmit}
         isSubmitting={submitting}
       >
@@ -522,7 +426,7 @@ export function TrainingRequestsRoute() {
           <FormGrid>
             {user?.role !== "CONTRACTOR" && (
               <Field label={t("requests.company")} required>
-                <Select onValueChange={(v) => setField("companyId", v)}>
+                <Select value={(formData.companyId as string) ?? ""} onValueChange={(v) => setField("companyId", v)}>
                   <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                   <SelectContent>
                     {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.name} ({c.refNumber})</SelectItem>)}
@@ -531,14 +435,18 @@ export function TrainingRequestsRoute() {
               </Field>
             )}
             <Field label={t("requests.course")} required>
-              <Select onValueChange={(v) => setField("courseId", v)}>
+              <Select value={(formData.courseId as string) ?? ""} onValueChange={(v) => setField("courseId", v)}>
                 <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                 <SelectContent>
                   {courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.title} ({c.code})</SelectItem>)}
                 </SelectContent>
               </Select>
             </Field>
+<<<<<<< Updated upstream
             {/* Trainee count is now auto-calculated from the TraineeEntrySection below */}
+=======
+            {/* Trainee count auto-calculated from TraineeEntrySection below */}
+>>>>>>> Stashed changes
             <Field label={t("requests.priority")}>
               <Select value={formData.priority as string} onValueChange={(v) => setField("priority", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -568,6 +476,7 @@ export function TrainingRequestsRoute() {
             </Field>
           </FormGrid>
 
+<<<<<<< Updated upstream
           {/* Trainee Entry Section — 3 methods: Excel Import / Manual Entry / Copy & Paste */}
           <div className="border-t pt-4">
             <div className="text-sm font-medium mb-3">
@@ -582,6 +491,11 @@ export function TrainingRequestsRoute() {
               companyId={formData.companyId as string | undefined}
               onSaveDraft={() => void handleSaveDraft()}
             />
+=======
+          <div className="border-t pt-4">
+            <div className="text-sm font-medium mb-3">{t("requests.trainees") || "Trainees"} ({trainees.filter((tr) => tr.valid).length} valid / {trainees.length} total)</div>
+            <TraineeEntrySection trainees={trainees} onChange={setTrainees} />
+>>>>>>> Stashed changes
           </div>
 
           <Field label={t("requests.notes")}>
@@ -590,12 +504,15 @@ export function TrainingRequestsRoute() {
         </div>
       </FormDialog>
 
-      <GenerateSessionsDialog
-        requestId={generateTarget?.id ?? null}
-        open={generateTarget !== null}
-        onOpenChange={(open) => { if (!open) setGenerateTarget(null); }}
-        onGenerated={() => { setGenerateTarget(null); refetch(); }}
+      <RequestReviewDialog
+        request={reviewTarget}
+        open={reviewTarget !== null}
+        onOpenChange={(open) => { if (!open) setReviewTarget(null); }}
+        onChanged={refetch}
+        canEdit={canEdit}
+        canCreateSession={canCreateSession}
       />
+<<<<<<< Updated upstream
 
       {/* Reject dialog */}
       <FormDialog
@@ -877,6 +794,8 @@ function DetailRow({ label, value }: { label: string; value?: string | number | 
     <div className="space-y-1">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="text-sm break-words">{value === null || value === undefined || value === "" ? "—" : value}</div>
+=======
+>>>>>>> Stashed changes
     </div>
   );
 }

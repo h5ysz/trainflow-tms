@@ -1,6 +1,6 @@
 // /api/sessions/[id]/qr — regenerate QR token for the session
 import { db } from "@/lib/db";
-import { withModuleAction, ok, notFound, audit } from "@/lib/auth/api";
+import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { randomBytes } from "crypto";
 import { buildCheckInUrl, resolveOrigin } from "@/lib/qr/urls";
 
@@ -8,6 +8,9 @@ export const POST = withModuleAction("qr-code", "create", async ({ params, user,
   const id = params.id as string;
   const session = await db.trainingSession.findUnique({ where: { id } });
   if (!session || session.deletedAt) return notFound("Session not found");
+
+  // No status gate — coordinators can regenerate QR at any time.
+  // Every change is audit-logged.
 
   const newToken = randomBytes(16).toString("hex");
   const updated = await db.trainingSession.update({

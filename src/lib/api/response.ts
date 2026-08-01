@@ -15,6 +15,8 @@ export interface ApiMeta {
   sortBy?: string;
   sortDir?: "asc" | "desc";
   filters?: Record<string, string | undefined>;
+  /** Optional extra fields (e.g. unreadCount for notifications) */
+  unreadCount?: number;
 }
 
 export interface ApiSuccessResponse<T> {

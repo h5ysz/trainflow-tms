@@ -67,7 +67,7 @@ export function Topbar() {
     try {
       const res = await api.getList<Notification>("/notifications", { pageSize: 5 });
       setNotifications(res.rows ?? []);
-      setUnreadCount((res.pagination as any)?.unreadCount ?? 0);
+      setUnreadCount(typeof res.pagination?.unreadCount === "number" ? res.pagination.unreadCount : 0);
     } catch {
       // ignore — silent
     } finally {

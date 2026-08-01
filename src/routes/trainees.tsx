@@ -42,7 +42,7 @@ const NEW_TRAINEE = { status: "ACTIVE", nationality: "Saudi" };
 
 export function TraineesRoute() {
   const { t } = useI18n();
-  const { user } = useAppStore();
+  const { user, navigate } = useAppStore();
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
@@ -139,6 +139,7 @@ export function TraineesRoute() {
         <RowActions
           canEdit={canEdit}
           canDelete={canDelete}
+          onView={() => navigate("trainee-detail", row.id)}
           onEdit={() => void openEdit(row)}
           onDelete={() => setDeleteTarget(row)}
         />

@@ -36,9 +36,10 @@ export const GET = withModuleAction("sessions", "view", async ({ req, user }) =>
   if (q.filters.region) where.region = q.filters.region;
   if (q.filters.requestCourseId) where.requestCourseId = q.filters.requestCourseId;
   if (q.filters.from || q.filters.to) {
-    where.startDate = {};
-    if (q.filters.from) (where.startDate as any).gte = new Date(q.filters.from);
-    if (q.filters.to) (where.startDate as any).lte = new Date(q.filters.to);
+    const dateFilter: Record<string, unknown> = {};
+    if (q.filters.from) dateFilter.gte = new Date(q.filters.from);
+    if (q.filters.to) dateFilter.lte = new Date(q.filters.to);
+    where.startDate = dateFilter;
   }
 
   // Coordinator and Trainer have equivalent operational permissions — no trainer scoping

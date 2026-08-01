@@ -569,7 +569,7 @@ export const GET = withModuleAction("reports", "view", async ({ req, params, use
       });
     }
     default:
-      return fail("Report type not implemented", 400);
+      return fail(`Unknown report type. Supported types: summary, trainees, conflicts, todaySessions, byCompany, attendanceByCompany, scoresByCompany, certificatesByCompany, sessionParticipation, byCourse, byTrainer, byPeriod, compliance, attendance, scores`, 400, "UNKNOWN_REPORT_TYPE");
   }
 });
 
