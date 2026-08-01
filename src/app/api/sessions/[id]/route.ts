@@ -33,24 +33,18 @@ export const PUT = withModuleAction("sessions", "edit", async ({ req, params, us
   // Coordinator and Trainer have equivalent operational permissions — no trainer scoping
 
   const {
-    courseId, trainerId, title, location, city, region, venue, shift, durationHours, capacity, language,
-    startDate, endDate, status, notes,
+    trainerId, title, location, city, region, venue, shift, durationHours, capacity, language,
+    startDate, endDate, expectedTrainees, actualTrainees, status, notes,
     instituteName, classification, locationMapUrl, durationDays,
   } = body;
-
-  // No status transition validation — coordinators can set any status at
-  // any time. Every change is audit-logged.
-
-  // Determine the effective courseId (may be changing)
-  const newCourseId = courseId !== undefined ? courseId : existing.courseId;
 
   // If trainer is being changed (or dates changing with a trainer set), validate assignment
   const newTrainerId = trainerId !== undefined ? trainerId : existing.trainerId;
   const newStartDate = startDate ? new Date(startDate) : existing.startDate;
   const newEndDate = endDate ? new Date(endDate) : existing.endDate;
 
-  if (newTrainerId && (trainerId !== undefined || startDate !== undefined || endDate !== undefined || courseId !== undefined)) {
-    // Skip conflict check if trainer is unchanged AND dates unchanged AND course unchanged
+  if (newTrainerId && (trainerId !== undefined || startDate !== undefined || endDate !== undefined)) {
+    // Skip conflict check if trainer is unchanged AND dates unchanged
     const isTrainerChanging = trainerId !== undefined && trainerId !== existing.trainerId;
     const areDatesChanging = (startDate !== undefined && newStartDate.getTime() !== existing.startDate.getTime())
                           || (endDate !== undefined && newEndDate.getTime() !== existing.endDate.getTime());
@@ -59,7 +53,7 @@ export const PUT = withModuleAction("sessions", "edit", async ({ req, params, us
       const validation = await validateTrainerAssignment({
         user,
         trainerId: newTrainerId,
-        courseId: newCourseId,
+        courseId: existing.courseId,
         startDate: newStartDate,
         endDate: newEndDate,
         excludeSessionId: id,
@@ -70,14 +64,9 @@ export const PUT = withModuleAction("sessions", "edit", async ({ req, params, us
     }
   }
 
-  // Note: `expectedTrainees` and `actualTrainees` are NOT settable via PUT.
-  // They are derived from SessionEnrollment counts (recomputeSessionCounts)
-  // and Attendance records respectively. Allowing direct mutation would
-  // desync the cached values from the source of truth.
   const updated = await db.trainingSession.update({
     where: { id },
     data: {
-      ...(courseId !== undefined && { courseId }),
       ...(trainerId !== undefined && { trainerId }),
       ...(title !== undefined && { title }),
       ...(location !== undefined && { location }),
@@ -90,6 +79,8 @@ export const PUT = withModuleAction("sessions", "edit", async ({ req, params, us
       ...(language !== undefined && { language }),
       ...(startDate !== undefined && { startDate: new Date(startDate) }),
       ...(endDate !== undefined && { endDate: new Date(endDate) }),
+      ...(expectedTrainees !== undefined && { expectedTrainees }),
+      ...(actualTrainees !== undefined && { actualTrainees }),
       ...(status !== undefined && { status }),
       ...(notes !== undefined && { notes }),
       ...(instituteName !== undefined && { instituteName }),
@@ -120,8 +111,7 @@ export const PUT = withModuleAction("sessions", "edit", async ({ req, params, us
       description: `Updated session ${existing.refNumber}`,
       descriptionAr: `تم تحديث جلسة ${existing.refNumber}`,
       req,
-      oldValue: existing,
-      newValue: updated,
+      metadata: { before: existing, after: updated },
     });
   }
 

@@ -49,13 +49,13 @@ const PREFIX: Record<RefEntityType, string> = {
 
 const YEARLY: Set<RefEntityType> = new Set([
   "TRAINING_REQUEST",
-  "CERTIFICATE",
-  "EXAM",
-  "WORKER_PASSPORT",
   "INVOICE",
   "QUOTATION",
   "PAYMENT",
   "RECEIPT",
+  "CERTIFICATE",
+  "EXAM",
+  "WORKER_PASSPORT",
 ]);
 
 function pad(n: number, width = 6): string {

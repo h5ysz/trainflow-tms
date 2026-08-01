@@ -20,9 +20,6 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
   if (!session) return fail("Session not found", 404);
   if (!session.course) return fail("Course not found", 404);
 
-  // No lifecycle gate — coordinators can generate certificates at any time.
-  // Every change is audit-logged.
-
   // Get all PRESENT trainees
   const presentTrainees = await db.attendance.findMany({
     where: {

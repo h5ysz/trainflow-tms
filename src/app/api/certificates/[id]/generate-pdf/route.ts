@@ -34,6 +34,20 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
     return fail("Certificate not found", 404);
   }
 
+  // ── Certificate Release Security ──
+  // Contractors can only generate/download PDFs after the certificate has
+  // been released by a coordinator (releaseStatus === "RELEASED" or "DOWNLOADED").
+  // Coordinators + admins can generate PDFs at any time (for preview/internal use).
+  if (user.role === "CONTRACTOR") {
+    if (cert.releaseStatus !== "RELEASED" && cert.releaseStatus !== "DOWNLOADED") {
+      return fail(
+        "Certificate has not been released. Please contact your coordinator.",
+        403,
+        "NOT_RELEASED",
+      );
+    }
+  }
+
   // Generate PDF
   const doc = new PDFDocument({
     size: "A4",

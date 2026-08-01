@@ -16,25 +16,11 @@ export const POST = withModuleAction("sessions", "create", async ({ req, user })
     return fail("No file uploaded", 422, "VALIDATION_ERROR");
   }
 
-  // File type + size validation (security: prevent arbitrary file uploads + DoS via huge files)
-  const MAX_IMPORT_BYTES = 20 * 1024 * 1024; // 20 MB
-  const ALLOWED_MIME = [
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/octet-stream", // some browsers send this for .xlsx
-  ];
-  const mime = file.type || "";
-  const ext = file.name.toLowerCase().endsWith(".xlsx");
-  if (!ext && !ALLOWED_MIME.includes(mime)) {
-    return fail("Invalid file type. Only .xlsx files are accepted.", 422, "INVALID_FILE_TYPE");
-  }
-  if (file.size > MAX_IMPORT_BYTES) {
-    return fail(`File is too large (${(file.size / (1024 * 1024)).toFixed(1)} MB). Maximum is 20 MB.`, 422, "FILE_TOO_LARGE");
-  }
-
   const buffer = Buffer.from(await file.arrayBuffer());
   const workbook = new ExcelJS.Workbook();
   try {
-    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+     
+    await workbook.xlsx.load(buffer as any);
   } catch {
     return fail("Could not read the uploaded file — expected a .xlsx spreadsheet", 422, "VALIDATION_ERROR");
   }

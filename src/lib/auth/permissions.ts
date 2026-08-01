@@ -5,11 +5,10 @@
 // TRAINER: limited to delivery / assessment modules
 // CONTRACTOR: limited to their own requests / certificates / notifications
 
-export type UserRole = "SUPER_ADMIN" | "COORDINATOR" | "TRAINER" | "CONTRACTOR" | "VIEWER";
+export type UserRole = "SUPER_ADMIN" | "COMPANY_ADMIN" | "COORDINATOR" | "TRAINER" | "AUDITOR" | "CONTRACTOR" | "VIEWER";
 
 export type RouteKey =
   | "dashboard"
-  | "ai-dashboard"
   | "companies"
   | "company-contacts"
   | "trainers"
@@ -40,6 +39,8 @@ export type RouteKey =
   | "compliance-matrix"
   | "executive-dashboard"
   | "renewal-dashboard"
+  | "ai-dashboard"
+  // Financial module
   | "finance"
   | "invoices"
   | "quotations"
@@ -63,15 +64,11 @@ export const ACTIONS: Action[] = ["view", "create", "edit", "delete"];
  * authorise against pre-test / final-test.
  */
 export const ALL_MODULES: RouteKey[] = [
-  "dashboard", "ai-dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
+  "dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
   "trainees", "courses", "requests", "sessions", "scheduling", "attendance", "qr-code",
   "pre-test", "final-test", "evaluation", "certificates", "reports", "report-schedules",
   "notifications", "audit-log", "settings", "user-approvals", "user-management", "roles",
-  "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard",
-  "session-detail", "trainee-detail", "exam-attempts",
-  // Financial module
-  "finance", "invoices", "quotations", "payments", "receipts", "bank-accounts",
-  "financial-settings", "financial-reports",
+  "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard", "session-detail", "trainee-detail", "ai-dashboard",
 ];
 
 // Module visibility per role
@@ -86,7 +83,6 @@ export const ALL_MODULES: RouteKey[] = [
 export const moduleAccess: Record<UserRole, RouteKey[]> = {
   SUPER_ADMIN: [
     "dashboard",
-    "ai-dashboard",
     "companies",
     "company-contacts",
     "trainers",
@@ -96,7 +92,6 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "requests",
     "sessions",
     "session-detail",
-    "trainee-detail",
     "scheduling",
     "attendance",
     "qr-code",
@@ -117,52 +112,17 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "compliance-matrix",
     "executive-dashboard",
     "renewal-dashboard",
-    // Financial module
-    "finance",
-    "invoices",
-    "quotations",
-    "payments",
-    "receipts",
-    "bank-accounts",
-    "financial-settings",
-    "financial-reports",
   ],
-<<<<<<< Updated upstream
-=======
-  // Company Admin: company-scoped management — operational modules + user-approvals +
-  // user-management (read-only) + report-schedules. Excludes system config (settings/roles)
-  // and training-delivery operations (qr-code/pre-test/final-test/evaluation).
   COMPANY_ADMIN: [
-    "dashboard",
-    "companies",
-    "company-contacts",
-    "trainers",
-    "trainer-qualifications",
-    "trainees",
-    "courses",
-    "requests",
-    "sessions",
-    "session-detail",
-    "trainee-detail",
-    "scheduling",
-    "attendance",
-    "certificates",
-    "reports",
-    "report-schedules",
-    "notifications",
-    "audit-log",
-    "user-approvals",
-    "user-management",
-    "worker-passports",
-    "compliance-matrix",
-    "executive-dashboard",
-    "renewal-dashboard",
+    "dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
+    "trainees", "courses", "requests", "sessions", "session-detail", "trainee-detail",
+    "scheduling", "attendance", "certificates", "reports", "report-schedules",
+    "notifications", "audit-log", "user-approvals", "user-management",
+    "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard",
   ],
->>>>>>> Stashed changes
   // Coordinator and Trainer share the SAME operational modules
   COORDINATOR: [
     "dashboard",
-    "ai-dashboard",
     "companies",
     "company-contacts",
     "trainers",
@@ -172,7 +132,6 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "requests",
     "sessions",
     "session-detail",
-    "trainee-detail",
     "scheduling",
     "attendance",
     "qr-code",
@@ -191,6 +150,9 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "compliance-matrix",
     "executive-dashboard",
     "renewal-dashboard",
+  // Financial module
+  "finance", "invoices", "quotations", "payments", "receipts", "bank-accounts",
+  "financial-settings", "financial-reports",
   ],
   TRAINER: [
     "dashboard",
@@ -203,7 +165,6 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "requests",
     "sessions",
     "session-detail",
-    "trainee-detail",
     "scheduling",
     "attendance",
     "qr-code",
@@ -232,7 +193,6 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "requests",
     "sessions",
     "session-detail",
-    "trainee-detail",
     "scheduling",
     "attendance",
     "qr-code",
@@ -245,39 +205,16 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "notifications",
     "audit-log",
   ],
-<<<<<<< Updated upstream
-=======
-  // Auditor: read-only across all operational + reporting + audit modules.
-  // Excludes user-management, settings, roles, report-schedules (mutation modules).
   AUDITOR: [
-    "dashboard",
-    "companies",
-    "company-contacts",
-    "trainers",
-    "trainer-qualifications",
-    "trainees",
-    "courses",
-    "requests",
-    "sessions",
-    "session-detail",
-    "trainee-detail",
-    "scheduling",
-    "attendance",
-    "qr-code",
-    "pre-test",
-    "final-test",
-    "exam-attempts",
-    "evaluation",
-    "certificates",
-    "reports",
-    "notifications",
-    "audit-log",
-    "worker-passports",
-    "compliance-matrix",
-    "executive-dashboard",
-    "renewal-dashboard",
+    "dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
+    "trainees", "courses", "requests", "sessions", "session-detail", "trainee-detail",
+    "scheduling", "attendance", "qr-code", "pre-test", "final-test", "exam-attempts",
+    "evaluation", "certificates", "reports", "notifications", "audit-log",
+    "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard", "session-detail", "trainee-detail", "ai-dashboard",
+    // Financial module (read-only)
+    "finance", "invoices", "quotations", "payments", "receipts", "bank-accounts",
+    "financial-settings", "financial-reports",
   ],
->>>>>>> Stashed changes
   CONTRACTOR: [
     "dashboard",
     "trainees",
@@ -315,26 +252,26 @@ const OPERATIONAL_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
   reports: ["view"],
   notifications: ["view"],
   "audit-log": ["view"],
-  // Financial module
-  invoices: ["view", "create", "edit", "delete"],
-  quotations: ["view", "create", "edit", "delete"],
-  payments: ["view", "create", "edit", "delete"],
-  receipts: ["view", "create", "edit", "delete"],
-  "bank-accounts": ["view", "create", "edit", "delete"],
-  "financial-reports": ["view"],
 };
 
 export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action[]>>> = {
   SUPER_ADMIN: {
     // Super admin can do everything — including Settings (exclusive)
-    "financial-settings": ["view", "create", "edit", "delete"],
-    "ai-dashboard": ["view"],
+  },
+  COMPANY_ADMIN: {
+    companies: ["view", "edit"], "company-contacts": ["view", "create", "edit", "delete"],
+    trainers: ["view"], "trainer-qualifications": ["view"], trainees: ["view", "create", "edit"],
+    courses: ["view"], requests: ["view", "create", "edit"], sessions: ["view"],
+    scheduling: ["view"], attendance: ["view"], certificates: ["view"],
+    reports: ["view"], "report-schedules": ["view", "create", "edit", "delete"],
+    notifications: ["view"], "audit-log": ["view"], "user-approvals": ["view", "create", "edit"],
+    "user-management": ["view"], "worker-passports": ["view"], "compliance-matrix": ["view"],
+    "executive-dashboard": ["view"], "renewal-dashboard": ["view"],
   },
   COORDINATOR: {
     ...OPERATIONAL_PERMISSIONS,
     "user-approvals": ["view", "create", "edit"],
     "report-schedules": ["view", "create", "edit", "delete"],
-    "ai-dashboard": ["view"],
   },
   TRAINER: {
     ...OPERATIONAL_PERMISSIONS,
@@ -360,10 +297,21 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
     notifications: ["view"],
     "audit-log": ["view"],
   },
+  AUDITOR: {
+    companies: ["view"], "company-contacts": ["view"], trainers: ["view"],
+    "trainer-qualifications": ["view"], trainees: ["view"], courses: ["view"],
+    requests: ["view"], sessions: ["view"], scheduling: ["view"], attendance: ["view"],
+    "qr-code": ["view"], "pre-test": ["view"], "final-test": ["view"], evaluation: ["view"],
+    certificates: ["view"], reports: ["view"], notifications: ["view"], "audit-log": ["view"],
+    "worker-passports": ["view"], "compliance-matrix": ["view"],
+    "executive-dashboard": ["view"], "renewal-dashboard": ["view"],
+    // Financial module (read-only)
+    invoices: ["view"], quotations: ["view"], payments: ["view"], receipts: ["view"],
+    "bank-accounts": ["view"], "financial-reports": ["view"], "financial-settings": ["view"],
+  },
   CONTRACTOR: {
     trainees: ["view", "create", "edit"],
     requests: ["view", "create"],
-    courses: ["view"],
     certificates: ["view"],
     notifications: ["view"],
   },
@@ -385,7 +333,6 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
 
 const MODULE_ALIASES: Partial<Record<RouteKey, RouteKey[]>> = {
   "session-detail": ["sessions"],
-  "trainee-detail": ["trainees"],
   "exam-attempts": ["pre-test", "final-test"],
 };
 
@@ -420,7 +367,6 @@ export interface NavItem {
 export const navItems: NavItem[] = [
   // Dashboard (standalone)
   { key: "dashboard", labelKey: "nav.dashboard", icon: "LayoutDashboard", group: "dashboard" },
-  { key: "ai-dashboard", labelKey: "nav.aiDashboard", icon: "Sparkles", group: "dashboard" },
 
   // Training Operations
   { key: "companies", labelKey: "nav.companies", icon: "Building2", group: "training" },
@@ -455,13 +401,6 @@ export const navItems: NavItem[] = [
   { key: "compliance-matrix", labelKey: "nav.complianceMatrix", icon: "ClipboardCheck", group: "system" },
   { key: "executive-dashboard", labelKey: "nav.executiveDashboard", icon: "TrendingUp", group: "system" },
   { key: "renewal-dashboard", labelKey: "nav.renewalDashboard", icon: "RefreshCw", group: "system" },
-  // Financial module
-  { key: "invoices", labelKey: "nav.invoices", icon: "FileText", group: "system" },
-  { key: "quotations", labelKey: "nav.quotations", icon: "FileText", group: "system" },
-  { key: "payments", labelKey: "nav.payments", icon: "CreditCard", group: "system" },
-  { key: "bank-accounts", labelKey: "nav.bankAccounts", icon: "Landmark", group: "system" },
-  { key: "financial-reports", labelKey: "nav.financialReports", icon: "BarChart3", group: "system" },
-  { key: "financial-settings", labelKey: "nav.financialSettings", icon: "Settings", group: "system" },
   { key: "settings", labelKey: "nav.settings", icon: "Settings", group: "system" },
 ];
 

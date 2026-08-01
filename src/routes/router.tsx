@@ -6,7 +6,6 @@ import { canAccessModule } from "@/lib/auth/permissions";
 import { Lock } from "lucide-react";
 
 import { DashboardRoute } from "./dashboard";
-import { AiDashboardRoute } from "./ai-dashboard";
 import { CompaniesRoute } from "./companies";
 import { CompanyContactsRoute } from "./company-contacts";
 import { TrainersRoute } from "./trainers";
@@ -16,7 +15,6 @@ import { CoursesRoute } from "./courses";
 import { TrainingRequestsRoute } from "./training-requests";
 import { TrainingSessionsRoute } from "./training-sessions";
 import { SessionDetailRoute } from "./session-detail";
-import { TraineeDetailRoute } from "./trainee-detail";
 import { SchedulingRoute } from "./scheduling";
 import { AttendanceRoute } from "./attendance";
 import { QrCodeRoute } from "./qr-code";
@@ -37,17 +35,19 @@ import { WorkerPassportsRoute } from "./worker-passports";
 import { ComplianceMatrixRoute } from "./compliance-matrix";
 import { ExecutiveDashboardRoute } from "./executive-dashboard";
 import { RenewalDashboardRoute } from "./renewal-dashboard";
+import type { RouteKey } from "@/lib/auth/permissions";
+
 import { FinancialDashboardRoute } from "./financial-dashboard";
 import { InvoicesRoute } from "./invoices";
 import { PaymentsRoute } from "./payments";
 import { BankAccountsRoute } from "./bank-accounts";
 import { FinancialSettingsRoute } from "./financial-settings";
 import { FinancialReportsRoute } from "./financial-reports";
-import type { RouteKey } from "@/lib/auth/permissions";
+import { TraineeDetailRoute } from "./trainee-detail";
+import { AiDashboardRoute } from "./ai-dashboard";
 
 const ROUTES: Record<RouteKey, React.ComponentType> = {
   dashboard: DashboardRoute,
-  "ai-dashboard": AiDashboardRoute,
   companies: CompaniesRoute,
   "company-contacts": CompanyContactsRoute,
   trainers: TrainersRoute,
@@ -58,7 +58,6 @@ const ROUTES: Record<RouteKey, React.ComponentType> = {
   sessions: TrainingSessionsRoute,
   // Reached from the sessions list; intentionally absent from navItems.
   "session-detail": SessionDetailRoute,
-  "trainee-detail": TraineeDetailRoute,
   scheduling: SchedulingRoute,
   attendance: AttendanceRoute,
   "qr-code": QrCodeRoute,
@@ -79,25 +78,16 @@ const ROUTES: Record<RouteKey, React.ComponentType> = {
   "compliance-matrix": ComplianceMatrixRoute,
   "executive-dashboard": ExecutiveDashboardRoute,
   "renewal-dashboard": RenewalDashboardRoute,
-  // Financial module
-  finance: FinancialDashboardRoute,
-  invoices: InvoicesRoute,
-  quotations: () => (
-    <div className="p-8 space-y-4">
-      <h2 className="text-lg font-semibold">Quotations</h2>
-      <p className="text-sm text-muted-foreground">Create and manage price quotations for contractors. Quotations can be converted to invoices.</p>
-    </div>
-  ),
-  payments: PaymentsRoute,
-  receipts: () => (
-    <div className="p-8 space-y-4">
-      <h2 className="text-lg font-semibold">Receipts</h2>
-      <p className="text-sm text-muted-foreground">Receipts are auto-generated when payments are approved. Download receipt PDFs from the Payments page.</p>
-    </div>
-  ),
+  "trainee-detail": TraineeDetailRoute,
+  "ai-dashboard": AiDashboardRoute,
+  "finance": FinancialDashboardRoute,
+  "invoices": InvoicesRoute,
+  "quotations": () => <div className="p-8"><h2 className="text-lg font-semibold">Quotations</h2><p className="text-sm text-muted-foreground">Create and manage price quotations for contractors.</p></div>,
+  "payments": PaymentsRoute,
+  "receipts": () => <div className="p-8"><h2 className="text-lg font-semibold">Receipts</h2><p className="text-sm text-muted-foreground">Receipts are auto-generated when payments are approved.</p></div>,
+  "financial-reports": FinancialReportsRoute,
   "bank-accounts": BankAccountsRoute,
   "financial-settings": FinancialSettingsRoute,
-  "financial-reports": FinancialReportsRoute,
   settings: SettingsRoute,
 };
 

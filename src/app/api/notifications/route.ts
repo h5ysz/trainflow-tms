@@ -38,7 +38,7 @@ export async function GET(req: Request) {
     },
   });
 
-  return list(rows, { ...buildListMeta(total, q), unreadCount });
+  return list(rows, { ...buildListMeta(total, q), unreadCount } as any);
 }
 
 export async function POST(req: Request) {

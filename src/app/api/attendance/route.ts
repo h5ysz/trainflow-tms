@@ -140,63 +140,47 @@ export const POST = withModuleAction("attendance", "create", async ({ req, user 
   const ipAddress = req.headers.get("x-forwarded-for") ?? null;
   const userAgent = req.headers.get("user-agent") ?? null;
 
-  let attendance;
-  try {
-    attendance = await db.$transaction(async (tx) => {
-      const created = await tx.attendance.create({
-        data: {
-          sessionId,
-          traineeName,
-          traineeIdNational: traineeIdNational ?? null,
-          traineeEmail: traineeEmail ?? null,
-          traineePhone: traineePhone ?? null,
-          company: company ?? null,
-          companyId: companyId ?? null,
-          checkInAt: new Date(),
-          status: status ?? "PRESENT",
-          checkInMethod: method,
-          notes: notes ?? null,
-          createdBy: user.id,
-          updatedBy: user.id,
-        },
-      });
-
-      // Log successful attempt
-      await tx.checkInAttempt.create({
-        data: {
-          sessionId,
-          qrToken: qrCodeToken ?? null,
-          traineeName,
-          traineeEmail: traineeEmail ?? null,
-          traineeIdNational: traineeIdNational ?? null,
-          ipAddress,
-          userAgent,
-          success: true,
-        },
-      });
-
-      // Bump actualTrainees on the session — with capacity guard.
-      // Use a conditional updateMany so we atomically refuse over-capacity
-      // check-ins (same pattern as check-in-service.ts). Without this, a
-      // trainer manually checking in the 21st trainee into a 20-capacity
-      // session would succeed.
-      const claimed = await tx.trainingSession.updateMany({
-        where: { id: sessionId, actualTrainees: { lt: session.capacity } },
-        data: { actualTrainees: { increment: 1 }, updatedBy: user.id },
-      });
-      if (claimed.count === 0) {
-        // Capacity reached — roll back the transaction by throwing.
-        throw new Error("CAPACITY_REACHED");
-      }
-
-      return created;
+  const attendance = await db.$transaction(async (tx) => {
+    const created = await tx.attendance.create({
+      data: {
+        sessionId,
+        traineeName,
+        traineeIdNational: traineeIdNational ?? null,
+        traineeEmail: traineeEmail ?? null,
+        traineePhone: traineePhone ?? null,
+        company: company ?? null,
+        companyId: companyId ?? null,
+        checkInAt: new Date(),
+        status: status ?? "PRESENT",
+        checkInMethod: method,
+        notes: notes ?? null,
+        createdBy: user.id,
+        updatedBy: user.id,
+      },
     });
-  } catch (e) {
-    if ((e as Error).message === "CAPACITY_REACHED") {
-      return fail(`Session ${session.refNumber} is at full capacity (${session.capacity})`, 422, "CAPACITY_REACHED");
-    }
-    throw e;
-  }
+
+    // Log successful attempt
+    await tx.checkInAttempt.create({
+      data: {
+        sessionId,
+        qrToken: qrCodeToken ?? null,
+        traineeName,
+        traineeEmail: traineeEmail ?? null,
+        traineeIdNational: traineeIdNational ?? null,
+        ipAddress,
+        userAgent,
+        success: true,
+      },
+    });
+
+    // Bump actualTrainees on the session
+    await tx.trainingSession.update({
+      where: { id: sessionId },
+      data: { actualTrainees: { increment: 1 }, updatedBy: user.id },
+    });
+
+    return created;
+  });
 
   await audit({
     user,

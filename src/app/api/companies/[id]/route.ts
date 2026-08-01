@@ -34,19 +34,6 @@ export const PUT = withModuleAction("companies", "edit", async ({ req, params, u
     contactPerson, contactPhone, contactEmail, status, logoUrl,
   } = body;
 
-  // ── Duplicate crNumber check ───────────────────────────────────────────
-  // POST checks for duplicate crNumber, but PUT previously didn't. Without
-  // this, two companies could end up with the same commercial registration
-  // number.
-  if (crNumber && crNumber !== existing.crNumber) {
-    const dup = await db.company.findFirst({
-      where: { crNumber, deletedAt: null, NOT: { id } },
-    });
-    if (dup) {
-      return fail(`Commercial Registration number "${crNumber}" already exists (${dup.refNumber})`, 400, "DUPLICATE_CR_NUMBER");
-    }
-  }
-
   const updated = await db.company.update({
     where: { id },
     data: {
@@ -92,20 +79,10 @@ export const DELETE = withModuleAction("companies", "delete", async ({ params, u
   const existing = await db.company.findUnique({ where: { id } });
   if (!existing || existing.deletedAt) return notFound("Company not found");
 
-  // Prevent cascade issues: check for related records (non-deleted).
-  // A soft-deleted company leaves trainees and users pointing at it,
-  // which breaks their workflows (e.g. "Company not found" on new requests).
-  const [requestCount, traineeCount, userCount] = await Promise.all([
-    db.trainingRequest.count({ where: { companyId: id, deletedAt: null } }),
-    db.trainee.count({ where: { companyId: id, deletedAt: null } }),
-    db.user.count({ where: { companyId: id, deletedAt: null } }),
-  ]);
-  if (requestCount > 0 || traineeCount > 0 || userCount > 0) {
-    const parts: string[] = [];
-    if (requestCount > 0) parts.push(`${requestCount} training request(s)`);
-    if (traineeCount > 0) parts.push(`${traineeCount} trainee(s)`);
-    if (userCount > 0) parts.push(`${userCount} user(s)`);
-    return fail(`Cannot delete a company with ${parts.join(", ")}. Suspend it instead.`, 400);
+  // Prevent cascade issues: check for related records (non-deleted)
+  const related = await db.trainingRequest.count({ where: { companyId: id, deletedAt: null } });
+  if (related > 0) {
+    return fail("Cannot delete a company with training requests. Suspend it instead.", 400);
   }
 
   // Soft delete

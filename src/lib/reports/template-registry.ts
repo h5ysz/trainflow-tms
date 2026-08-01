@@ -87,10 +87,9 @@ async function gcclabMonthlyQuery(filter: ReportFilter): Promise<ReportDataRow[]
     const to = new Date(year, month, 0, 23, 59, 59);
     sessionWhere.startDate = { gte: from, lte: to };
   } else if (filter.dateFrom || filter.dateTo) {
-    const dateFilter: Record<string, unknown> = {};
-    if (filter.dateFrom) dateFilter.gte = new Date(filter.dateFrom);
-    if (filter.dateTo) dateFilter.lte = new Date(filter.dateTo);
-    sessionWhere.startDate = dateFilter;
+    sessionWhere.startDate = {};
+    if (filter.dateFrom) (sessionWhere.startDate as any).gte = new Date(filter.dateFrom);
+    if (filter.dateTo) (sessionWhere.startDate as any).lte = new Date(filter.dateTo);
   }
 
   // Filters on related fields

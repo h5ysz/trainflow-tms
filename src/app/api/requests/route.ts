@@ -134,7 +134,7 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
       companyId: finalCompanyId,
       courseId,
       requestedBy: user.id,
-      traineeCount: Array.isArray(body.trainees) ? body.trainees.length : (traineeCount ?? 1),
+      traineeCount: traineeCount ?? 1,
       preferredDateFrom: preferredDateFrom ? new Date(preferredDateFrom) : null,
       preferredDateTo: preferredDateTo ? new Date(preferredDateTo) : null,
       preferredLocation: preferredLocation ?? null,
@@ -148,83 +148,11 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
     },
   });
 
-<<<<<<< Updated upstream
-  // V2: Create trainees + link them to the request's course in one transaction
-  if (Array.isArray(body.trainees) && body.trainees.length > 0) {
-    const requestCourse = await db.trainingRequestCourse.create({
-      data: {
-        requestId: request.id,
-        courseId,
-        traineeCount: 0,
-        createdBy: user.id,
-        updatedBy: user.id,
-      },
-    });
-
-    let linkedCount = 0;
-    for (const t of body.trainees) {
-      if (!t.fullName || !t.nationalId) continue;
-      // Find or create the trainee
-      let trainee = await db.trainee.findFirst({
-        where: { nationalId: t.nationalId, deletedAt: null },
-      });
-      if (!trainee) {
-        const traineeRefNumber = await nextRefNumber("TRAINEE");
-        trainee = await db.trainee.create({
-          data: {
-            refNumber: traineeRefNumber,
-            fullName: t.fullName,
-            nationalId: t.nationalId,
-            nationality: t.nationality ?? null,
-            jobTitle: t.jobTitle ?? null,
-            idAttachmentUrl: t.idAttachmentUrl ?? null,
-            companyId: finalCompanyId,
-            createdBy: user.id,
-            updatedBy: user.id,
-          },
-        });
-      }
-      await db.trainingRequestCourseTrainee.create({
-        data: {
-          requestCourseId: requestCourse.id,
-          traineeId: trainee.id,
-          createdBy: user.id,
-          updatedBy: user.id,
-        },
-      });
-      linkedCount++;
-    }
-    await db.trainingRequestCourse.update({
-      where: { id: requestCourse.id },
-      data: { traineeCount: linkedCount },
-    });
-    await db.trainingRequest.update({
-      where: { id: request.id },
-      data: { traineeCount: linkedCount },
-    });
-  }
-
   await audit({
     user,
     action: "CREATE",
     entity: "REQUEST",
     entityId: request.id,
-=======
-  if (Array.isArray(body.trainees) && body.trainees.length > 0) {
-    const requestCourse = await db.trainingRequestCourse.create({ data: { requestId: request.id, courseId, traineeCount: 0, createdBy: user.id, updatedBy: user.id } });
-    let linkedCount = 0;
-    for (const t of body.trainees) {
-      if (!t.fullName || !t.nationalId) continue;
-      let trainee = await db.trainee.findFirst({ where: { nationalId: t.nationalId, companyId: finalCompanyId, deletedAt: null } });
-      if (!trainee) { const traineeRefNumber = await nextRefNumber("TRAINEE"); trainee = await db.trainee.create({ data: { refNumber: traineeRefNumber, fullName: t.fullName, nationalId: t.nationalId, nationality: t.nationality ?? null, jobTitle: t.jobTitle ?? null, idAttachmentUrl: t.idAttachmentUrl ?? null, companyId: finalCompanyId, createdBy: user.id, updatedBy: user.id } }); }
-      await db.trainingRequestCourseTrainee.create({ data: { requestCourseId: requestCourse.id, traineeId: trainee.id, createdBy: user.id, updatedBy: user.id } });
-      linkedCount++;
-    }
-    await db.trainingRequestCourse.update({ where: { id: requestCourse.id }, data: { traineeCount: linkedCount } });
-    await db.trainingRequest.update({ where: { id: request.id }, data: { traineeCount: linkedCount } });
-  }
-  await audit({ user, action: "CREATE", entity: "REQUEST", entityId: request.id,
->>>>>>> Stashed changes
     entityRef: request.refNumber,
     description: `Created training request ${request.refNumber} for ${company.name} - ${course.title}`,
     descriptionAr: `تم إنشاء طلب تدريب ${request.refNumber} لـ ${company.name} - ${course.title}`,

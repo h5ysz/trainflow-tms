@@ -3,7 +3,6 @@ import { Inter } from "next/font/google";
 import { IBM_Plex_Sans_Arabic } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
-import { CopilotPanel } from "@/components/common/copilot-panel";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -40,7 +39,6 @@ export default function RootLayout({
       >
         {children}
         <Toaster />
-        <CopilotPanel />
       </body>
     </html>
   );

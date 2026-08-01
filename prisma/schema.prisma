@@ -276,11 +276,11 @@ model Company {
   certificates       Certificate[]
   sessionEnrollments SessionEnrollment[]
   sessionCompanies   SessionCompany[]
+  sessionPayments    SessionPayment[]
   examAttempts       ExamAttempt[]
   testResults        TestResult[]
   courseEvaluations  CourseEvaluation[]
   workerPassports    WorkerPassport[]
-  // Financial module
   quotations         Quotation[]
   invoices           Invoice[]
   payments           Payment[]
@@ -295,20 +295,6 @@ model Company {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Trainee {
-<<<<<<< Updated upstream
-  id              String    @id @default(uuid())
-  refNumber       String    @unique // TRA-000001
-  fullName        String
-  nationalId      String // National ID / Iqama — unique (duplicates prevented at app level)
-  nationality     String?
-  jobTitle        String?
-  mobile          String?
-  email           String?
-  companyId       String
-  status          String    @default("ACTIVE") // ACTIVE | INACTIVE
-  notes           String?
-  idAttachmentUrl String? // URL/path to uploaded ID or Iqama document (PDF/JPG/PNG)
-=======
   id          String    @id @default(uuid())
   refNumber   String    @unique // TRA-000001
   fullName    String
@@ -320,16 +306,15 @@ model Trainee {
   companyId   String
   status      String    @default("ACTIVE") // ACTIVE | INACTIVE
   notes       String?
-  idAttachmentUrl String? // URL/path to uploaded ID or Iqama document
-  dateOfBirth DateTime? // optional — for future compliance modules
-  idExpiry    DateTime? // optional — ID/Iqama expiry date
->>>>>>> Stashed changes
+  idAttachmentUrl String?
+  dateOfBirth DateTime?
+  idExpiry    DateTime?
   // Audit
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  createdBy       String?
-  updatedBy       String?
-  deletedAt       DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  deletedAt   DateTime?
 
   company            Company                        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   requestCourses     TrainingRequestCourseTrainee[]
@@ -481,6 +466,10 @@ model Course {
   // AI-assisted exam support
   aiExamEnabled  Boolean   @default(false)
   aiExamConfig   String? // JSON: difficulty distribution, num questions, etc.
+  // Certificate Release Security: requires profession verification (Iqama profession change)
+  // before certificates can be released to the contractor.
+  requiresProfessionVerification Boolean @default(false)
+  retakeAttempts Int @default(1)
   // Audit
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -599,7 +588,6 @@ model TrainingRequest {
   course         Course?                 @relation(fields: [courseId], references: [id])
   sessions       TrainingSession[]
   requestCourses TrainingRequestCourse[]
-  // Financial module
   quotations     Quotation[]
   invoices       Invoice[]
 
@@ -689,6 +677,14 @@ model SessionEnrollment {
   completedDate    DateTime?
   notes            String?
 
+  // ── Re-Exam support ──
+  isReExam     Boolean @default(false)
+
+  // ── Enrollment source tracking ──
+  enrollmentSource String @default("MANUAL")
+  addedByTrainer  Boolean @default(false)
+  pendingReview   Boolean @default(false)
+
   // ── Attendance status ──
   attendanceStatus String @default("NOT_STARTED")
   // NOT_STARTED | PRESENT | LATE | ABSENT
@@ -712,22 +708,6 @@ model SessionEnrollment {
   // ── Links to related records (for quick lookup) ──
   attendanceId String? // FK to Attendance record (set at check-in)
 
-  // ── Re-Exam support ──
-  isReExam     Boolean @default(false)
-
-  // ── Enrollment source tracking ──
-  // Records HOW this enrollment was created, for reporting and audit:
-  //   COORDINATOR         — added manually by a coordinator
-  //   TRAINER             — emergency add by a trainer during training
-  //   CONTRACTOR_REQUEST  — originated from a contractor's training request
-  //   MANUAL              — generic manual entry
-  //   RE_EXAM             — re-exam enrollment (auto-detected)
-  enrollmentSource String @default("MANUAL")
-  // When true, this enrollment was added by a trainer and is pending
-  // coordinator review. The coordinator can approve, edit, or reject.
-  addedByTrainer  Boolean @default(false)
-  pendingReview   Boolean @default(false)
-
   // Audit
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -745,7 +725,6 @@ model SessionEnrollment {
   @@index([finalTestStatus])
   @@index([evaluationStatus])
   @@index([certificateStatus])
-  @@index([isReExam])
 }
 
 // Tracks which companies have trainees enrolled in a session (for multi-company reporting)
@@ -827,7 +806,7 @@ model TrainingSession {
   lifecycleEvents  SessionLifecycleEvent[]
   enrollments      SessionEnrollment[]
   sessionCompanies SessionCompany[]
-  // Financial module
+  sessionPayments  SessionPayment[]
   invoices         Invoice[]
 
   @@index([status])
@@ -1057,6 +1036,19 @@ model Certificate {
   issuedAt          DateTime        @default(now())
   validUntil        DateTime
   status            String          @default("VALID") // VALID | EXPIRED | REVOKED | RENEWED
+  // ── Certificate Release Workflow ──
+  // releaseStatus tracks the security workflow separately from validity status.
+  // DRAFT → READY_FOR_RELEASE → RELEASED → DOWNLOADED
+  releaseStatus       String          @default("DRAFT") // DRAFT | READY_FOR_RELEASE | RELEASED | DOWNLOADED
+  releasedAt          DateTime?
+  releasedBy          String?
+  downloadedAt        DateTime?
+  // ── Profession Verification (Iqama profession change) ──
+  professionVerified   Boolean     @default(false)
+  professionVerifiedAt DateTime?
+  professionVerifiedBy String?
+  professionVerificationNotes String?
+  professionVerificationAttachmentUrl String?
   // Sprint 6: renewal chain
   renewedFromId     String?
   renewedFrom       Certificate?    @relation("CertRenewalChain", fields: [renewedFromId], references: [id], onDelete: SetNull)
@@ -1084,6 +1076,7 @@ model Certificate {
   @@index([sessionId])
   @@index([companyId])
   @@index([status])
+  @@index([releaseStatus])
   @@index([verificationToken])
   @@index([attendanceId])
   @@index([renewedFromId])
@@ -1225,6 +1218,47 @@ model Notification {
 
   @@index([userId, isRead])
   @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SESSION PAYMENT — lightweight invoice tracking for certificate release
+// =====================================================================
+// Tracks the total amount owed by a company for a training session and the
+// amount paid so far. The certificate release workflow checks that the
+// session payment is fully paid (paidAmount >= totalAmount) before
+// allowing certificates to be released to the contractor.
+//
+// One record per (sessionId, companyId) — a session may have multiple
+// companies enrolled, each with their own payment obligation.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SessionPayment {
+  id              String   @id @default(uuid())
+  sessionId       String
+  session         TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // Financial amounts (in the currency specified below)
+  totalAmount     Float    @default(0)
+  paidAmount      Float    @default(0)
+  currency        String   @default("SAR")
+  // Invoice reference (optional — for linking to external invoice numbers)
+  invoiceRef      String?
+  invoiceIssuedAt DateTime?
+  invoiceDueDate  DateTime?
+  // Status derived from paidAmount / totalAmount: UNPAID | PARTIALLY_PAID | PAID
+  notes           String?
+  // Audit
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+
+  @@unique([sessionId, companyId])
+  @@index([sessionId])
+  @@index([companyId])
+  @@index([invoiceRef])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1394,40 +1428,33 @@ model ReportExecutionFile {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FINANCIAL MODULE — Invoices, Quotations, Payments, Receipts, Bank Accounts
+// FINANCIAL MODULE — Invoice, Payment, Quotation, Receipt, BankAccount, Settings
+// =====================================================================
+// Full financial workflow: Quotation → Invoice → Payment → Receipt
+// All amounts stored as Float. Snapshot field on Invoice captures frozen
+// company/bank/settings info at issue time.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Company-level financial settings (single row, stored as key-value).
-// This is the "our company" info that appears on invoices. Stored separately
-// from the SystemSettings table because financial data has different access
-// patterns and audit requirements.
 model FinancialSettings {
   id              String   @id @default("default")
-  // Company information (snapshot source for invoices)
   companyName     String   @default("GCC ELECTRICAL TESTING LABORATORY")
-  crNumber        String?  // Commercial Registration
-  vatNumber       String?  // VAT Registration Number
+  crNumber        String?
+  vatNumber       String?
   financeEmail    String?
   companyLogoUrl  String?
   address         String?
   phone           String?
   currency        String   @default("SAR")
-  // Sequences
   invoiceSeq      Int      @default(1)
   quotationSeq    Int      @default(1)
   receiptSeq      Int      @default(1)
-  // VAT rate (percentage, e.g. 15 for 15%)
-  vatRate         Float @default(15)
-  // Default due date offset (days from issue date)
+  vatRate         Float    @default(15)
   defaultDueDays  Int      @default(30)
-  // Audit
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   updatedBy       String?
 }
 
-// Multiple bank accounts. The coordinator selects which one appears on each
-// invoice. Supports future QR-IBAN display.
 model BankAccount {
   id              String   @id @default(uuid())
   bankName        String
@@ -1435,118 +1462,86 @@ model BankAccount {
   accountNumber   String
   iban            String?
   swift           String?
-  qrImageUrl      String?  // future: QR-IBAN image
+  qrImageUrl      String?
   isActive        Boolean  @default(true)
   isDefault       Boolean  @default(false)
-  // Audit
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   createdBy       String?
   updatedBy       String?
   deletedAt       DateTime?
-
   invoices        Invoice[]
-
   @@index([isActive])
 }
 
-// Quotation — a price quote sent to a contractor before an invoice.
-// A request can have multiple quotations (revisions, different course mixes).
 model Quotation {
   id              String   @id @default(uuid())
-  refNumber       String   @unique // QUO-YYYY-000001
+  refNumber       String   @unique
   requestId       String?
   request         TrainingRequest? @relation(fields: [requestId], references: [id])
-  companyId       String   // contractor
+  companyId       String
   company         Company  @relation(fields: [companyId], references: [id])
-  // Line items stored as JSON (course title, trainee count, unit price, etc.)
-  lineItems       String   // JSON array
-  // Totals
+  lineItems       String
   subtotal        Float
-  discountAmount  Float @default(0)
+  discountAmount  Float    @default(0)
   discountPercent Float?
   vatAmount       Float
   grandTotal      Float
   currency        String   @default("SAR")
   vatRate         Float
-  // Status
-  status          String   @default("DRAFT") // DRAFT | SENT | ACCEPTED | REJECTED | EXPIRED | CONVERTED
-  // Validity
-  issueDate       DateTime @default(now())
-  validUntil      DateTime?
-  // Notes
+  status          String   @default("DRAFT")
   notes           String?
-  termsConditions String?
-  // Snapshot of company info at quotation issue time
-  snapshot        String?  // JSON: { companyName, crNumber, vatNumber, address, logoUrl, ... }
-  // Audit
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   createdBy       String?
   updatedBy       String?
   deletedAt       DateTime?
-
   invoices        Invoice[]
-
   @@index([companyId])
   @@index([requestId])
   @@index([status])
 }
 
-// Invoice — the formal billing document. Stores a full snapshot of all
-// company/bank/VAT info at issue time so it NEVER changes retroactively.
 model Invoice {
   id              String   @id @default(uuid())
-  refNumber       String   @unique // INV-YYYY-000001
+  refNumber       String   @unique
   quotationId     String?
   quotation       Quotation? @relation(fields: [quotationId], references: [id])
   requestId       String?
   request         TrainingRequest? @relation(fields: [requestId], references: [id])
   sessionId       String?
   session         TrainingSession? @relation(fields: [sessionId], references: [id])
-  companyId       String   // contractor
+  companyId       String
   company         Company  @relation(fields: [companyId], references: [id])
-  // Line items (JSON: [{ courseTitle, traineeCount, unitPrice, lineTotal }])
-  lineItems       String   // JSON array
-  // Totals
+  lineItems       String
   subtotal        Float
-  discountAmount  Float @default(0)
+  discountAmount  Float    @default(0)
   discountPercent Float?
   vatAmount       Float
   grandTotal      Float
-  paidAmount      Float @default(0)
+  paidAmount      Float    @default(0)
   outstandingBalance Float
   currency        String   @default("SAR")
   vatRate         Float
-  // Status
-  status          String   @default("DRAFT") // DRAFT | ISSUED | PENDING_PAYMENT | PARTIALLY_PAID | PAID | CANCELLED | REFUNDED | OVERDUE
-  // Dates
+  status          String   @default("DRAFT")
   issueDate       DateTime @default(now())
   dueDate         DateTime?
   paidDate        DateTime?
-  // Bank account selected for this invoice
   bankAccountId   String?
   bankAccount     BankAccount? @relation(fields: [bankAccountId], references: [id])
-  // Notes
   coordinatorNotes String?
   paymentNotes    String?
-  // Snapshot — CRITICAL: frozen copy of all company/bank/VAT info at issue
-  // time. If settings change later, old invoices are unaffected.
-  snapshot        String   // JSON: { company: {...}, bank: {...}, vatRate, currency, ... }
-  // PDF
+  snapshot        String
   pdfUrl          String?
   pdfGeneratedAt  DateTime?
-  // Audit
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   createdBy       String?
   updatedBy       String?
   deletedAt       DateTime?
-
   payments        Payment[]
   receipts        Receipt[]
   paymentInvoices PaymentInvoice[]
-
   @@index([companyId])
   @@index([requestId])
   @@index([sessionId])
@@ -1555,109 +1550,76 @@ model Invoice {
   @@index([dueDate])
 }
 
-// Payment — records money received. One payment can cover multiple invoices
-// (split payment). One invoice can receive multiple partial payments.
 model Payment {
   id              String   @id @default(uuid())
-  refNumber       String   @unique // PAY-YYYY-000001
-  // Link to invoice(s) — if one payment covers multiple invoices, use
-  // PaymentInvoice junction. For the common case (one payment = one invoice),
-  // invoiceId is set directly.
+  refNumber       String   @unique
   invoiceId       String?
   invoice         Invoice? @relation(fields: [invoiceId], references: [id])
-  // Multi-invoice payments use the junction table
   paymentInvoices PaymentInvoice[]
-  // Contractor
   companyId       String
   company         Company  @relation(fields: [companyId], references: [id])
-  // Amount
   amount          Float
-  vatAmount       Float @default(0)
+  vatAmount       Float    @default(0)
   currency        String   @default("SAR")
-  // Payment method (future-ready for gateway integrations)
-  method          String   // BANK_TRANSFER | SADAD | MADA | VISA | MASTERCARD | APPLE_PAY | CASH | CHEQUE | MANUAL
-  // Status
-  status          String   @default("PENDING") // PENDING | PAID | FAILED | CANCELLED | REFUNDED | EXPIRED
-  // Dates
+  method          String
+  status          String   @default("PENDING")
   paymentDate     DateTime @default(now())
-  // Reference (cheque number, transaction ID, SADAD number, etc.)
   referenceNumber String?
-  // Bank account (for bank transfers)
   bankAccountId   String?
-  // Payer info
-  paidBy          String?  // name of the person who paid
-  // Gateway fields (future-ready — populated when gateways are integrated)
+  paidBy          String?
   gatewayTransactionId String?
-  gatewayName     String?  // hyperpay | mada | sadad | etc.
-  gatewayResponse String?  // JSON: full gateway response
+  gatewayName     String?
+  gatewayResponse String?
   gatewayCallbackUrl String?
-  // Notes
   notes           String?
-  // Audit
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   createdBy       String?
   updatedBy       String?
   deletedAt       DateTime?
-
   receipts        Receipt[]
-
   @@index([invoiceId])
   @@index([companyId])
   @@index([status])
-  @@index([paymentDate])
-  @@index([method])
 }
 
-// Junction: one payment → many invoices (for split payments)
 model PaymentInvoice {
-  id              String   @id @default(uuid())
-  paymentId       String
-  payment         Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-  invoiceId       String
-  invoice         Invoice  @relation(fields: [invoiceId], references: [id])
-  // Amount allocated to this invoice from the payment
-  allocatedAmount Float
-
-  @@unique([paymentId, invoiceId])
+  id          String  @id @default(uuid())
+  paymentId   String
+  payment     Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount      Float
   @@index([paymentId])
   @@index([invoiceId])
 }
 
-// Receipt — auto-generated when a payment is confirmed.
 model Receipt {
   id              String   @id @default(uuid())
-  refNumber       String   @unique // RCP-YYYY-000001
+  refNumber       String   @unique
   paymentId       String?
   payment         Payment? @relation(fields: [paymentId], references: [id])
   invoiceId       String?
   invoice         Invoice? @relation(fields: [invoiceId], references: [id])
   companyId       String
   company         Company  @relation(fields: [companyId], references: [id])
-  // Amount
   amount          Float
-  vatAmount       Float @default(0)
+  vatAmount       Float    @default(0)
   currency        String   @default("SAR")
-  // Details
   receiptDate     DateTime @default(now())
   paymentMethod   String?
   paidBy          String?
   bankName        String?
   referenceNumber String?
-  // Status
-  status          String   @default("ISSUED") // ISSUED | CANCELLED
-  // PDF
+  status          String   @default("ISSUED")
   pdfUrl          String?
   pdfGeneratedAt  DateTime?
-  // Snapshot
-  snapshot        String?  // JSON: company info at receipt time
-  // Audit
+  snapshot        String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   createdBy       String?
   updatedBy       String?
   deletedAt       DateTime?
-
   @@index([paymentId])
   @@index([invoiceId])
   @@index([companyId])

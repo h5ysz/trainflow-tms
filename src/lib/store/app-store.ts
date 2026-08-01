@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Locale } from "@/lib/i18n/translations";
 import type { RouteKey } from "@/lib/auth/permissions";
-import { authApi, api, ApiError, setUnauthorizedHandler, type AuthUser } from "@/lib/api/client";
+import { authApi, ApiError, setUnauthorizedHandler, type AuthUser } from "@/lib/api/client";
 
 export interface AppState {
   // Auth
@@ -70,16 +70,7 @@ export const useAppStore = create<AppState>()(
       refreshUser: async () => {
         try {
           const user = await authApi.me();
-          // Don't override locale from server if the user already has a local preference
-          // (they may have toggled language without the server update landing yet).
-          // Only use server language on first login (when locale is still the default "en").
-          const currentLocale = get().locale;
-          const serverLocale = (user.language as Locale) ?? "en";
-          set({
-            user,
-            isAuthenticated: true,
-            locale: currentLocale !== "en" ? currentLocale : serverLocale,
-          });
+          set({ user, isAuthenticated: true, locale: (user.language as Locale) ?? get().locale });
         } catch (e) {
           // Only an actual 401 means "not authenticated". Catching everything meant a
           // transient network blip on page load silently signed a valid user out.
@@ -102,18 +93,11 @@ export const useAppStore = create<AppState>()(
 
       // Locale
       locale: "en",
-      setLocale: (locale) => {
+      setLocale: (locale) =>
         set((state) => ({
           locale,
           user: state.user ? { ...state.user, language: locale } : null,
-        }));
-        // Persist language preference to the backend so it survives page refresh.
-        // Uses the /api/auth/language endpoint (any authenticated user can call it).
-        // Fire-and-forget — if it fails, the local state is still correct for this session.
-        api.put("/auth/language", { language: locale }).catch(() => {
-          // Silently ignore — the local state is already updated.
-        });
-      },
+        })),
 
       // Theme
       theme: "light",

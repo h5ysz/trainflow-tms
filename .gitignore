@@ -64,3 +64,7 @@ workspace-*.tar
 # vitest integration scratch database + coverage output
 /.tmp/
 /coverage/
+node_modules/
+.next/
+db/
+tsconfig.tsbuildinfo

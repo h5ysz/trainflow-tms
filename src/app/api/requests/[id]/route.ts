@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { recordStatusChange } from "@/lib/auth/audit";
 import { canTransition } from "../route";
-import { validateRequestForApproval } from "@/lib/api/request-validation";
+import { validateRequestForApproval, MIN_TRAINEES_PER_COURSE, MAX_TRAINEES_PER_COURSE } from "@/lib/api/request-validation";
 import type { TrainingRequestStatus } from "@prisma/client";
 
 export const GET = withModuleAction("requests", "view", async ({ params, user }) => {
@@ -24,7 +24,6 @@ export const GET = withModuleAction("requests", "view", async ({ params, user })
                 select: {
                   id: true, refNumber: true, fullName: true, nationalId: true,
                   nationality: true, jobTitle: true, mobile: true, email: true,
-                  idAttachmentUrl: true,
                   company: { select: { id: true, name: true } },
                 },
               },
@@ -80,21 +79,18 @@ export const PUT = withModuleAction("requests", "edit", async ({ req, params, us
       );
     }
 
-    // Business rule: block APPROVED transition ONLY when the request has
-    // zero courses attached. Trainee-count mismatches are advisory — the
-    // coordinator can approve any non-empty request and the auto-splitter
-    // will suggest multiple sessions at scheduling time.
+    // Business rule: block APPROVED transition if any course fails min/max trainees validation
     if (newStatus === "APPROVED") {
       const validation = await validateRequestForApproval(id);
       if (!validation.valid) {
         return fail(
-          `Cannot approve: ${validation.failingCourses.length} hard-block issue(s)`,
+          `Cannot approve: ${validation.failingCourses.length} course(s) fail the trainee count rule (min ${MIN_TRAINEES_PER_COURSE}, max ${MAX_TRAINEES_PER_COURSE})`,
           422,
           "APPROVAL_VALIDATION_FAILED",
           {
             failingCourses: validation.failingCourses,
-            warnings: validation.warnings,
             totalTrainees: validation.totalTrainees,
+            rule: { min: MIN_TRAINEES_PER_COURSE, max: MAX_TRAINEES_PER_COURSE },
           }
         );
       }

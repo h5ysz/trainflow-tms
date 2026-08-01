@@ -32,14 +32,6 @@ export const POST = withModuleAction("requests", "view", async ({ req, params, u
   const existing = await db.trainingRequest.findUnique({ where: { id } });
   if (!existing || existing.deletedAt) return notFound("Request not found");
 
-  // ── Read-only roles (AUDITOR, VIEWER) must not mutate anything ────────
-  // They have `requests.view` but are documented as strictly read-only.
-  // The self-service path below is for contractors only; the full-workflow
-  // path requires `requests.edit` which read-only roles do not have.
-  if (user.role === "AUDITOR" || user.role === "VIEWER") {
-    return fail("Forbidden — read-only roles cannot transition request status", 403, "FORBIDDEN");
-  }
-
   // A contractor may only touch their own company's requests.
   if (user.role === "CONTRACTOR" && existing.companyId !== user.companyId) {
     return fail("Forbidden", 403);
@@ -47,11 +39,8 @@ export const POST = withModuleAction("requests", "view", async ({ req, params, u
 
   // Callers who can edit requests outright are not restricted to the self-service
   // subset — they can drive the full workflow through this endpoint too.
-  // This covers COORDINATOR, SUPER_ADMIN, COMPANY_ADMIN, TRAINER.
   const hasEdit = canPerformAction(user.permissions, "requests", "edit");
   if (!hasEdit) {
-    // Only contractors reach here (read-only roles were blocked above).
-    // Contractors are restricted to the self-service subset.
     const allowed = SELF_SERVICE_TRANSITIONS[existing.status] ?? [];
     if (!allowed.includes(to)) {
       return fail(

@@ -36,6 +36,8 @@ const ROLE_ICONS: Record<UserRole, typeof ShieldCheck> = {
   TRAINER: GraduationCap,
   VIEWER: Eye,
   CONTRACTOR: Building2,
+  COMPANY_ADMIN: Building2,
+  AUDITOR: ShieldCheck,
 };
 
 interface Notification {
@@ -67,7 +69,7 @@ export function Topbar() {
     try {
       const res = await api.getList<Notification>("/notifications", { pageSize: 5 });
       setNotifications(res.rows ?? []);
-      setUnreadCount(typeof res.pagination?.unreadCount === "number" ? res.pagination.unreadCount : 0);
+      setUnreadCount((res.pagination as any)?.unreadCount ?? 0);
     } catch {
       // ignore — silent
     } finally {
@@ -76,10 +78,9 @@ export function Topbar() {
   };
 
   useEffect(() => {
-    // Async data load: the state writes happen in the promise callbacks, after the
-    // effect body has returned.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadNotifications();
+    // Defer to avoid synchronous setState-in-effect warning
+    const handle = setTimeout(() => { void loadNotifications(); }, 0);
+    return () => clearTimeout(handle);
   }, []);
 
   if (!user) return null;
