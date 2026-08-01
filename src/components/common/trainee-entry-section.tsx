@@ -46,9 +46,17 @@ import {
   AlertCircle, CheckCircle2, Users, FileWarning, CopyPlus, X, Paperclip,
   Save, ArrowRight, RotateCcw, Loader2,
   Maximize2, Minimize2,
+  FileText, FileImage, FileCheck, FileX, FolderUp, Eye,
 } from "lucide-react";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
+
+export interface TraineeDocument {
+  url: string;
+  filename: string;
+  type: "iqama" | "id" | "passport" | "certificate" | "medical" | "other";
+  uploadedAt: string;
+}
 
 export interface TraineeEntry {
   id: string;
@@ -58,6 +66,8 @@ export interface TraineeEntry {
   jobTitle: string;
   idAttachmentUrl: string | null;
   idAttachmentName: string | null;
+  // ── Multi-document support ──
+  documents: TraineeDocument[];
   valid: boolean;
   errors: string[];
 }
@@ -186,6 +196,7 @@ function emptyRow(partial?: Partial<TraineeEntry>): TraineeEntry {
     jobTitle: "",
     idAttachmentUrl: null,
     idAttachmentName: null,
+    documents: [],
     valid: false,
     errors: [],
     ...partial,
@@ -374,6 +385,42 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
     }
   }, [trainees, updateTrainees, toast, t]);
 
+  // ─── Multi-document upload per row ──────────────────────────────────
+  const uploadDocumentForRow = React.useCallback(async (rowId: string, file: File, docType: TraineeDocument["type"]) => {
+    try {
+      const res = await api.postFile<UploadIdResponse>("/trainees/upload-id", file);
+      const newDoc: TraineeDocument = {
+        url: res.url,
+        filename: file.name,
+        type: docType,
+        uploadedAt: new Date().toISOString(),
+      };
+      updateTrainees(trainees.map((r) => (
+        r.id === rowId
+          ? { ...r, documents: [...r.documents, newDoc] }
+          : r
+      )));
+      toast({ title: t("misc.success"), description: `Document uploaded: ${file.name}` });
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    }
+  }, [trainees, updateTrainees, toast, t]);
+
+  const removeDocumentForRow = React.useCallback((rowId: string, docIndex: number) => {
+    updateTrainees(trainees.map((r) => (
+      r.id === rowId
+        ? { ...r, documents: r.documents.filter((_, i) => i !== docIndex) }
+        : r
+    )));
+  }, [trainees, updateTrainees]);
+
+  // ─── Document status helper ─────────────────────────────────────────
+  const getDocStatus = React.useCallback((row: TraineeEntry): "uploaded" | "missing" | "needs_update" => {
+    if (row.documents.length > 0 || row.idAttachmentUrl) return "uploaded";
+    if (row.fullName.trim() && row.nationalId.trim()) return "missing";
+    return "needs_update";
+  }, []);
+
   const replaceIdForRow = React.useCallback(async (rowId: string, file: File) => {
     // Same endpoint — server overwrites with a new random hex name. The old
     // file is orphaned on disk; that's acceptable for an internal TMS.
@@ -477,6 +524,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
         jobTitle: r.jobTitle ?? "",
         idAttachmentUrl: null,
         idAttachmentName: null,
+        documents: [],
         valid: false,
         errors: [],
       }));
@@ -542,6 +590,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
         jobTitle: hasHeader && jobCol !== -1 ? (cells[jobCol] ?? "") : "",
         idAttachmentUrl: null,
         idAttachmentName: null,
+        documents: [],
         valid: false,
         errors: [],
       });
@@ -713,7 +762,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
 
           {/* Table — virtualized, with horizontal + vertical scroll inside the table */}
           <div className="rounded-md border" style={{ overflowX: "auto", overflowY: "auto", maxHeight: isFullscreen ? "calc(100vh - 280px)" : undefined }}>
-            <div style={{ minWidth: 1200, width: "max-content" }}>
+            <div style={{ minWidth: 1300, width: "max-content" }}>
             {/* Header row — sticky at top */}
             <div className="flex items-center bg-muted/80 backdrop-blur-sm border-b text-xs font-medium text-muted-foreground sticky top-0 z-20" style={{ height: ROW_HEIGHT }}>
               <div className="w-10 shrink-0 flex items-center justify-center">
@@ -728,7 +777,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
               <div className="w-40 shrink-0 px-2">{t("requests.nationalId")}</div>
               <div className="w-32 shrink-0 px-2">Nationality</div>
               <div className="w-32 shrink-0 px-2">Job Title</div>
-              <div className="w-44 shrink-0 px-2">ID Attachment</div>
+              <div className="w-56 shrink-0 px-2">ID & Documents</div>
               <div className="w-12 shrink-0" />
             </div>
 
@@ -757,7 +806,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
                           row.valid ? "" : "bg-destructive/5",
                           isHighlighted && "ring-2 ring-inset ring-primary"
                         )}
-                        style={{ height: ROW_HEIGHT, position: "absolute", top: absoluteIndex * ROW_HEIGHT, left: 0, right: 0, minWidth: 1200 }}
+                        style={{ height: ROW_HEIGHT, position: "absolute", top: absoluteIndex * ROW_HEIGHT, left: 0, right: 0, minWidth: 1300 }}
                       >
                         <div className="w-10 shrink-0 flex items-center justify-center">
                           <Checkbox
@@ -805,18 +854,19 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
                             className="w-full h-7 rounded border border-transparent bg-transparent px-1.5 text-sm outline-none focus:border-input focus:bg-background"
                           />
                         </div>
-                        <div className="w-44 shrink-0 px-2 flex items-center gap-1">
+                        <div className="w-56 shrink-0 px-2 flex items-center gap-1">
+                          {/* ID/Iqama attachment */}
                           {row.idAttachmentUrl ? (
                             <>
                               <a
                                 href={row.idAttachmentUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-xs text-primary truncate max-w-[100px]"
-                                title={row.idAttachmentName ?? "View attachment"}
+                                className="flex items-center gap-1 text-xs text-primary truncate max-w-[80px]"
+                                title={row.idAttachmentName ?? "View ID attachment"}
                               >
-                                <Paperclip className="h-3 w-3 shrink-0" />
-                                <span className="truncate">{row.idAttachmentName ?? "Attachment"}</span>
+                                <FileCheck className="h-3 w-3 shrink-0 text-emerald-600" />
+                                <span className="truncate">{row.idAttachmentName ?? "ID"}</span>
                               </a>
                               <RowIdReplace onPick={(f) => void replaceIdForRow(row.id, f)} />
                               <Button
@@ -825,7 +875,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
                                 size="icon"
                                 className="h-6 w-6"
                                 onClick={() => removeIdForRow(row.id)}
-                                aria-label="Remove attachment"
+                                aria-label="Remove ID attachment"
                               >
                                 <X className="h-3 w-3" />
                               </Button>
@@ -833,6 +883,13 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
                           ) : (
                             <RowIdUpload onPick={(f) => void uploadIdForRow(row.id, f)} />
                           )}
+                          {/* Multi-document upload */}
+                          <RowDocUpload
+                            rowId={row.id}
+                            documents={row.documents}
+                            onUpload={(file, docType) => void uploadDocumentForRow(row.id, file, docType)}
+                            onRemove={(docIndex) => removeDocumentForRow(row.id, docIndex)}
+                          />
                         </div>
                         <div className="w-12 shrink-0 flex items-center justify-center">
                           {!row.valid && (
@@ -1293,3 +1350,125 @@ function RowIdReplace({ onPick }: { onPick: (file: File) => void }) {
 // Re-export so callers can build submission payloads without re-declaring
 // the type. Both the parent route and the API client can import this.
 export type { UploadIdResponse };
+
+// ─── Multi-document row component ─────────────────────────────────────────
+// Allows uploading additional documents (PDF, JPG, PNG) per trainee row.
+// Supports document types: Iqama, ID, Passport, Certificate, Medical, Other.
+function RowDocUpload({
+  rowId,
+  documents,
+  onUpload,
+  onRemove,
+}: {
+  rowId: string;
+  documents: TraineeDocument[];
+  onUpload: (file: File, docType: TraineeDocument["type"]) => void;
+  onRemove: (docIndex: number) => void;
+}) {
+  const [showMenu, setShowMenu] = React.useState(false);
+  const fileRef = React.useRef<HTMLInputElement | null>(null);
+  const [pendingType, setPendingType] = React.useState<TraineeDocument["type"]>("other");
+
+  const handleFilePick = (docType: TraineeDocument["type"]) => {
+    setPendingType(docType);
+    fileRef.current?.click();
+    setShowMenu(false);
+  };
+
+  return (
+    <div className="relative flex items-center gap-1">
+      {/* Show document count badge */}
+      {documents.length > 0 && (
+        <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1 py-0.5 rounded bg-blue-50 text-blue-700" title={`${documents.length} document(s)`}>
+          <FileText className="h-2.5 w-2.5" />
+          {documents.length}
+        </span>
+      )}
+
+      {/* Upload button with dropdown */}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 px-2 text-xs"
+        onClick={() => setShowMenu(!showMenu)}
+        title="Upload additional documents"
+      >
+        <FolderUp className="h-3 w-3" />
+      </Button>
+
+      {showMenu && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setShowMenu(false)} />
+          <div className="absolute top-full mt-1 end-0 z-40 w-44 rounded-md border bg-background shadow-lg p-1 text-xs">
+            <div className="px-2 py-1 font-medium text-muted-foreground">Upload document:</div>
+            {([
+              { type: "iqama" as const, label: "Iqama / إقامة" },
+              { type: "id" as const, label: "National ID / هوية" },
+              { type: "passport" as const, label: "Passport / جواز" },
+              { type: "certificate" as const, label: "Certificate / شهادة" },
+              { type: "medical" as const, label: "Medical / طبي" },
+              { type: "other" as const, label: "Other / أخرى" },
+            ]).map((opt) => (
+              <button
+                key={opt.type}
+                type="button"
+                className="w-full text-start px-2 py-1.5 rounded hover:bg-muted transition-colors"
+                onClick={() => handleFilePick(opt.type)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept="application/pdf,image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onUpload(f, pendingType);
+          e.target.value = "";
+        }}
+      />
+
+      {/* Document list popover (shown on hover of count badge) */}
+      {documents.length > 0 && (
+        <div className="group relative">
+          <div className="hidden group-hover:block absolute top-full mt-1 end-0 z-40 w-56 rounded-md border bg-background shadow-lg p-2 text-xs max-h-48 overflow-y-auto">
+            <div className="font-medium mb-1 text-muted-foreground">Documents ({documents.length})</div>
+            {documents.map((doc, idx) => (
+              <div key={idx} className="flex items-center gap-1 py-1 border-b last:border-b-0">
+                <a
+                  href={doc.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-primary truncate flex-1"
+                  title={doc.filename}
+                >
+                  {doc.type === "iqama" || doc.type === "id" ? <FileCheck className="h-3 w-3 shrink-0 text-emerald-600" /> :
+                   doc.filename.endsWith(".pdf") ? <FileText className="h-3 w-3 shrink-0" /> :
+                   <FileImage className="h-3 w-3 shrink-0" />}
+                  <span className="truncate">{doc.filename}</span>
+                </a>
+                <span className="text-[9px] text-muted-foreground uppercase">{doc.type}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5 shrink-0"
+                  onClick={() => onRemove(idx)}
+                >
+                  <X className="h-2.5 w-2.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
