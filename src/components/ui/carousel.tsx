@@ -97,7 +97,6 @@ function Carousel({
     if (!api) return
     // Subscribing to an external system (the embla carousel instance) and seeding from
     // its current state — the documented use for an effect.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     onSelect(api)
     api.on("reInit", onSelect)
     api.on("select", onSelect)

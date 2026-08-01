@@ -8,6 +8,7 @@ import { FormDialog, Field } from "@/components/common/form-dialog";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { EmptyState } from "@/components/common/empty-state";
 import { StatusBadge } from "@/components/common/status-badge";
+import { CertReleasePanel } from "@/components/common/cert-release-panel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -132,7 +133,6 @@ export function SessionDetailRoute() {
   }, [sessionId]);
 
   // Async data load; state is written from inside the awaited call.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
@@ -313,6 +313,7 @@ export function SessionDetailRoute() {
             <TabsTrigger value="trainer">{t("nav.trainers")}</TabsTrigger>
             <TabsTrigger value="qr">{t("nav.qrCode")}</TabsTrigger>
             <TabsTrigger value="certificates">{t("nav.certificates")}</TabsTrigger>
+            <TabsTrigger value="release">{t("certRelease.title")}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="enrollments" className="mt-4 space-y-4">
@@ -453,6 +454,10 @@ export function SessionDetailRoute() {
                 ))}
               </Card>
             )}
+          </TabsContent>
+
+          <TabsContent value="release" className="mt-4">
+            {session && <CertReleasePanel sessionId={session.id} />}
           </TabsContent>
         </Tabs>
       )}

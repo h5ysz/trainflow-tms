@@ -93,6 +93,7 @@ export function publicCertificateView(cert: LookedUpCertificate) {
     issuedAt: cert.issuedAt,
     validUntil: cert.validUntil,
     status: cert.status,
+    releaseStatus: cert.releaseStatus,
     sessionRef: cert.session.refNumber,
     companyName: cert.company?.name ?? null,
     verificationCount: cert.verificationCount,

@@ -276,6 +276,7 @@ model Company {
   certificates       Certificate[]
   sessionEnrollments SessionEnrollment[]
   sessionCompanies   SessionCompany[]
+  sessionPayments    SessionPayment[]
   examAttempts       ExamAttempt[]
   testResults        TestResult[]
   courseEvaluations  CourseEvaluation[]
@@ -458,6 +459,9 @@ model Course {
   // AI-assisted exam support
   aiExamEnabled  Boolean   @default(false)
   aiExamConfig   String? // JSON: difficulty distribution, num questions, etc.
+  // Certificate Release Security: requires profession verification (Iqama profession change)
+  // before certificates can be released to the contractor.
+  requiresProfessionVerification Boolean @default(false)
   // Audit
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -784,6 +788,7 @@ model TrainingSession {
   lifecycleEvents  SessionLifecycleEvent[]
   enrollments      SessionEnrollment[]
   sessionCompanies SessionCompany[]
+  sessionPayments  SessionPayment[]
 
   @@index([status])
   @@index([trainerId])
@@ -1012,6 +1017,19 @@ model Certificate {
   issuedAt          DateTime        @default(now())
   validUntil        DateTime
   status            String          @default("VALID") // VALID | EXPIRED | REVOKED | RENEWED
+  // ── Certificate Release Workflow ──
+  // releaseStatus tracks the security workflow separately from validity status.
+  // DRAFT → READY_FOR_RELEASE → RELEASED → DOWNLOADED
+  releaseStatus       String          @default("DRAFT") // DRAFT | READY_FOR_RELEASE | RELEASED | DOWNLOADED
+  releasedAt          DateTime?
+  releasedBy          String?
+  downloadedAt        DateTime?
+  // ── Profession Verification (Iqama profession change) ──
+  professionVerified   Boolean     @default(false)
+  professionVerifiedAt DateTime?
+  professionVerifiedBy String?
+  professionVerificationNotes String?
+  professionVerificationAttachmentUrl String?
   // Sprint 6: renewal chain
   renewedFromId     String?
   renewedFrom       Certificate?    @relation("CertRenewalChain", fields: [renewedFromId], references: [id], onDelete: SetNull)
@@ -1039,6 +1057,7 @@ model Certificate {
   @@index([sessionId])
   @@index([companyId])
   @@index([status])
+  @@index([releaseStatus])
   @@index([verificationToken])
   @@index([attendanceId])
   @@index([renewedFromId])
@@ -1180,6 +1199,47 @@ model Notification {
 
   @@index([userId, isRead])
   @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SESSION PAYMENT — lightweight invoice tracking for certificate release
+// =====================================================================
+// Tracks the total amount owed by a company for a training session and the
+// amount paid so far. The certificate release workflow checks that the
+// session payment is fully paid (paidAmount >= totalAmount) before
+// allowing certificates to be released to the contractor.
+//
+// One record per (sessionId, companyId) — a session may have multiple
+// companies enrolled, each with their own payment obligation.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SessionPayment {
+  id              String   @id @default(uuid())
+  sessionId       String
+  session         TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // Financial amounts (in the currency specified below)
+  totalAmount     Float    @default(0)
+  paidAmount      Float    @default(0)
+  currency        String   @default("SAR")
+  // Invoice reference (optional — for linking to external invoice numbers)
+  invoiceRef      String?
+  invoiceIssuedAt DateTime?
+  invoiceDueDate  DateTime?
+  // Status derived from paidAmount / totalAmount: UNPAID | PARTIALLY_PAID | PAID
+  notes           String?
+  // Audit
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+
+  @@unique([sessionId, companyId])
+  @@index([sessionId])
+  @@index([companyId])
+  @@index([invoiceRef])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

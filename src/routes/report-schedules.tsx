@@ -121,7 +121,6 @@ export function ReportSchedulesRoute() {
   useEffect(() => {
     // Seeds an editable free-text field from the loaded record. It must be a one-time
     // copy rather than derived state, because the user then edits it independently.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (dialogOpen) setRecipientsText(((formData.recipients as string[]) ?? []).join(", "));
     // Only when the dialog opens or a different record loads.
   }, [dialogOpen, formData.id]);

@@ -78,7 +78,6 @@ export function Topbar() {
   useEffect(() => {
     // Async data load: the state writes happen in the promise callbacks, after the
     // effect body has returned.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadNotifications();
   }, []);
 
