@@ -5,6 +5,7 @@ import { useAppStore } from "@/lib/store/app-store";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 import { CommandPalette } from "./command-palette";
+import { CopilotPanel } from "@/components/common/copilot-panel";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@/components/ui/visually-hidden";
 import { useEffect } from "react";
@@ -51,6 +52,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       <CommandPalette />
+      <CopilotPanel />
     </div>
   );
 }

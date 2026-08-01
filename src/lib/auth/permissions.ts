@@ -367,6 +367,7 @@ export interface NavItem {
 export const navItems: NavItem[] = [
   // Dashboard (standalone)
   { key: "dashboard", labelKey: "nav.dashboard", icon: "LayoutDashboard", group: "dashboard" },
+  { key: "ai-dashboard", labelKey: "nav.aiDashboard", icon: "Sparkles", group: "dashboard" },
 
   // Training Operations
   { key: "companies", labelKey: "nav.companies", icon: "Building2", group: "training" },
