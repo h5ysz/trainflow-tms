@@ -1,17 +1,3 @@
-// TrainFlow TMS — Enterprise Prisma Schema
-// =====================================================================
-// Architecture requirements implemented:
-//  - UUID primary keys for every table
-//  - Audit columns: createdAt, updatedAt, createdBy, updatedBy, deletedAt (soft delete)
-//  - Soft delete across all business modules
-//  - Multi-tenant ready (Tenant model + tenantId on business entities)
-//  - Bilingual (EN/AR) via Language model
-//  - Question Bank (course-agnostic + course-linked)
-//  - QR attendance (CheckInAttempt) + QR certificate verification (CertVerification)
-//  - Reference number counters (RefNumberCounter)
-//  - Workflow states on TrainingRequest (Draft → Submitted → Under Review → Approved → Scheduled → In Progress → Completed → Cancelled/Rejected)
-//  - Future-proof: AI exam fields, mobile support, notifications, reporting
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -21,823 +7,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ENUMS
-// ─────────────────────────────────────────────────────────────────────────────
-
-enum UserRole {
-  SUPER_ADMIN
-  COORDINATOR
-  TRAINER
-  CONTRACTOR
-  VIEWER
-}
-
-enum TrainingRequestStatus {
-  DRAFT
-  SUBMITTED
-  UNDER_REVIEW
-  APPROVED
-  SCHEDULED
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
-  REJECTED
-}
-
-enum SessionStatus {
-  SCHEDULED
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
-  NO_SHOW
-}
-
-enum QuestionType {
-  SINGLE_CHOICE
-  MULTIPLE_CHOICE
-  TRUE_FALSE
-  SHORT_ANSWER
-}
-
-enum TestType {
-  PRE_TEST
-  FINAL_TEST
-}
-
-enum QuestionSource {
-  MANUAL
-  AI_GENERATED
-  IMPORTED
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FOUNDATION — Tenant, Language, Role, Permission, User, Setting
-// ─────────────────────────────────────────────────────────────────────────────
-
-model Tenant {
-  id        String    @id @default(uuid())
-  name      String
-  nameAr    String?
-  code      String    @unique
-  status    String    @default("ACTIVE") // ACTIVE | SUSPENDED
-  config    String? // JSON — tenant-specific config
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  createdBy String?
-  updatedBy String?
-  deletedAt DateTime?
-
-  users     User[]
-  companies Company[]
-  trainers  Trainer[]
-  courses   Course[]
-
-  @@index([status])
-}
-
-model Language {
-  id         String   @id @default(uuid())
-  code       String   @unique // "en" | "ar"
-  name       String // "English"
-  nameNative String // "English" | "العربية"
-  direction  String   @default("ltr") // "ltr" | "rtl"
-  isDefault  Boolean  @default(false)
-  isActive   Boolean  @default(true)
-  sortOrder  Int      @default(0)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-}
-
-model Role {
-  id          String    @id @default(uuid())
-  code        String    @unique // "SUPER_ADMIN" | "COORDINATOR" | "TRAINER" | "CONTRACTOR" | "VIEWER"
-  name        String
-  nameAr      String?
-  description String?
-  isSystem    Boolean   @default(false) // system roles cannot be deleted
-  // Which UserRole "bucket" a user assigned to this role is treated as for
-  // tenant-row-scoping (CONTRACTOR) and fixed platform-admin gates (SUPER_ADMIN
-  // only settings/users/roles) — those two concerns stay enum-keyed even though
-  // operational module/action permissions below are fully dynamic.
-  baseType    UserRole  @default(CONTRACTOR)
-  permissions Json? // array of "module.action" / "module.*" / "*" — the live RBAC source
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  createdBy   String?
-  updatedBy   String?
-  deletedAt   DateTime?
-
-  users User[] @relation("UserRole")
-}
-
-model Permission {
-  id          String   @id @default(uuid())
-  code        String   @unique // e.g. "companies.view", "companies.create"
-  module      String // "companies" | "trainers" | ...
-  action      String // "view" | "create" | "edit" | "delete"
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([module])
-  @@index([action])
-}
-
-model User {
-  id                  String    @id @default(uuid())
-  email               String    @unique
-  passwordHash        String
-  fullName            String
-  phone               String?
-  jobTitle            String?
-  role                UserRole  @default(CONTRACTOR)
-  roleId              String? // link to Role table for dynamic RBAC
-  language            String    @default("en")
-  timezone            String?   @default("Asia/Riyadh")
-  isActive            Boolean   @default(true)
-  accountStatus       String    @default("ACTIVE") // ACTIVE | PENDING_APPROVAL | SUSPENDED | REJECTED | LOCKED
-  avatarUrl           String?
-  lastLoginAt         DateTime?
-  forcePasswordChange Boolean   @default(false)
-  failedLoginAttempts Int       @default(0)
-  lockedUntil         DateTime?
-  tokenVersion        Int       @default(0) // bump to revoke all outstanding sessions
-  tenantId            String?
-  // Relations for contractor/trainer users
-  companyId           String?
-  trainerId           String?   @unique
-  // Registration info (for contractor self-registration)
-  registrationData    String? // JSON: { companyName, crNumber, contactPerson, nationalId, mobile }
-  // Audit
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-  createdBy           String?
-  updatedBy           String?
-  deletedAt           DateTime?
-
-  tenant     Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  company    Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  trainer    Trainer? @relation(fields: [trainerId], references: [id], onDelete: SetNull)
-  roleRecord Role?    @relation("UserRole", fields: [roleId], references: [id], onDelete: SetNull)
-
-  auditLogs     AuditLog[]
-  notifications Notification[]
-  loginHistory  LoginHistory[]
-
-  @@index([role])
-  @@index([companyId])
-  @@index([tenantId])
-  @@index([accountStatus])
-}
-
-// Tracks every login attempt (success + failure)
-model LoginHistory {
-  id            String   @id @default(uuid())
-  userId        String?
-  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  email         String // email attempted
-  success       Boolean
-  failureReason String?
-  ipAddress     String?
-  userAgent     String?
-  attemptedAt   DateTime @default(now())
-
-  @@index([userId])
-  @@index([email])
-  @@index([attemptedAt])
-}
-
-model Setting {
-  id          String   @id @default(uuid())
-  key         String   @unique
-  value       String
-  category    String   @default("GENERAL") // GENERAL | BRANDING | NOTIFICATION | SECURITY | EMAIL | SYSTEM
-  description String?
-  isPublic    Boolean  @default(false) // safe to expose to client
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  updatedBy   String?
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// REFERENCE NUMBER COUNTER (atomic sequence generator)
-// ─────────────────────────────────────────────────────────────────────────────
-
-model RefNumberCounter {
-  id         String   @id @default(uuid())
-  entityType String // "TRAINING_REQUEST" | "CERTIFICATE" | "EXAM" | "TRAINER" | "COMPANY" | "COURSE" | "SESSION"
-  year       Int? // 0 for non-yearly sequences (TRN, COM, CRS) — never NULL: @@unique cannot match NULL
-  sequence   Int      @default(0)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  @@unique([entityType, year])
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// COMPANIES (Contractor Companies — also act as tenants' clients)
-// ─────────────────────────────────────────────────────────────────────────────
-
-model Company {
-  id            String    @id @default(uuid())
-  refNumber     String    @unique // COM-000001
-  name          String
-  nameAr        String?
-  legalName     String?
-  crNumber      String?
-  vatNumber     String?
-  industry      String?
-  country       String?
-  city          String?
-  address       String?
-  postalCode    String?
-  phone         String?
-  email         String?
-  website       String?
-  contactPerson String?
-  contactPhone  String?
-  contactEmail  String?
-  status        String    @default("ACTIVE")
-  logoUrl       String?
-  tenantId      String?
-  // Audit
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  createdBy     String?
-  updatedBy     String?
-  deletedAt     DateTime?
-
-  tenant             Tenant?             @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  contacts           CompanyContact[]
-  trainees           Trainee[]
-  users              User[]
-  trainingRequests   TrainingRequest[]
-  certificates       Certificate[]
-  sessionEnrollments SessionEnrollment[]
-  sessionCompanies   SessionCompany[]
-  sessionPayments    SessionPayment[]
-  examAttempts       ExamAttempt[]
-  testResults        TestResult[]
-  courseEvaluations  CourseEvaluation[]
-  workerPassports    WorkerPassport[]
-  quotations         Quotation[]
-  invoices           Invoice[]
-  payments           Payment[]
-  receipts           Receipt[]
-
-  @@index([status])
-  @@index([tenantId])
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TRAINEES (each belongs to one company)
-// ─────────────────────────────────────────────────────────────────────────────
-
-model Trainee {
-  id          String    @id @default(uuid())
-  refNumber   String    @unique // TRA-000001
-  fullName    String
-  nationalId  String // National ID / Iqama — unique (duplicates prevented at app level)
-  nationality String?
-  jobTitle    String?
-  mobile      String?
-  email       String?
-  companyId   String
-  status      String    @default("ACTIVE") // ACTIVE | INACTIVE
-  notes       String?
-  idAttachmentUrl String?
-  dateOfBirth DateTime?
-  idExpiry    DateTime?
-  // Audit
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  createdBy   String?
-  updatedBy   String?
-  deletedAt   DateTime?
-
-  company            Company                        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  requestCourses     TrainingRequestCourseTrainee[]
-  sessionEnrollments SessionEnrollment[]
-
-  @@index([companyId])
-  @@index([nationalId])
-  @@index([status])
-}
-
-model CompanyContact {
-  id               String    @id @default(uuid())
-  companyId        String
-  fullName         String
-  jobTitle         String? // Position
-  email            String?
-  phone            String?
-  mobile           String?
-  preferredContact String? // PHONE | MOBILE | EMAIL | WHATSAPP
-  isPrimary        Boolean   @default(false)
-  isActive         Boolean   @default(true)
-  notes            String?
-  // Audit
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  createdBy        String?
-  updatedBy        String?
-  deletedAt        DateTime?
-
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  @@index([companyId])
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TRAINERS & QUALIFICATIONS
-// ─────────────────────────────────────────────────────────────────────────────
-
-model Trainer {
-  id          String    @id @default(uuid())
-  refNumber   String    @unique // TRN-000001
-  fullName    String
-  fullNameAr  String?
-  nationalId  String?   @unique
-  email       String?   @unique
-  phone       String?
-  mobile      String?
-  gender      String?
-  nationality String?
-  country     String?
-  city        String?
-  address     String?
-  bio         String?
-  photoUrl    String?
-  status      String    @default("ACTIVE")
-  hireDate    DateTime?
-  tenantId    String?
-  // Audit
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  createdBy   String?
-  updatedBy   String?
-  deletedAt   DateTime?
-
-  tenant         Tenant?                @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  qualifications TrainerQualification[]
-  certifications TrainerCertification[]
-  user           User?
-  sessions       TrainingSession[]
-  evaluations    CourseEvaluation[]
-
-  @@index([status])
-  @@index([tenantId])
-}
-
-model TrainerQualification {
-  id               String    @id @default(uuid())
-  trainerId        String
-  title            String
-  issuer           String?
-  credentialNumber String?
-  issueDate        DateTime?
-  expiryDate       DateTime?
-  documentUrl      String?
-  status           String    @default("VALID") // VALID | EXPIRED | EXPIRING_SOON
-  // Audit
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  createdBy        String?
-  updatedBy        String?
-  deletedAt        DateTime?
-
-  trainer        Trainer                @relation(fields: [trainerId], references: [id], onDelete: Cascade)
-  certifications TrainerCertification[]
-
-  @@index([trainerId])
-  @@index([status])
-}
-
-// Trainer-Course certification link — a trainer can only teach courses they're certified for
-model TrainerCertification {
-  id              String    @id @default(uuid())
-  trainerId       String
-  courseId        String
-  qualificationId String? // optional link to source qualification
-  validFrom       DateTime  @default(now())
-  validUntil      DateTime?
-  status          String    @default("VALID") // VALID | EXPIRED | REVOKED
-  notes           String?
-  // Audit
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  createdBy       String?
-  updatedBy       String?
-  deletedAt       DateTime?
-
-  trainer       Trainer               @relation(fields: [trainerId], references: [id], onDelete: Cascade)
-  course        Course                @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  qualification TrainerQualification? @relation(fields: [qualificationId], references: [id], onDelete: SetNull)
-
-  @@unique([trainerId, courseId, deletedAt])
-  @@index([trainerId])
-  @@index([courseId])
-  @@index([status])
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// COURSES (catalog) + QUESTION BANK
-// ─────────────────────────────────────────────────────────────────────────────
-
-model Course {
-  id             String    @id @default(uuid())
-  refNumber      String    @unique // CRS-000001
-  code           String    @unique
-  title          String
-  titleAr        String?
-  description    String?
-  category       String?
-  durationHours  Int       @default(8)
-  language       String    @default("en")
-  validityMonths Int       @default(12)
-  passScore      Int       @default(70)
-  maxTrainees    Int       @default(20)
-  hasPreTest     Boolean   @default(true)
-  hasFinalTest   Boolean   @default(true)
-  hasEvaluation  Boolean   @default(true)
-  status         String    @default("ACTIVE")
-  tenantId       String?
-  // AI-assisted exam support
-  aiExamEnabled  Boolean   @default(false)
-  aiExamConfig   String? // JSON: difficulty distribution, num questions, etc.
-  // Certificate Release Security: requires profession verification (Iqama profession change)
-  // before certificates can be released to the contractor.
-  requiresProfessionVerification Boolean @default(false)
-  retakeAttempts Int @default(1)
-  // Audit
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  createdBy      String?
-  updatedBy      String?
-  deletedAt      DateTime?
-
-  tenant                Tenant?                 @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  requests              TrainingRequest[]
-  requestCourses        TrainingRequestCourse[]
-  sessions              TrainingSession[]
-  questions             Question[]
-  certificates          Certificate[]
-  trainerCertifications TrainerCertification[]
-  complianceRules       ComplianceRule[]
-  resources             CourseResource[]
-
-  @@index([status])
-  @@index([category])
-  @@index([tenantId])
-}
-
-// Sprint 6: Course Resources — external materials (PDF, PPT, URL, QR link)
-model CourseResource {
-  id          String   @id @default(uuid())
-  courseId    String
-  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  type        String   // "PDF" | "POWERPOINT" | "URL" | "QR_CODE"
-  title       String
-  titleAr     String?
-  url         String
-  description String?
-  order       Int      @default(0)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  createdBy   String?
-  updatedBy   String?
-  deletedAt   DateTime?
-
-  @@index([courseId])
-  @@index([type])
-}
-
-// Question Bank — questions can be course-specific OR shared in the bank
-model Question {
-  id             String         @id @default(uuid())
-  courseId       String? // nullable → bank-only question
-  course         Course?        @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  type           QuestionType   @default(SINGLE_CHOICE)
-  testType       TestType       @default(PRE_TEST)
-  text           String
-  textAr         String?
-  options        String // JSON array of strings
-  correctAnswers String // JSON array of indices
-  points         Int            @default(1)
-  order          Int            @default(0)
-  isActive       Boolean        @default(true)
-  // Question bank metadata
-  category       String? // tag for bank browsing
-  difficulty     String         @default("MEDIUM") // EASY | MEDIUM | HARD
-  tags           String? // JSON array of tags
-  // AI-assisted exam support
-  source         QuestionSource @default(MANUAL)
-  aiGeneratedAt  DateTime?
-  aiModel        String?
-  aiPrompt       String?
-  // Audit
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  createdBy      String?
-  updatedBy      String?
-  deletedAt      DateTime?
-
-  @@index([courseId, testType])
-  @@index([category])
-  @@index([difficulty])
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TRAINING REQUESTS (workflow: DRAFT → SUBMITTED → UNDER_REVIEW → APPROVED → SCHEDULED → IN_PROGRESS → COMPLETED | CANCELLED | REJECTED)
-// ─────────────────────────────────────────────────────────────────────────────
-
-model TrainingRequest {
-  id                String                @id @default(uuid())
-  refNumber         String                @unique // TR-YYYY-000001
-  companyId         String
-  courseId          String? // optional primary course (legacy single-course field)
-  requestedBy       String? // user id
-  traineeCount      Int                   @default(0) // total across all courses
-  preferredDateFrom DateTime?
-  preferredDateTo   DateTime?
-  preferredLocation String?
-  preferredLanguage String?
-  notes             String?
-  status            TrainingRequestStatus @default(DRAFT)
-  priority          String                @default("NORMAL") // LOW | NORMAL | HIGH | URGENT
-  rejectionReason   String?
-  approvedAt        DateTime?
-  approvedBy        String?
-  submittedAt       DateTime?
-  reviewedAt        DateTime?
-  scheduledAt       DateTime?
-  startedAt         DateTime?
-  completedAt       DateTime?
-  cancelledAt       DateTime?
-  rejectedAt        DateTime?
-  // Audit
-  createdAt         DateTime              @default(now())
-  updatedAt         DateTime              @updatedAt
-  createdBy         String?
-  updatedBy         String?
-  deletedAt         DateTime?
-
-  company        Company                 @relation(fields: [companyId], references: [id])
-  course         Course?                 @relation(fields: [courseId], references: [id])
-  sessions       TrainingSession[]
-  requestCourses TrainingRequestCourse[]
-  quotations     Quotation[]
-  invoices       Invoice[]
-
-  @@index([status])
-  @@index([companyId])
-  @@index([courseId])
-}
-
-// Junction: a Training Request contains multiple courses, each with its own trainee list
-// Business rules: minTrainees=10, maxTrainees=20 per course
-model TrainingRequestCourse {
-  id           String    @id @default(uuid())
-  requestId    String
-  courseId     String
-  traineeCount Int       @default(0)
-  minTrainees  Int       @default(10) // business rule: minimum 10
-  maxTrainees  Int       @default(20) // business rule: maximum 20
-  notes        String?
-  // Audit
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  createdBy    String?
-  updatedBy    String?
-  deletedAt    DateTime?
-
-  request  TrainingRequest                @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  course   Course                         @relation(fields: [courseId], references: [id])
-  trainees TrainingRequestCourseTrainee[]
-  sessions TrainingSession[]
-
-  @@unique([requestId, courseId, deletedAt])
-  @@index([requestId])
-  @@index([courseId])
-}
-
-// Junction: trainees assigned to a specific course within a training request
-model TrainingRequestCourseTrainee {
-  id              String    @id @default(uuid())
-  requestCourseId String
-  traineeId       String
-  // Audit
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  createdBy       String?
-  updatedBy       String?
-  deletedAt       DateTime?
-
-  requestCourse TrainingRequestCourse @relation(fields: [requestCourseId], references: [id], onDelete: Cascade)
-  trainee       Trainee               @relation(fields: [traineeId], references: [id], onDelete: Cascade)
-
-  @@unique([requestCourseId, traineeId])
-  @@index([requestCourseId])
-  @@index([traineeId])
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MULTI-COMPANY SESSION ENROLLMENT — CENTRAL WORKFLOW ENTITY
-// =====================================================================
-// SessionEnrollment is the single source of truth for every trainee's
-// progress inside a Training Session. It tracks the complete lifecycle:
-//
-//   Enrollment → Attendance → Pre-Test → Session Lifecycle → Final-Test
-//     → Evaluation → Certificate
-//
-// All downstream modules (Attendance, ExamAttempt, CourseEvaluation,
-// Certificate) automatically update these status fields via sync functions.
-//
-// A Training Session can contain trainees from MULTIPLE companies.
-// The trainee's original company is always preserved via Trainee.companyId.
-// ─────────────────────────────────────────────────────────────────────────────
-
-model SessionEnrollment {
-  id        String          @id @default(uuid())
-  sessionId String
-  session   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  traineeId String
-  trainee   Trainee         @relation(fields: [traineeId], references: [id], onDelete: Cascade)
-  // The trainee's company at time of enrollment (snapshot — preserves original company)
-  companyId String // trainee's original company (NOT the session's company)
-  company   Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  // ── Enrollment lifecycle ──
-  enrollmentStatus String    @default("PENDING")
-  // PENDING | CONFIRMED | CHECKED_IN | TRAINING | COMPLETED | CANCELLED | NO_SHOW
-  enrolledBy       String?
-  enrollmentDate   DateTime  @default(now())
-  completedDate    DateTime?
-  notes            String?
-
-  // ── Re-Exam support ──
-  isReExam     Boolean @default(false)
-
-  // ── Enrollment source tracking ──
-  enrollmentSource String @default("MANUAL")
-  addedByTrainer  Boolean @default(false)
-  pendingReview   Boolean @default(false)
-
-  // ── Attendance status ──
-  attendanceStatus String @default("NOT_STARTED")
-  // NOT_STARTED | PRESENT | LATE | ABSENT
-
-  // ── Pre-Test status ──
-  preTestStatus String @default("PENDING")
-  // NOT_REQUIRED | PENDING | IN_PROGRESS | COMPLETED
-
-  // ── Final Test status ──
-  finalTestStatus String @default("PENDING")
-  // NOT_REQUIRED | PENDING | IN_PROGRESS | PASSED | FAILED
-
-  // ── Evaluation status ──
-  evaluationStatus String @default("PENDING")
-  // NOT_REQUIRED | PENDING | COMPLETED
-
-  // ── Certificate status ──
-  certificateStatus String @default("NOT_ELIGIBLE")
-  // NOT_ELIGIBLE | ELIGIBLE | GENERATED | ISSUED
-
-  // ── Links to related records (for quick lookup) ──
-  attendanceId String? // FK to Attendance record (set at check-in)
-
-  // Audit
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  createdBy String?
-  updatedBy String?
-  deletedAt DateTime?
-
-  @@unique([sessionId, traineeId])
-  @@index([sessionId])
-  @@index([traineeId])
-  @@index([companyId])
-  @@index([enrollmentStatus])
-  @@index([attendanceStatus])
-  @@index([preTestStatus])
-  @@index([finalTestStatus])
-  @@index([evaluationStatus])
-  @@index([certificateStatus])
-}
-
-// Tracks which companies have trainees enrolled in a session (for multi-company reporting)
-model SessionCompany {
-  id           String          @id @default(uuid())
-  sessionId    String
-  session      TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  companyId    String
-  company      Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  traineeCount Int             @default(0)
-  addedAt      DateTime        @default(now())
-  // Audit
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  createdBy    String?
-
-  @@unique([sessionId, companyId])
-  @@index([sessionId])
-  @@index([companyId])
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TRAINING SESSIONS + QR ATTENDANCE
-// ─────────────────────────────────────────────────────────────────────────────
-
-model TrainingSession {
-  id                String                 @id @default(uuid())
-  refNumber         String                 @unique // SES-000001
-  courseId          String
-  course            Course                 @relation(fields: [courseId], references: [id])
-  requestId         String?
-  request           TrainingRequest?       @relation(fields: [requestId], references: [id])
-  requestCourseId   String? // link to specific course-in-request (multi-course support)
-  requestCourse     TrainingRequestCourse? @relation(fields: [requestCourseId], references: [id], onDelete: SetNull)
-  trainerId         String?
-  trainer           Trainer?               @relation(fields: [trainerId], references: [id])
-  title             String
-  location          String?
-  city              String?
-  region            String?
-  venue             String?
-  shift             String? // MORNING | EVENING
-  durationHours     Int                    @default(6)
-  capacity          Int                    @default(20)
-  language          String                 @default("en")
-  startDate         DateTime
-  endDate           DateTime
-  expectedTrainees  Int                    @default(0)
-  actualTrainees    Int                    @default(0)
-  status            SessionStatus          @default(SCHEDULED)
-  qrCodeToken       String?                @unique
-  qrCodeGeneratedAt DateTime?
-  // QR attendance window — QR is only active during this period
-  qrActiveFrom      DateTime?
-  qrActiveTo        DateTime?
-  // Session lifecycle tracking
-  lifecycleStatus   String                 @default("NOT_STARTED") // NOT_STARTED | STARTED | ON_BREAK | COMPLETED
-  startedAt         DateTime?
-  completedAt       DateTime?
-  notes             String?
-  // Import/export fields (course schedule sheet)
-  instituteName     String? // اسم المعهد المنفذ
-  classification    String                 @default("COURSE") // COURSE | EXAM — دورة / اختبار
-  locationMapUrl    String? // احداثيات الموقع (map link)
-  durationDays      Int? // مدة الدورة (days, as shown on the sheet)
-  // Audit
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-  createdBy         String?
-  updatedBy         String?
-  deletedAt         DateTime?
-
-  attendance       Attendance[]
-  checkInAttempts  CheckInAttempt[]
-  testResults      TestResult[]
-  examAttempts     ExamAttempt[]
-  evaluations      CourseEvaluation[]
-  certificates     Certificate[]
-  lifecycleEvents  SessionLifecycleEvent[]
-  enrollments      SessionEnrollment[]
-  sessionCompanies SessionCompany[]
-  sessionPayments  SessionPayment[]
-  invoices         Invoice[]
-
-  @@index([status])
-  @@index([trainerId])
-  @@index([startDate])
-  @@index([shift])
-  @@index([city])
-  @@index([requestCourseId])
-  @@index([lifecycleStatus])
-}
-
-// Session lifecycle events: STARTED → BREAK → RESUMED → COMPLETED
-model SessionLifecycleEvent {
-  id        String          @id @default(uuid())
-  sessionId String
-  session   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  eventType String // STARTED | BREAK | RESUMED | COMPLETED
-  eventTime DateTime        @default(now())
-  notes     String?
-  // Audit
-  createdAt DateTime        @default(now())
-  createdBy String?
-
-  @@index([sessionId])
-  @@index([eventType])
-}
-
 model Attendance {
-  id                    String          @id @default(uuid())
+  id                    String          @id
   sessionId             String
-  session               TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   traineeName           String
   traineeIdNational     String?
   traineeEmail          String?
@@ -846,12 +18,10 @@ model Attendance {
   companyId             String?
   checkInAt             DateTime?
   checkOutAt            DateTime?
-  status                String          @default("REGISTERED") // REGISTERED | PRESENT | ABSENT | LATE | EXCUSED
-  checkInMethod         String? // QR | MANUAL
+  status                String          @default("REGISTERED")
+  checkInMethod         String?
   notes                 String?
-  // Device tracking for QR check-in
-  deviceInfo            String? // JSON: { userAgent, ipAddress, platform, deviceFingerprint }
-  // Training execution progress (pipeline tracking)
+  deviceInfo            String?
   preTestAssignedAt     DateTime?
   preTestCompletedAt    DateTime?
   finalTestAssignedAt   DateTime?
@@ -860,26 +30,141 @@ model Attendance {
   evaluationCompletedAt DateTime?
   certificateEligible   Boolean         @default(false)
   certificateId         String?
-  // Audit
   createdAt             DateTime        @default(now())
-  updatedAt             DateTime        @updatedAt
+  updatedAt             DateTime
   createdBy             String?
   updatedBy             String?
   deletedAt             DateTime?
+  TrainingSession       TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  ExamAttempt           ExamAttempt[]
 
-  examAttempts ExamAttempt[]
-
-  @@index([sessionId])
-  @@index([status])
-  @@index([traineeIdNational])
   @@index([certificateEligible])
+  @@index([traineeIdNational])
+  @@index([status])
+  @@index([sessionId])
 }
 
-// Tracks every QR scan attempt (success + failures) — for analytics + fraud detection
+model AuditLog {
+  id            String   @id
+  userId        String?
+  action        String
+  entity        String
+  entityId      String?
+  entityRef     String?
+  description   String
+  descriptionAr String?
+  ipAddress     String?
+  userAgent     String?
+  userRole      String?
+  browser       String?
+  device        String?
+  oldValue      String?
+  newValue      String?
+  reason        String?
+  metadata      String?
+  createdAt     DateTime @default(now())
+  User          User?    @relation(fields: [userId], references: [id])
+
+  @@index([ipAddress])
+  @@index([createdAt])
+  @@index([action])
+  @@index([entity])
+  @@index([userId])
+}
+
+model BankAccount {
+  id            String    @id
+  bankName      String
+  beneficiary   String
+  accountNumber String
+  iban          String?
+  swift         String?
+  qrImageUrl    String?
+  isActive      Boolean   @default(true)
+  isDefault     Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime
+  createdBy     String?
+  updatedBy     String?
+  deletedAt     DateTime?
+  Invoice       Invoice[]
+
+  @@index([isActive])
+}
+
+model Certificate {
+  id                                  String                    @id
+  refNumber                           String                    @unique
+  sessionId                           String
+  courseId                            String
+  companyId                           String?
+  attendanceId                        String?
+  traineeName                         String
+  traineeIdNational                   String?
+  traineeEmail                        String?
+  finalScore                          Int
+  issuedAt                            DateTime                  @default(now())
+  validUntil                          DateTime
+  status                              String                    @default("VALID")
+  releaseStatus                       String                    @default("DRAFT")
+  releasedAt                          DateTime?
+  releasedBy                          String?
+  downloadedAt                        DateTime?
+  professionVerified                  Boolean                   @default(false)
+  professionVerifiedAt                DateTime?
+  professionVerifiedBy                String?
+  professionVerificationNotes         String?
+  professionVerificationAttachmentUrl String?
+  renewedFromId                       String?
+  version                             Int                       @default(1)
+  renewedAt                           DateTime?
+  pdfUrl                              String?
+  pdfGeneratedAt                      DateTime?
+  verificationToken                   String?                   @unique
+  qrCodeUrl                           String?
+  verificationCount                   Int                       @default(0)
+  lastVerifiedAt                      DateTime?
+  createdAt                           DateTime                  @default(now())
+  updatedAt                           DateTime
+  createdBy                           String?
+  updatedBy                           String?
+  deletedAt                           DateTime?
+  workerPassportId                    String?
+  WorkerPassport                      WorkerPassport?           @relation(fields: [workerPassportId], references: [id])
+  Certificate                         Certificate?              @relation("CertificateToCertificate", fields: [renewedFromId], references: [id])
+  other_Certificate                   Certificate[]             @relation("CertificateToCertificate")
+  Company                             Company?                  @relation(fields: [companyId], references: [id])
+  Course                              Course                    @relation(fields: [courseId], references: [id])
+  TrainingSession                     TrainingSession           @relation(fields: [sessionId], references: [id])
+  CertificateVerification             CertificateVerification[]
+
+  @@index([validUntil])
+  @@index([renewedFromId])
+  @@index([attendanceId])
+  @@index([verificationToken])
+  @@index([releaseStatus])
+  @@index([status])
+  @@index([companyId])
+  @@index([sessionId])
+}
+
+model CertificateVerification {
+  id                String      @id
+  certificateId     String
+  verificationToken String?
+  ipAddress         String?
+  userAgent         String?
+  countryCode       String?
+  verifiedAt        DateTime    @default(now())
+  Certificate       Certificate @relation(fields: [certificateId], references: [id], onDelete: Cascade)
+
+  @@index([verifiedAt])
+  @@index([certificateId])
+}
+
 model CheckInAttempt {
-  id                String          @id @default(uuid())
+  id                String          @id
   sessionId         String
-  session           TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   qrToken           String?
   traineeName       String?
   traineeEmail      String?
@@ -889,287 +174,111 @@ model CheckInAttempt {
   success           Boolean
   failureReason     String?
   attendedAt        DateTime        @default(now())
+  TrainingSession   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
-  @@index([sessionId])
   @@index([success])
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// EXAMS (Test Results) — EXAM-YYYY-000001
-// ─────────────────────────────────────────────────────────────────────────────
-
-model TestResult {
-  id                String          @id @default(uuid())
-  refNumber         String          @unique // EXAM-YYYY-000001
-  sessionId         String
-  session           TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  testType          TestType
-  traineeName       String
-  traineeEmail      String?
-  traineeIdNational String?
-  companyId         String? // trainee's original company — preserved for per-company reporting
-  company           Company?        @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  scorePercent      Int
-  passed            Boolean
-  answers           String? // JSON of { questionId, selected }
-  attemptedAt       DateTime        @default(now())
-  durationSec       Int?
-  // AI-assisted exam metadata
-  questionSet       String? // JSON snapshot of question IDs presented (for AI exams)
-  // Audit
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  createdBy         String?
-  updatedBy         String?
-  deletedAt         DateTime?
-
-  @@index([sessionId, testType])
-  @@index([traineeEmail])
-  @@index([companyId])
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// EXAM ATTEMPTS — randomized per-trainee exam versions
-// Each attempt has a unique question set (randomized order + randomized answer choices)
-// ─────────────────────────────────────────────────────────────────────────────
-
-model ExamAttempt {
-  id                String          @id @default(uuid())
-  refNumber         String          @unique // EXAM-YYYY-000001
-  sessionId         String
-  session           TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  attendanceId      String?
-  attendance        Attendance?     @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
-  testType          TestType // PRE_TEST | FINAL_TEST
-  traineeName       String
-  traineeEmail      String?
-  traineeIdNational String?
-  companyId         String? // trainee's original company — preserved for per-company reporting
-  company           Company?        @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  // Randomized exam version — snapshot of question IDs + their option ordering
-  questionSet       String // JSON: [{ questionId, order, optionsOrder: [0,2,1,3] }]
-  // Attempt state
-  status            String          @default("ASSIGNED") // ASSIGNED | IN_PROGRESS | SUBMITTED | GRADED
-  attemptNumber     Int             @default(1)
-  maxAttempts       Int             @default(1)
-  // Grading
-  scorePercent      Int?
-  passed            Boolean?
-  passScore         Int? // snapshot of course.passScore at time of attempt
-  // Timing
-  assignedAt        DateTime        @default(now())
-  startedAt         DateTime?
-  submittedAt       DateTime?
-  durationSec       Int?
-  // Answers — JSON: [{ questionId, selectedAnswerIndices: [...], correct: boolean }]
-  answers           String?
-  // Audit
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  createdBy         String?
-  updatedBy         String?
-  deletedAt         DateTime?
-
-  @@index([sessionId, testType])
-  @@index([attendanceId])
-  @@index([status])
-  @@index([traineeEmail])
-  @@index([companyId])
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// COURSE EVALUATION
-// ─────────────────────────────────────────────────────────────────────────────
-
-model CourseEvaluation {
-  id                String          @id @default(uuid())
-  sessionId         String
-  session           TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  trainerId         String?
-  trainer           Trainer?        @relation(fields: [trainerId], references: [id])
-  traineeName       String
-  traineeEmail      String?
-  traineeIdNational String?
-  companyId         String? // trainee's original company — preserved for per-company reporting
-  company           Company?        @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  attendanceId      String?
-  trainerRating     Int
-  contentRating     Int
-  venueRating       Int
-  materialsRating   Int
-  overallRating     Int
-  comments          String?
-  suggestions       String? // Trainee's suggestions for improvement
-  wouldRecommend    Boolean?
-  submittedAt       DateTime        @default(now())
-  // Audit
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  createdBy         String?
-  updatedBy         String?
-  deletedAt         DateTime?
-
   @@index([sessionId])
-  @@index([trainerId])
-  @@index([attendanceId])
-  @@index([companyId])
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CERTIFICATES + QR VERIFICATION
-// ─────────────────────────────────────────────────────────────────────────────
-
-model Certificate {
-  id                String          @id @default(uuid())
-  refNumber         String          @unique // CERT-YYYY-000001
-  sessionId         String
-  session           TrainingSession @relation(fields: [sessionId], references: [id])
-  courseId          String
-  course            Course          @relation(fields: [courseId], references: [id])
-  companyId         String?
-  company           Company?        @relation(fields: [companyId], references: [id])
-  attendanceId      String? // link to attendance record that earned this certificate
-  traineeName       String
-  traineeIdNational String?
-  traineeEmail      String?
-  finalScore        Int
-  issuedAt          DateTime        @default(now())
-  validUntil        DateTime
-  status            String          @default("VALID") // VALID | EXPIRED | REVOKED | RENEWED
-  // ── Certificate Release Workflow ──
-  // releaseStatus tracks the security workflow separately from validity status.
-  // DRAFT → READY_FOR_RELEASE → RELEASED → DOWNLOADED
-  releaseStatus       String          @default("DRAFT") // DRAFT | READY_FOR_RELEASE | RELEASED | DOWNLOADED
-  releasedAt          DateTime?
-  releasedBy          String?
-  downloadedAt        DateTime?
-  // ── Profession Verification (Iqama profession change) ──
-  professionVerified   Boolean     @default(false)
-  professionVerifiedAt DateTime?
-  professionVerifiedBy String?
-  professionVerificationNotes String?
-  professionVerificationAttachmentUrl String?
-  // Sprint 6: renewal chain
-  renewedFromId     String?
-  renewedFrom       Certificate?    @relation("CertRenewalChain", fields: [renewedFromId], references: [id], onDelete: SetNull)
-  renewedBy         Certificate[]   @relation("CertRenewalChain")
-  version           Int             @default(1) // 1 = original, 2+ = renewals
-  renewedAt         DateTime?
-  pdfUrl            String?
-  pdfGeneratedAt    DateTime?
-  // QR verification
-  verificationToken String?         @unique
-  qrCodeUrl         String?
-  verificationCount Int             @default(0)
-  lastVerifiedAt    DateTime?
-  // Audit
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+model Company {
+  id                String              @id
+  refNumber         String              @unique
+  name              String
+  nameAr            String?
+  legalName         String?
+  crNumber          String?
+  vatNumber         String?
+  industry          String?
+  country           String?
+  city              String?
+  address           String?
+  postalCode        String?
+  phone             String?
+  email             String?
+  website           String?
+  contactPerson     String?
+  contactPhone      String?
+  contactEmail      String?
+  status            String              @default("ACTIVE")
+  logoUrl           String?
+  tenantId          String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime
   createdBy         String?
   updatedBy         String?
   deletedAt         DateTime?
+  Certificate       Certificate[]
+  Tenant            Tenant?             @relation(fields: [tenantId], references: [id])
+  CompanyContact    CompanyContact[]
+  CourseEvaluation  CourseEvaluation[]
+  ExamAttempt       ExamAttempt[]
+  Invoice           Invoice[]
+  Payment           Payment[]
+  Quotation         Quotation[]
+  Receipt           Receipt[]
+  SessionCompany    SessionCompany[]
+  SessionEnrollment SessionEnrollment[]
+  SessionPayment    SessionPayment[]
+  TestResult        TestResult[]
+  Trainee           Trainee[]
+  TrainingRequest   TrainingRequest[]
+  User              User[]
+  WorkerPassport    WorkerPassport[]
 
-  verifications    CertificateVerification[]
-  workerPassport   WorkerPassport?           @relation("WorkerPassportCertificates", fields: [workerPassportId], references: [id], onDelete: SetNull)
-  workerPassportId String?
-
-  @@index([sessionId])
-  @@index([companyId])
+  @@index([tenantId])
   @@index([status])
-  @@index([releaseStatus])
-  @@index([verificationToken])
-  @@index([attendanceId])
-  @@index([renewedFromId])
-  @@index([validUntil])
-}
-model CertificateVerification {
-  id                String      @id @default(uuid())
-  certificateId     String
-  certificate       Certificate @relation(fields: [certificateId], references: [id], onDelete: Cascade)
-  verificationToken String?
-  ipAddress         String?
-  userAgent         String?
-  countryCode       String?
-  verifiedAt        DateTime    @default(now())
-
-  @@index([certificateId])
-  @@index([verifiedAt])
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// WORKER TRAINING PASSPORT & COMPLIANCE MATRIX (Sprint 6)
-// ─────────────────────────────────────────────────────────────────────────────
+model CompanyContact {
+  id               String    @id
+  companyId        String
+  fullName         String
+  jobTitle         String?
+  email            String?
+  phone            String?
+  mobile           String?
+  preferredContact String?
+  isPrimary        Boolean   @default(false)
+  isActive         Boolean   @default(true)
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime
+  createdBy        String?
+  updatedBy        String?
+  deletedAt        DateTime?
+  Company          Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-// One permanent digital passport per worker, keyed by National ID / Iqama.
-// Auto-generated when a certificate is first issued to a trainee whose
-// nationalId isn't yet linked to a passport. The worker does NOT create or
-// edit the passport — it is purely system-managed.
-model WorkerPassport {
-  id             String    @id @default(uuid())
-  passportNumber String    @unique // WP-YYYY-NNNNNN
-  nationalId     String    @unique // National ID or Iqama (unique key)
-  fullName       String
-  companyId      String?
-  company        Company?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  jobTitle       String?
-  mobile         String?
-  email          String?
-  // QR code — separate from certificate QR. Points to /worker/{qrToken}
-  qrToken        String    @unique @default(uuid())
-  qrCodeUrl      String?
-  // Audit
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  createdBy      String?
-  updatedBy      String?
-  deletedAt      DateTime?
-
-  // Relations
-  certificates Certificate[] @relation("WorkerPassportCertificates")
-
-  @@index([nationalId])
   @@index([companyId])
-  @@index([qrToken])
-  @@index([passportNumber])
 }
 
-// Compliance Rule — admin-configurable mandatory course requirements.
-// Each rule maps a Course to a scope (All Workers / Company / Job Title / Project / Client).
 model ComplianceRule {
-  id              String    @id @default(uuid())
-  courseId        String
-  course          Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  isMandatory     Boolean   @default(true) // mandatory vs. recommended
-  isCoreMandatory Boolean   @default(false) // OHS/Fire Safety/First Aid — only SUPER_ADMIN can disable
-  validityMonths  Int       @default(24) // override course.validityMonths if set
-  // Scope: who does this rule apply to?
-  scopeType       String    @default("ALL") // ALL | COMPANY | JOB_TITLE | PROJECT | CLIENT
-  scopeValue      String? // company ID, job title string, project name, or client name
-  scopeLabel      String? // human-readable: "Acme Co." or "Electrician" or "Project X"
-  isActive        Boolean   @default(true)
-  // Audit
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  createdBy       String?
-  updatedBy       String?
-  deletedAt       DateTime?
+  id                    String                  @id
+  courseId              String
+  isMandatory           Boolean                 @default(true)
+  isCoreMandatory       Boolean                 @default(false)
+  validityMonths        Int                     @default(24)
+  scopeType             String                  @default("ALL")
+  scopeValue            String?
+  scopeLabel            String?
+  isActive              Boolean                 @default(true)
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime
+  createdBy             String?
+  updatedBy             String?
+  deletedAt             DateTime?
+  Course                Course                  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  ComplianceRuleVersion ComplianceRuleVersion[]
 
-  versions ComplianceRuleVersion[]
-
-  @@index([courseId])
-  @@index([scopeType])
-  @@index([isActive])
   @@index([scopeType, scopeValue])
+  @@index([isActive])
+  @@index([scopeType])
+  @@index([courseId])
 }
 
-// Immutable audit trail for every compliance rule change.
-// Never deleted — full history of who changed what, when, and why.
 model ComplianceRuleVersion {
-  id              String         @id @default(uuid())
+  id              String         @id
   ruleId          String
-  rule            ComplianceRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
   version         Int            @default(1)
-  // Snapshot of the rule at this version
   courseId        String
   isMandatory     Boolean
   isCoreMandatory Boolean
@@ -1178,450 +287,1013 @@ model ComplianceRuleVersion {
   scopeValue      String?
   scopeLabel      String?
   isActive        Boolean
-  // Change metadata
   changedBy       String
   changedAt       DateTime       @default(now())
-  changeType      String // CREATE | UPDATE | ACTIVATE | DEACTIVATE
-  reason          String? // optional reason for the change
-  // Before/after diff (JSON)
-  previousValues  String? // JSON string of previous field values
+  changeType      String
+  reason          String?
+  previousValues  String?
+  ComplianceRule  ComplianceRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 
-  @@index([ruleId])
-  @@index([changedAt])
   @@index([changeType])
+  @@index([changedAt])
+  @@index([ruleId])
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// NOTIFICATIONS (multi-channel: in-app, email, push, SMS — future mobile)
-// ─────────────────────────────────────────────────────────────────────────────
+model Course {
+  id                             String                  @id
+  refNumber                      String                  @unique
+  code                           String                  @unique
+  title                          String
+  titleAr                        String?
+  description                    String?
+  category                       String?
+  durationHours                  Int                     @default(8)
+  language                       String                  @default("en")
+  validityMonths                 Int                     @default(12)
+  passScore                      Int                     @default(70)
+  maxTrainees                    Int                     @default(20)
+  hasPreTest                     Boolean                 @default(true)
+  hasFinalTest                   Boolean                 @default(true)
+  hasEvaluation                  Boolean                 @default(true)
+  status                         String                  @default("ACTIVE")
+  tenantId                       String?
+  aiExamEnabled                  Boolean                 @default(false)
+  aiExamConfig                   String?
+  requiresProfessionVerification Boolean                 @default(false)
+  retakeAttempts                 Int                     @default(1)
+  createdAt                      DateTime                @default(now())
+  updatedAt                      DateTime
+  createdBy                      String?
+  updatedBy                      String?
+  deletedAt                      DateTime?
+  Certificate                    Certificate[]
+  ComplianceRule                 ComplianceRule[]
+  Tenant                         Tenant?                 @relation(fields: [tenantId], references: [id])
+  CourseResource                 CourseResource[]
+  Question                       Question[]
+  TrainerCertification           TrainerCertification[]
+  TrainingRequest                TrainingRequest[]
+  TrainingRequestCourse          TrainingRequestCourse[]
+  TrainingSession                TrainingSession[]
+
+  @@index([tenantId])
+  @@index([category])
+  @@index([status])
+}
+
+model CourseEvaluation {
+  id                String          @id
+  sessionId         String
+  trainerId         String?
+  traineeName       String
+  traineeEmail      String?
+  traineeIdNational String?
+  companyId         String?
+  attendanceId      String?
+  trainerRating     Int
+  contentRating     Int
+  venueRating       Int
+  materialsRating   Int
+  overallRating     Int
+  comments          String?
+  suggestions       String?
+  wouldRecommend    Boolean?
+  submittedAt       DateTime        @default(now())
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime
+  createdBy         String?
+  updatedBy         String?
+  deletedAt         DateTime?
+  Company           Company?        @relation(fields: [companyId], references: [id])
+  Trainer           Trainer?        @relation(fields: [trainerId], references: [id])
+  TrainingSession   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([attendanceId])
+  @@index([trainerId])
+  @@index([sessionId])
+}
+
+model CourseResource {
+  id          String    @id
+  courseId    String
+  type        String
+  title       String
+  titleAr     String?
+  url         String
+  description String?
+  order       Int       @default(0)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime
+  createdBy   String?
+  updatedBy   String?
+  deletedAt   DateTime?
+  Course      Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([type])
+  @@index([courseId])
+}
+
+model ExamAttempt {
+  id                String          @id
+  refNumber         String          @unique
+  sessionId         String
+  attendanceId      String?
+  testType          String
+  traineeName       String
+  traineeEmail      String?
+  traineeIdNational String?
+  companyId         String?
+  questionSet       String
+  status            String          @default("ASSIGNED")
+  attemptNumber     Int             @default(1)
+  maxAttempts       Int             @default(1)
+  scorePercent      Int?
+  passed            Boolean?
+  passScore         Int?
+  assignedAt        DateTime        @default(now())
+  startedAt         DateTime?
+  submittedAt       DateTime?
+  durationSec       Int?
+  answers           String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime
+  createdBy         String?
+  updatedBy         String?
+  deletedAt         DateTime?
+  Company           Company?        @relation(fields: [companyId], references: [id])
+  Attendance        Attendance?     @relation(fields: [attendanceId], references: [id])
+  TrainingSession   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([traineeEmail])
+  @@index([status])
+  @@index([attendanceId])
+  @@index([sessionId, testType])
+}
+
+model FinancialSettings {
+  id             String   @id @default("default")
+  companyName    String   @default("GCC ELECTRICAL TESTING LABORATORY")
+  crNumber       String?
+  vatNumber      String?
+  financeEmail   String?
+  companyLogoUrl String?
+  address        String?
+  phone          String?
+  currency       String   @default("SAR")
+  invoiceSeq     Int      @default(1)
+  quotationSeq   Int      @default(1)
+  receiptSeq     Int      @default(1)
+  vatRate        Float    @default(15)
+  defaultDueDays Int      @default(30)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime
+  updatedBy      String?
+}
+
+model Invoice {
+  id                 String           @id
+  refNumber          String           @unique
+  quotationId        String?
+  requestId          String?
+  sessionId          String?
+  companyId          String
+  lineItems          String
+  subtotal           Float
+  discountAmount     Float            @default(0)
+  discountPercent    Float?
+  vatAmount          Float
+  grandTotal         Float
+  paidAmount         Float            @default(0)
+  outstandingBalance Float
+  currency           String           @default("SAR")
+  vatRate            Float
+  status             String           @default("DRAFT")
+  issueDate          DateTime         @default(now())
+  dueDate            DateTime?
+  paidDate           DateTime?
+  bankAccountId      String?
+  coordinatorNotes   String?
+  paymentNotes       String?
+  snapshot           String
+  pdfUrl             String?
+  pdfGeneratedAt     DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime
+  createdBy          String?
+  updatedBy          String?
+  deletedAt          DateTime?
+  BankAccount        BankAccount?     @relation(fields: [bankAccountId], references: [id])
+  Company            Company          @relation(fields: [companyId], references: [id])
+  TrainingSession    TrainingSession? @relation(fields: [sessionId], references: [id])
+  TrainingRequest    TrainingRequest? @relation(fields: [requestId], references: [id])
+  Quotation          Quotation?       @relation(fields: [quotationId], references: [id])
+  Payment            Payment[]
+  PaymentInvoice     PaymentInvoice[]
+  Receipt            Receipt[]
+
+  @@index([dueDate])
+  @@index([issueDate])
+  @@index([status])
+  @@index([sessionId])
+  @@index([requestId])
+  @@index([companyId])
+}
+
+model Language {
+  id         String   @id
+  code       String   @unique
+  name       String
+  nameNative String
+  direction  String   @default("ltr")
+  isDefault  Boolean  @default(false)
+  isActive   Boolean  @default(true)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime
+}
+
+model LoginHistory {
+  id            String   @id
+  userId        String?
+  email         String
+  success       Boolean
+  failureReason String?
+  ipAddress     String?
+  userAgent     String?
+  attemptedAt   DateTime @default(now())
+  User          User?    @relation(fields: [userId], references: [id])
+
+  @@index([attemptedAt])
+  @@index([email])
+  @@index([userId])
+}
 
 model Notification {
-  id          String    @id @default(uuid())
+  id          String    @id
   userId      String?
-  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   title       String
   titleAr     String?
   message     String
   messageAr   String?
-  type        String    @default("INFO") // INFO | SUCCESS | WARNING | ERROR | REQUEST
-  category    String    @default("SYSTEM") // SYSTEM | REQUEST | SESSION | CERTIFICATE | TEST
+  type        String    @default("INFO")
+  category    String    @default("SYSTEM")
   link        String?
   isRead      Boolean   @default(false)
   readAt      DateTime?
-  // Multi-channel support
-  channels    String? // JSON: ["in_app", "email", "push", "sms"]
+  channels    String?
   emailSentAt DateTime?
   pushSentAt  DateTime?
-  // Audit
   createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  updatedAt   DateTime
+  User        User?     @relation(fields: [userId], references: [id])
 
+  @@index([createdAt])
   @@index([userId, isRead])
-  @@index([createdAt])
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SESSION PAYMENT — lightweight invoice tracking for certificate release
-// =====================================================================
-// Tracks the total amount owed by a company for a training session and the
-// amount paid so far. The certificate release workflow checks that the
-// session payment is fully paid (paidAmount >= totalAmount) before
-// allowing certificates to be released to the contractor.
-//
-// One record per (sessionId, companyId) — a session may have multiple
-// companies enrolled, each with their own payment obligation.
-// ─────────────────────────────────────────────────────────────────────────────
-
-model SessionPayment {
-  id              String   @id @default(uuid())
-  sessionId       String
-  session         TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  companyId       String
-  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  // Financial amounts (in the currency specified below)
-  totalAmount     Float    @default(0)
-  paidAmount      Float    @default(0)
-  currency        String   @default("SAR")
-  // Invoice reference (optional — for linking to external invoice numbers)
-  invoiceRef      String?
-  invoiceIssuedAt DateTime?
-  invoiceDueDate  DateTime?
-  // Status derived from paidAmount / totalAmount: UNPAID | PARTIALLY_PAID | PAID
-  notes           String?
-  // Audit
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  createdBy       String?
-  updatedBy       String?
-  deletedAt       DateTime?
-
-  @@unique([sessionId, companyId])
-  @@index([sessionId])
-  @@index([companyId])
-  @@index([invoiceRef])
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AUDIT LOG — captures every required action automatically
-// ─────────────────────────────────────────────────────────────────────────────
-
-model AuditLog {
-  id            String   @id @default(uuid())
-  userId        String?
-  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  action        String // LOGIN | LOGOUT | FAILED_LOGIN | CREATE | UPDATE | DELETE | APPROVE | REJECT | ISSUE_CERT | RENEW_CERT | GENERATE_QR | VERIFY_QR | CREATE_WORKER | UPDATE_WORKER | DELETE_WORKER | CREATE_COMPANY | UPDATE_COMPANY | COMPLIANCE_CHANGE | PERMISSION_CHANGE | STATUS_CHANGE | EXAM_SUBMIT | CERTIFICATE_GENERATE | ISSUE | REVOKE | QR_REGENERATE | EXPORT
-  entity        String // COMPANY | TRAINER | TRAINEE | COURSE | REQUEST | SESSION | CERTIFICATE | USER | ROLE | SETTING | EXAM | ATTENDANCE | EVALUATION | WORKER_PASSPORT | COMPLIANCE_RULE | QR_CODE
-  entityId      String?
-  entityRef     String? // human-readable ref number (TR-..., CERT-..., etc.)
-  description   String
-  descriptionAr String?
-  ipAddress     String?
-  userAgent     String?
-  // Sprint 6: Enterprise Audit Trail — extended fields
-  userRole      String? // role of the user at time of action
-  browser       String? // parsed from UA
-  device        String? // parsed from UA
-  oldValue      String? // JSON: previous field values (for UPDATE/DELETE)
-  newValue      String? // JSON: new field values (for CREATE/UPDATE)
-  reason        String? // optional reason for the action
-  metadata      String? // JSON: before/after diff for UPDATE, old/new status for STATUS_CHANGE
-  createdAt     DateTime @default(now())
-
-  @@index([userId])
-  @@index([entity])
-  @@index([action])
-  @@index([createdAt])
-  @@index([ipAddress])
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SCHEDULED REPORTS — automated report generation + email delivery
-// =====================================================================
-// ReportSchedule defines what report to generate, when, for whom, and
-// where to email it. ReportExecution logs every run with delivery status.
-// ─────────────────────────────────────────────────────────────────────────────
-
-model ReportSchedule {
-  id              String    @id @default(uuid())
-  name            String
-  nameAr          String?
-  description     String?
-  // Template
-  templateCode    String // e.g. "GCCLAB_MONTHLY"
-  // Schedule type
-  scheduleType    String // WEEKLY | MONTHLY | DAILY | CUSTOM
-  // Cron expression for flexible scheduling (e.g. "0 9 * * 4" = every Thursday 9am)
-  cronExpression  String // standard 5-field cron
-  // Configurable execution time
-  executionTime   String? // "HH:mm" (24h, e.g. "09:00") — used for display + default
-  timezone        String    @default("Asia/Riyadh")
-  // Day of week (0=Sun, 4=Thu) — for WEEKLY type
-  dayOfWeek       Int? // 0-6
-  // Day of month (1-31) — for MONTHLY type
-  dayOfMonth      Int? // 1-31
-  // Filters — JSON object passed to the template query
-  filters         String? // JSON: { month, companyId, region, city, ... }
-  // Export format
-  exportFormats   String    @default("xlsx") // JSON: ["xlsx", "pdf"]
-  // Email recipients — JSON array of email addresses
-  recipients      String // JSON: ["email1@example.com", "email2@example.com"]
-  ccRecipients    String? // JSON: ["cc1@example.com"]
-  bccRecipients   String? // JSON: ["bcc1@example.com"]
-  emailSubject    String?
-  emailBody       String?
-  // Status
-  isActive        Boolean   @default(true)
-  // Tracking
-  lastRunAt       DateTime?
-  nextRunAt       DateTime?
-  lastExecutionId String?
-  // Retry config
-  maxRetries      Int       @default(3)
-  retryDelayMin   Int       @default(10) // minutes between retries
-  // Audit
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  createdBy       String?
-  updatedBy       String?
-  deletedAt       DateTime?
-
-  executions ReportExecution[]
-
-  @@index([isActive])
-  @@index([nextRunAt])
-  @@index([scheduleType])
-}
-
-model ReportExecution {
-  id              String         @id @default(uuid())
-  scheduleId      String
-  schedule        ReportSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-  // Execution details
-  status          String         @default("PENDING")
-  // PENDING | RUNNING | GENERATING | SENDING | SENT | COMPLETED | FAILED | RETRYING
-  // | SUPERSEDED | CANCELLED
-  // COMPLETED  = report generated and stored, but nothing was emailed (SMTP not configured)
-  // SUPERSEDED = a retry produced a newer execution that replaces this one
-  triggerType     String         @default("SCHEDULED") // SCHEDULED | MANUAL
-  triggeredBy     String? // user id (for MANUAL)
-  // Report data
-  templateCode    String
-  rowCount        Int?
-  filterSummary   String? // JSON: actual filter used
-  // Export files — JSON: [{ format, filename, sizeBytes }]
-  exportedFiles   String?
-  // Email delivery
-  emailStatus     String? // PENDING | SENT | FAILED | SKIPPED | SIMULATED
-  // SIMULATED = SMTP is not configured; the send was logged, not performed.
-  // This exists because the email service used to report success in that case and
-  // the row was written as SENT, so the UI claimed reports had been delivered.
-  emailSentAt     DateTime?
-  emailError      String?
-  emailRecipients String? // actual recipients used
-  // Retry tracking
-  attemptNumber   Int            @default(1)
-  maxRetries      Int            @default(3)
-  nextRetryAt     DateTime?
-  // Timing
-  startedAt       DateTime       @default(now())
-  completedAt     DateTime?
-  durationMs      Int?
-  // Error
-  errorMessage    String?
-  errorStack      String?
-  // Audit
-  createdAt       DateTime       @default(now())
-
-  files ReportExecutionFile[]
-
-  @@index([scheduleId])
-  @@index([status])
-  @@index([createdAt])
-  @@index([emailStatus])
-}
-
-// Generated report files, stored as blobs.
-//
-// The execution engine used to build the xlsx/pdf buffers, record their sizes in
-// ReportExecution.exportedFiles, and then let them be garbage collected — there was no
-// storage column and no download route, so a "successful" scheduled report produced
-// nothing a human could ever obtain.
-//
-// A separate table rather than columns on ReportExecution: Prisma has no column-level
-// lazy loading, so a `content Bytes` on the execution row would be pulled into memory by
-// the executions list query unless every single caller remembered to `select` around it.
-model ReportExecutionFile {
-  id          String          @id @default(uuid())
-  executionId String
-  execution   ReportExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
-  format      String // xlsx | pdf
-  filename    String
-  mimeType    String
-  sizeBytes   Int
-  content     Bytes // BLOB on SQLite
-  checksum    String? // sha256 hex
-  expiresAt   DateTime?
-  createdAt   DateTime        @default(now())
-
-  @@index([executionId])
-  @@index([expiresAt])
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FINANCIAL MODULE — Invoice, Payment, Quotation, Receipt, BankAccount, Settings
-// =====================================================================
-// Full financial workflow: Quotation → Invoice → Payment → Receipt
-// All amounts stored as Float. Snapshot field on Invoice captures frozen
-// company/bank/settings info at issue time.
-// ─────────────────────────────────────────────────────────────────────────────
-
-model FinancialSettings {
-  id              String   @id @default("default")
-  companyName     String   @default("GCC ELECTRICAL TESTING LABORATORY")
-  crNumber        String?
-  vatNumber       String?
-  financeEmail    String?
-  companyLogoUrl  String?
-  address         String?
-  phone           String?
-  currency        String   @default("SAR")
-  invoiceSeq      Int      @default(1)
-  quotationSeq    Int      @default(1)
-  receiptSeq      Int      @default(1)
-  vatRate         Float    @default(15)
-  defaultDueDays  Int      @default(30)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  updatedBy       String?
-}
-
-model BankAccount {
-  id              String   @id @default(uuid())
-  bankName        String
-  beneficiary     String
-  accountNumber   String
-  iban            String?
-  swift           String?
-  qrImageUrl      String?
-  isActive        Boolean  @default(true)
-  isDefault       Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  createdBy       String?
-  updatedBy       String?
-  deletedAt       DateTime?
-  invoices        Invoice[]
-  @@index([isActive])
-}
-
-model Quotation {
-  id              String   @id @default(uuid())
-  refNumber       String   @unique
-  requestId       String?
-  request         TrainingRequest? @relation(fields: [requestId], references: [id])
-  companyId       String
-  company         Company  @relation(fields: [companyId], references: [id])
-  lineItems       String
-  subtotal        Float
-  discountAmount  Float    @default(0)
-  discountPercent Float?
-  vatAmount       Float
-  grandTotal      Float
-  currency        String   @default("SAR")
-  vatRate         Float
-  status          String   @default("DRAFT")
-  notes           String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  createdBy       String?
-  updatedBy       String?
-  deletedAt       DateTime?
-  invoices        Invoice[]
-  @@index([companyId])
-  @@index([requestId])
-  @@index([status])
-}
-
-model Invoice {
-  id              String   @id @default(uuid())
-  refNumber       String   @unique
-  quotationId     String?
-  quotation       Quotation? @relation(fields: [quotationId], references: [id])
-  requestId       String?
-  request         TrainingRequest? @relation(fields: [requestId], references: [id])
-  sessionId       String?
-  session         TrainingSession? @relation(fields: [sessionId], references: [id])
-  companyId       String
-  company         Company  @relation(fields: [companyId], references: [id])
-  lineItems       String
-  subtotal        Float
-  discountAmount  Float    @default(0)
-  discountPercent Float?
-  vatAmount       Float
-  grandTotal      Float
-  paidAmount      Float    @default(0)
-  outstandingBalance Float
-  currency        String   @default("SAR")
-  vatRate         Float
-  status          String   @default("DRAFT")
-  issueDate       DateTime @default(now())
-  dueDate         DateTime?
-  paidDate        DateTime?
-  bankAccountId   String?
-  bankAccount     BankAccount? @relation(fields: [bankAccountId], references: [id])
-  coordinatorNotes String?
-  paymentNotes    String?
-  snapshot        String
-  pdfUrl          String?
-  pdfGeneratedAt  DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  createdBy       String?
-  updatedBy       String?
-  deletedAt       DateTime?
-  payments        Payment[]
-  receipts        Receipt[]
-  paymentInvoices PaymentInvoice[]
-  @@index([companyId])
-  @@index([requestId])
-  @@index([sessionId])
-  @@index([status])
-  @@index([issueDate])
-  @@index([dueDate])
 }
 
 model Payment {
-  id              String   @id @default(uuid())
-  refNumber       String   @unique
-  invoiceId       String?
-  invoice         Invoice? @relation(fields: [invoiceId], references: [id])
-  paymentInvoices PaymentInvoice[]
-  companyId       String
-  company         Company  @relation(fields: [companyId], references: [id])
-  amount          Float
-  vatAmount       Float    @default(0)
-  currency        String   @default("SAR")
-  method          String
-  status          String   @default("PENDING")
-  paymentDate     DateTime @default(now())
-  referenceNumber String?
-  bankAccountId   String?
-  paidBy          String?
+  id                   String           @id
+  refNumber            String           @unique
+  invoiceId            String?
+  companyId            String
+  amount               Float
+  vatAmount            Float            @default(0)
+  currency             String           @default("SAR")
+  method               String
+  status               String           @default("PENDING")
+  paymentDate          DateTime         @default(now())
+  referenceNumber      String?
+  bankAccountId        String?
+  paidBy               String?
   gatewayTransactionId String?
-  gatewayName     String?
-  gatewayResponse String?
-  gatewayCallbackUrl String?
-  notes           String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  createdBy       String?
-  updatedBy       String?
-  deletedAt       DateTime?
-  receipts        Receipt[]
-  @@index([invoiceId])
-  @@index([companyId])
+  gatewayName          String?
+  gatewayResponse      String?
+  gatewayCallbackUrl   String?
+  notes                String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime
+  createdBy            String?
+  updatedBy            String?
+  deletedAt            DateTime?
+  Company              Company          @relation(fields: [companyId], references: [id])
+  Invoice              Invoice?         @relation(fields: [invoiceId], references: [id])
+  PaymentInvoice       PaymentInvoice[]
+  Receipt              Receipt[]
+
   @@index([status])
+  @@index([companyId])
+  @@index([invoiceId])
 }
 
 model PaymentInvoice {
-  id          String  @id @default(uuid())
-  paymentId   String
-  payment     Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-  invoiceId   String
-  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  amount      Float
-  @@index([paymentId])
+  id        String  @id
+  paymentId String
+  invoiceId String
+  amount    Float
+  Invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  Payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
   @@index([invoiceId])
+  @@index([paymentId])
+}
+
+model Permission {
+  id          String   @id
+  code        String   @unique
+  module      String
+  action      String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+
+  @@index([action])
+  @@index([module])
+}
+
+model Question {
+  id             String    @id
+  courseId       String?
+  type           String    @default("SINGLE_CHOICE")
+  testType       String    @default("PRE_TEST")
+  text           String
+  textAr         String?
+  options        String
+  correctAnswers String
+  points         Int       @default(1)
+  order          Int       @default(0)
+  isActive       Boolean   @default(true)
+  category       String?
+  difficulty     String    @default("MEDIUM")
+  tags           String?
+  source         String    @default("MANUAL")
+  aiGeneratedAt  DateTime?
+  aiModel        String?
+  aiPrompt       String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime
+  createdBy      String?
+  updatedBy      String?
+  deletedAt      DateTime?
+  Course         Course?   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([difficulty])
+  @@index([category])
+  @@index([courseId, testType])
+}
+
+model Quotation {
+  id              String           @id
+  refNumber       String           @unique
+  requestId       String?
+  companyId       String
+  lineItems       String
+  subtotal        Float
+  discountAmount  Float            @default(0)
+  discountPercent Float?
+  vatAmount       Float
+  grandTotal      Float
+  currency        String           @default("SAR")
+  vatRate         Float
+  status          String           @default("DRAFT")
+  notes           String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+  Invoice         Invoice[]
+  Company         Company          @relation(fields: [companyId], references: [id])
+  TrainingRequest TrainingRequest? @relation(fields: [requestId], references: [id])
+
+  @@index([status])
+  @@index([requestId])
+  @@index([companyId])
 }
 
 model Receipt {
-  id              String   @id @default(uuid())
-  refNumber       String   @unique
+  id              String    @id
+  refNumber       String    @unique
   paymentId       String?
-  payment         Payment? @relation(fields: [paymentId], references: [id])
   invoiceId       String?
-  invoice         Invoice? @relation(fields: [invoiceId], references: [id])
   companyId       String
-  company         Company  @relation(fields: [companyId], references: [id])
   amount          Float
-  vatAmount       Float    @default(0)
-  currency        String   @default("SAR")
-  receiptDate     DateTime @default(now())
+  vatAmount       Float     @default(0)
+  currency        String    @default("SAR")
+  receiptDate     DateTime  @default(now())
   paymentMethod   String?
   paidBy          String?
   bankName        String?
   referenceNumber String?
-  status          String   @default("ISSUED")
+  status          String    @default("ISSUED")
   pdfUrl          String?
   pdfGeneratedAt  DateTime?
   snapshot        String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime
   createdBy       String?
   updatedBy       String?
   deletedAt       DateTime?
-  @@index([paymentId])
-  @@index([invoiceId])
-  @@index([companyId])
+  Company         Company   @relation(fields: [companyId], references: [id])
+  Invoice         Invoice?  @relation(fields: [invoiceId], references: [id])
+  Payment         Payment?  @relation(fields: [paymentId], references: [id])
+
   @@index([receiptDate])
+  @@index([companyId])
+  @@index([invoiceId])
+  @@index([paymentId])
+}
+
+model RefNumberCounter {
+  id         String   @id
+  entityType String
+  year       Int?
+  sequence   Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime
+
+  @@unique([entityType, year])
+}
+
+model ReportExecution {
+  id                  String                @id
+  scheduleId          String
+  status              String                @default("PENDING")
+  triggerType         String                @default("SCHEDULED")
+  triggeredBy         String?
+  templateCode        String
+  rowCount            Int?
+  filterSummary       String?
+  exportedFiles       String?
+  emailStatus         String?
+  emailSentAt         DateTime?
+  emailError          String?
+  emailRecipients     String?
+  attemptNumber       Int                   @default(1)
+  maxRetries          Int                   @default(3)
+  nextRetryAt         DateTime?
+  startedAt           DateTime              @default(now())
+  completedAt         DateTime?
+  durationMs          Int?
+  errorMessage        String?
+  errorStack          String?
+  createdAt           DateTime              @default(now())
+  ReportSchedule      ReportSchedule        @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  ReportExecutionFile ReportExecutionFile[]
+
+  @@index([emailStatus])
+  @@index([createdAt])
+  @@index([status])
+  @@index([scheduleId])
+}
+
+model ReportExecutionFile {
+  id              String          @id
+  executionId     String
+  format          String
+  filename        String
+  mimeType        String
+  sizeBytes       Int
+  content         Bytes
+  checksum        String?
+  expiresAt       DateTime?
+  createdAt       DateTime        @default(now())
+  ReportExecution ReportExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@index([executionId])
+}
+
+model ReportSchedule {
+  id              String            @id
+  name            String
+  nameAr          String?
+  description     String?
+  templateCode    String
+  scheduleType    String
+  cronExpression  String
+  executionTime   String?
+  timezone        String            @default("Asia/Riyadh")
+  dayOfWeek       Int?
+  dayOfMonth      Int?
+  filters         String?
+  exportFormats   String            @default("xlsx")
+  recipients      String
+  ccRecipients    String?
+  bccRecipients   String?
+  emailSubject    String?
+  emailBody       String?
+  isActive        Boolean           @default(true)
+  lastRunAt       DateTime?
+  nextRunAt       DateTime?
+  lastExecutionId String?
+  maxRetries      Int               @default(3)
+  retryDelayMin   Int               @default(10)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+  ReportExecution ReportExecution[]
+
+  @@index([scheduleType])
+  @@index([nextRunAt])
+  @@index([isActive])
+}
+
+model Role {
+  id          String    @id
+  code        String    @unique
+  name        String
+  nameAr      String?
+  description String?
+  isSystem    Boolean   @default(false)
+  baseType    String    @default("CONTRACTOR")
+  permissions Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime
+  createdBy   String?
+  updatedBy   String?
+  deletedAt   DateTime?
+  User        User[]
+}
+
+model SessionCompany {
+  id              String          @id
+  sessionId       String
+  companyId       String
+  traineeCount    Int             @default(0)
+  addedAt         DateTime        @default(now())
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime
+  createdBy       String?
+  Company         Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  TrainingSession TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, companyId])
+  @@index([companyId])
+  @@index([sessionId])
+}
+
+model SessionEnrollment {
+  id                String          @id
+  sessionId         String
+  traineeId         String
+  companyId         String
+  enrollmentStatus  String          @default("PENDING")
+  enrolledBy        String?
+  enrollmentDate    DateTime        @default(now())
+  completedDate     DateTime?
+  notes             String?
+  isReExam          Boolean         @default(false)
+  enrollmentSource  String          @default("MANUAL")
+  addedByTrainer    Boolean         @default(false)
+  pendingReview     Boolean         @default(false)
+  attendanceStatus  String          @default("NOT_STARTED")
+  preTestStatus     String          @default("PENDING")
+  finalTestStatus   String          @default("PENDING")
+  evaluationStatus  String          @default("PENDING")
+  certificateStatus String          @default("NOT_ELIGIBLE")
+  attendanceId      String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime
+  createdBy         String?
+  updatedBy         String?
+  deletedAt         DateTime?
+  Company           Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  Trainee           Trainee         @relation(fields: [traineeId], references: [id], onDelete: Cascade)
+  TrainingSession   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, traineeId])
+  @@index([certificateStatus])
+  @@index([evaluationStatus])
+  @@index([finalTestStatus])
+  @@index([preTestStatus])
+  @@index([attendanceStatus])
+  @@index([enrollmentStatus])
+  @@index([companyId])
+  @@index([traineeId])
+  @@index([sessionId])
+}
+
+model SessionLifecycleEvent {
+  id              String          @id
+  sessionId       String
+  eventType       String
+  eventTime       DateTime        @default(now())
+  notes           String?
+  createdAt       DateTime        @default(now())
+  createdBy       String?
+  TrainingSession TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([eventType])
+  @@index([sessionId])
+}
+
+model SessionPayment {
+  id              String          @id
+  sessionId       String
+  companyId       String
+  totalAmount     Float           @default(0)
+  paidAmount      Float           @default(0)
+  currency        String          @default("SAR")
+  invoiceRef      String?
+  invoiceIssuedAt DateTime?
+  invoiceDueDate  DateTime?
+  notes           String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+  Company         Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  TrainingSession TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, companyId])
+  @@index([invoiceRef])
+  @@index([companyId])
+  @@index([sessionId])
+}
+
+model Setting {
+  id          String   @id
+  key         String   @unique
+  value       String
+  category    String   @default("GENERAL")
+  description String?
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+  updatedBy   String?
+}
+
+model Tenant {
+  id        String    @id
+  name      String
+  nameAr    String?
+  code      String    @unique
+  status    String    @default("ACTIVE")
+  config    String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime
+  createdBy String?
+  updatedBy String?
+  deletedAt DateTime?
+  Company   Company[]
+  Course    Course[]
+  Trainer   Trainer[]
+  User      User[]
+
+  @@index([status])
+}
+
+model TestResult {
+  id                String          @id
+  refNumber         String          @unique
+  sessionId         String
+  testType          String
+  traineeName       String
+  traineeEmail      String?
+  traineeIdNational String?
+  companyId         String?
+  scorePercent      Int
+  passed            Boolean
+  answers           String?
+  attemptedAt       DateTime        @default(now())
+  durationSec       Int?
+  questionSet       String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime
+  createdBy         String?
+  updatedBy         String?
+  deletedAt         DateTime?
+  Company           Company?        @relation(fields: [companyId], references: [id])
+  TrainingSession   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([traineeEmail])
+  @@index([sessionId, testType])
+}
+
+model Trainee {
+  id                           String                         @id
+  refNumber                    String                         @unique
+  fullName                     String
+  nationalId                   String
+  nationality                  String?
+  jobTitle                     String?
+  mobile                       String?
+  email                        String?
+  companyId                    String
+  status                       String                         @default("ACTIVE")
+  notes                        String?
+  idAttachmentUrl              String?
+  dateOfBirth                  DateTime?
+  idExpiry                     DateTime?
+  createdAt                    DateTime                       @default(now())
+  updatedAt                    DateTime
+  createdBy                    String?
+  updatedBy                    String?
+  deletedAt                    DateTime?
+  SessionEnrollment            SessionEnrollment[]
+  Company                      Company                        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  TrainingRequestCourseTrainee TrainingRequestCourseTrainee[]
+
+  @@index([status])
+  @@index([nationalId])
+  @@index([companyId])
+}
+
+model Trainer {
+  id                   String                 @id
+  refNumber            String                 @unique
+  fullName             String
+  fullNameAr           String?
+  nationalId           String?                @unique
+  email                String?                @unique
+  phone                String?
+  mobile               String?
+  gender               String?
+  nationality          String?
+  country              String?
+  city                 String?
+  address              String?
+  bio                  String?
+  photoUrl             String?
+  status               String                 @default("ACTIVE")
+  hireDate             DateTime?
+  tenantId             String?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime
+  createdBy            String?
+  updatedBy            String?
+  deletedAt            DateTime?
+  CourseEvaluation     CourseEvaluation[]
+  Tenant               Tenant?                @relation(fields: [tenantId], references: [id])
+  TrainerCertification TrainerCertification[]
+  TrainerQualification TrainerQualification[]
+  TrainingSession      TrainingSession[]
+  User                 User?
+
+  @@index([tenantId])
+  @@index([status])
+}
+
+model TrainerCertification {
+  id                   String                @id
+  trainerId            String
+  courseId             String
+  qualificationId      String?
+  validFrom            DateTime              @default(now())
+  validUntil           DateTime?
+  status               String                @default("VALID")
+  notes                String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime
+  createdBy            String?
+  updatedBy            String?
+  deletedAt            DateTime?
+  TrainerQualification TrainerQualification? @relation(fields: [qualificationId], references: [id])
+  Course               Course                @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  Trainer              Trainer               @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+
+  @@unique([trainerId, courseId, deletedAt])
+  @@index([status])
+  @@index([courseId])
+  @@index([trainerId])
+}
+
+model TrainerQualification {
+  id                   String                 @id
+  trainerId            String
+  title                String
+  issuer               String?
+  credentialNumber     String?
+  issueDate            DateTime?
+  expiryDate           DateTime?
+  documentUrl          String?
+  status               String                 @default("VALID")
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime
+  createdBy            String?
+  updatedBy            String?
+  deletedAt            DateTime?
+  TrainerCertification TrainerCertification[]
+  Trainer              Trainer                @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([trainerId])
+}
+
+model TrainingRequest {
+  id                    String                  @id
+  refNumber             String                  @unique
+  companyId             String
+  courseId              String?
+  requestedBy           String?
+  traineeCount          Int                     @default(0)
+  preferredDateFrom     DateTime?
+  preferredDateTo       DateTime?
+  preferredLocation     String?
+  preferredLanguage     String?
+  notes                 String?
+  status                String                  @default("DRAFT")
+  priority              String                  @default("NORMAL")
+  rejectionReason       String?
+  approvedAt            DateTime?
+  approvedBy            String?
+  submittedAt           DateTime?
+  reviewedAt            DateTime?
+  scheduledAt           DateTime?
+  startedAt             DateTime?
+  completedAt           DateTime?
+  cancelledAt           DateTime?
+  rejectedAt            DateTime?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime
+  createdBy             String?
+  updatedBy             String?
+  deletedAt             DateTime?
+  Invoice               Invoice[]
+  Quotation             Quotation[]
+  Course                Course?                 @relation(fields: [courseId], references: [id])
+  Company               Company                 @relation(fields: [companyId], references: [id])
+  TrainingRequestCourse TrainingRequestCourse[]
+  TrainingSession       TrainingSession[]
+
+  @@index([courseId])
+  @@index([companyId])
+  @@index([status])
+}
+
+model TrainingRequestCourse {
+  id                           String                         @id
+  requestId                    String
+  courseId                     String
+  traineeCount                 Int                            @default(0)
+  minTrainees                  Int                            @default(10)
+  maxTrainees                  Int                            @default(20)
+  notes                        String?
+  createdAt                    DateTime                       @default(now())
+  updatedAt                    DateTime
+  createdBy                    String?
+  updatedBy                    String?
+  deletedAt                    DateTime?
+  Course                       Course                         @relation(fields: [courseId], references: [id])
+  TrainingRequest              TrainingRequest                @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  TrainingRequestCourseTrainee TrainingRequestCourseTrainee[]
+  TrainingSession              TrainingSession[]
+
+  @@unique([requestId, courseId, deletedAt])
+  @@index([courseId])
+  @@index([requestId])
+}
+
+model TrainingRequestCourseTrainee {
+  id                    String                @id
+  requestCourseId       String
+  traineeId             String
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime
+  createdBy             String?
+  updatedBy             String?
+  deletedAt             DateTime?
+  Trainee               Trainee               @relation(fields: [traineeId], references: [id], onDelete: Cascade)
+  TrainingRequestCourse TrainingRequestCourse @relation(fields: [requestCourseId], references: [id], onDelete: Cascade)
+
+  @@unique([requestCourseId, traineeId])
+  @@index([traineeId])
+  @@index([requestCourseId])
+}
+
+model TrainingSession {
+  id                    String                  @id
+  refNumber             String                  @unique
+  courseId              String
+  requestId             String?
+  requestCourseId       String?
+  trainerId             String?
+  title                 String
+  location              String?
+  city                  String?
+  region                String?
+  venue                 String?
+  shift                 String?
+  durationHours         Int                     @default(6)
+  capacity              Int                     @default(20)
+  language              String                  @default("en")
+  startDate             DateTime
+  endDate               DateTime
+  expectedTrainees      Int                     @default(0)
+  actualTrainees        Int                     @default(0)
+  status                String                  @default("SCHEDULED")
+  qrCodeToken           String?                 @unique
+  qrCodeGeneratedAt     DateTime?
+  qrActiveFrom          DateTime?
+  qrActiveTo            DateTime?
+  lifecycleStatus       String                  @default("NOT_STARTED")
+  startedAt             DateTime?
+  completedAt           DateTime?
+  notes                 String?
+  instituteName         String?
+  classification        String                  @default("COURSE")
+  locationMapUrl        String?
+  durationDays          Int?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime
+  createdBy             String?
+  updatedBy             String?
+  deletedAt             DateTime?
+  Attendance            Attendance[]
+  Certificate           Certificate[]
+  CheckInAttempt        CheckInAttempt[]
+  CourseEvaluation      CourseEvaluation[]
+  ExamAttempt           ExamAttempt[]
+  Invoice               Invoice[]
+  SessionCompany        SessionCompany[]
+  SessionEnrollment     SessionEnrollment[]
+  SessionLifecycleEvent SessionLifecycleEvent[]
+  SessionPayment        SessionPayment[]
+  TestResult            TestResult[]
+  Trainer               Trainer?                @relation(fields: [trainerId], references: [id])
+  TrainingRequestCourse TrainingRequestCourse?  @relation(fields: [requestCourseId], references: [id])
+  TrainingRequest       TrainingRequest?        @relation(fields: [requestId], references: [id])
+  Course                Course                  @relation(fields: [courseId], references: [id])
+
+  @@index([lifecycleStatus])
+  @@index([requestCourseId])
+  @@index([city])
+  @@index([shift])
+  @@index([startDate])
+  @@index([trainerId])
+  @@index([status])
+}
+
+model User {
+  id                  String         @id
+  email               String         @unique
+  passwordHash        String
+  fullName            String
+  phone               String?
+  jobTitle            String?
+  role                String         @default("CONTRACTOR")
+  roleId              String?
+  language            String         @default("en")
+  timezone            String?        @default("Asia/Riyadh")
+  isActive            Boolean        @default(true)
+  accountStatus       String         @default("ACTIVE")
+  avatarUrl           String?
+  lastLoginAt         DateTime?
+  forcePasswordChange Boolean        @default(false)
+  failedLoginAttempts Int            @default(0)
+  lockedUntil         DateTime?
+  tokenVersion        Int            @default(0)
+  tenantId            String?
+  companyId           String?
+  trainerId           String?        @unique
+  registrationData    String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime
+  createdBy           String?
+  updatedBy           String?
+  deletedAt           DateTime?
+  AuditLog            AuditLog[]
+  LoginHistory        LoginHistory[]
+  Notification        Notification[]
+  Role                Role?          @relation(fields: [roleId], references: [id])
+  Trainer             Trainer?       @relation(fields: [trainerId], references: [id])
+  Company             Company?       @relation(fields: [companyId], references: [id])
+  Tenant              Tenant?        @relation(fields: [tenantId], references: [id])
+
+  @@index([accountStatus])
+  @@index([tenantId])
+  @@index([companyId])
+  @@index([role])
+}
+
+model WorkerPassport {
+  id             String        @id
+  passportNumber String        @unique
+  nationalId     String        @unique
+  fullName       String
+  companyId      String?
+  jobTitle       String?
+  mobile         String?
+  email          String?
+  qrToken        String        @unique
+  qrCodeUrl      String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime
+  createdBy      String?
+  updatedBy      String?
+  deletedAt      DateTime?
+  Certificate    Certificate[]
+  Company        Company?      @relation(fields: [companyId], references: [id])
+
+  @@index([passportNumber])
+  @@index([qrToken])
+  @@index([companyId])
+  @@index([nationalId])
 }
