@@ -45,6 +45,7 @@ import {
   Upload, FileSpreadsheet, Copy, ClipboardPaste, Plus, Trash2, Search,
   AlertCircle, CheckCircle2, Users, FileWarning, CopyPlus, X, Paperclip,
   Save, ArrowRight, RotateCcw, Loader2,
+  Maximize2, Minimize2,
 } from "lucide-react";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -111,7 +112,48 @@ export interface TraineeEntrySectionProps {
 
 const ROW_HEIGHT = 48;
 const VISIBLE_TABLE_HEIGHT = 480; // ~10 rows visible before scrolling
+const VISIBLE_TABLE_HEIGHT_FULLSCREEN = 600; // taller in fullscreen
 const STAT_HIGHLIGHT_MS = 3000;
+
+// ─── Smart Column Aliases (Arabic + English) ──────────────────────────────
+// Expanded aliases for smart Excel import — recognizes any column naming
+// convention without depending on column order or file formatting.
+const COLUMN_ALIASES = {
+  fullName: [
+    "name", "fullname", "full name", "trainee name", "traineename",
+    "employee name", "employeename", "worker name", "workername",
+    "participant name", "participant", "candidate name",
+    "الاسم", "اسم", "اسم المتدرب", "المتدرب", "اسم الموظف", "اسم العامل",
+    "الاسم الكامل", "اسم المشارك",
+  ],
+  nationalId: [
+    "nationalid", "national id", "id", "idnumber", "id number",
+    "iqama", "iqamaid", "iqama id", "iqama number",
+    "resident id", "residentid", "identity", "identitynumber",
+    "civil id", "civilid", "passport", "passportnumber",
+    "رقم الهوية", "هوية", "الاقامة", "إقامة", "رقم الاقامة",
+    "رقم الإقامة", "الهوية الوطنية", "رقم الهوية الوطنية",
+  ],
+  nationality: [
+    "nationality", "country", "citizenship", "origin",
+    "country of origin", "nationalitycode",
+    "جنسية", "الجنسية", "الدولة", "بلد", "الوطن",
+  ],
+  jobTitle: [
+    "job", "jobtitle", "job title", "position", "role", "occupation",
+    "designation", "profession", "title",
+    "وظيفة", "الوظيفة", "المهنة", "المنصب", "العمل", "المسمى الوظيفي",
+  ],
+  phone: [
+    "phone", "mobile", "phonenumber", "phone number", "tel", "telephone",
+    "contact", "contactnumber", "cellphone", "cell",
+    "هاتف", "الجوال", "رقم الهاتف", "الجوال", "الموبايل",
+  ],
+  email: [
+    "email", "emailaddress", "email address", "mail", "e-mail",
+    "البريد", "البريد الالكتروني", "البريد الإلكتروني",
+  ],
+};
 
 type StatFilter = "all" | "valid" | "invalid" | "duplicates" | "missing-attachment";
 
@@ -193,6 +235,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
     phase: "idle", total: 0, done: 0, matched: 0, unmatched: [],
   });
   const [pasteText, setPasteText] = React.useState("");
+  const [isFullscreen, setIsFullscreen] = React.useState(false);
 
   // Refs for the virtualized scroll container.
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
@@ -246,9 +289,10 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
   }, [trainees, search, filter]);
 
   // ─── Virtualization window ─────────────────────────────────────────────
+  const currentTableHeight = isFullscreen ? VISIBLE_TABLE_HEIGHT_FULLSCREEN : VISIBLE_TABLE_HEIGHT;
   const totalHeight = filtered.length * ROW_HEIGHT;
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 2);
-  const visibleCount = Math.ceil(VISIBLE_TABLE_HEIGHT / ROW_HEIGHT) + 4;
+  const visibleCount = Math.ceil(currentTableHeight / ROW_HEIGHT) + 4;
   const endIndex = Math.min(filtered.length, startIndex + visibleCount);
   const visibleSlice = filtered.slice(startIndex, endIndex);
 
@@ -461,14 +505,22 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
     if (lines.length === 0) return;
 
     // Header auto-mapping — normalize each header (lowercase, strip symbols)
-    // and check known aliases for the 5 fields we care about.
+    // and check known aliases using the expanded COLUMN_ALIASES.
     const headerCells = lines[0].split(delimiter).map((h) => h.trim().toLowerCase().replace(/[^a-z0-9\u0600-\u06FF]/gi, ""));
-    const findCol = (aliases: string[]): number => headerCells.findIndex((h) => aliases.some((a) => h === a || h.includes(a)));
+    const findCol = (field: keyof typeof COLUMN_ALIASES): number => {
+      const aliases = COLUMN_ALIASES[field];
+      return headerCells.findIndex((h) => aliases.some((a) => {
+        const normalizedAlias = a.toLowerCase().replace(/[^a-z0-9\u0600-\u06FF]/gi, "");
+        return h === normalizedAlias || h.includes(normalizedAlias) || normalizedAlias.includes(h);
+      }));
+    };
 
-    const nameCol = findCol(["name", "fullname", "الاسم", "اسم"]);
-    const idCol = findCol(["nationalid", "id", "iqama", "هوية", "اقامة", "الاقامة"]);
-    const natCol = findCol(["nationality", "country", "جنسية", "الجنسية"]);
-    const jobCol = findCol(["job", "jobtitle", "position", "وظيفة", "الوظيفة"]);
+    const nameCol = findCol("fullName");
+    const idCol = findCol("nationalId");
+    const natCol = findCol("nationality");
+    const jobCol = findCol("jobTitle");
+    const phoneCol = findCol("phone");
+    const emailCol = findCol("email");
 
     // If no recognizable header, treat as name,id pairs.
     const hasHeader = nameCol !== -1 || idCol !== -1;
@@ -516,13 +568,28 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
   const bulkIdInputRef = React.useRef<HTMLInputElement | null>(null);
 
   return (
-    <div className={cn("space-y-4", className)}>
+    <div className={cn("space-y-4", className, isFullscreen && "fixed inset-0 z-50 bg-background p-4 sm:p-6 lg:p-8 overflow-auto")}>
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
-        <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="manual" className="flex-1 sm:flex-initial"><Users className="h-4 w-4 me-1.5" />{t("requests.trainees")}</TabsTrigger>
-          <TabsTrigger value="excel" className="flex-1 sm:flex-initial"><FileSpreadsheet className="h-4 w-4 me-1.5" />Excel Import</TabsTrigger>
-          <TabsTrigger value="paste" className="flex-1 sm:flex-initial"><ClipboardPaste className="h-4 w-4 me-1.5" />Copy &amp; Paste</TabsTrigger>
-        </TabsList>
+        <div className="flex items-center justify-between gap-2">
+          <TabsList className="w-full sm:w-auto">
+            <TabsTrigger value="manual" className="flex-1 sm:flex-initial"><Users className="h-4 w-4 me-1.5" />{t("requests.trainees")}</TabsTrigger>
+            <TabsTrigger value="excel" className="flex-1 sm:flex-initial"><FileSpreadsheet className="h-4 w-4 me-1.5" />Excel Import</TabsTrigger>
+            <TabsTrigger value="paste" className="flex-1 sm:flex-initial"><ClipboardPaste className="h-4 w-4 me-1.5" />Copy &amp; Paste</TabsTrigger>
+          </TabsList>
+          {activeTab === "manual" && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={() => setIsFullscreen(!isFullscreen)}
+              title={isFullscreen ? "Exit Full Screen" : "Full Screen"}
+            >
+              {isFullscreen ? <Minimize2 className="h-4 w-4 me-1" /> : <Maximize2 className="h-4 w-4 me-1" />}
+              {isFullscreen ? "Exit" : "Full Screen"}
+            </Button>
+          )}
+        </div>
 
         {/* ─── Manual Entry ─────────────────────────────────────────────── */}
         <TabsContent value="manual" className="space-y-4 mt-4">
@@ -645,10 +712,10 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
           )}
 
           {/* Table — virtualized, with horizontal + vertical scroll inside the table */}
-          <div className="rounded-md border" style={{ overflowX: "auto", overflowY: "auto" }}>
+          <div className="rounded-md border" style={{ overflowX: "auto", overflowY: "auto", maxHeight: isFullscreen ? "calc(100vh - 280px)" : undefined }}>
             <div style={{ minWidth: 1200, width: "max-content" }}>
-            {/* Header row */}
-            <div className="flex items-center bg-muted/40 border-b text-xs font-medium text-muted-foreground sticky top-0 z-10" style={{ height: ROW_HEIGHT }}>
+            {/* Header row — sticky at top */}
+            <div className="flex items-center bg-muted/80 backdrop-blur-sm border-b text-xs font-medium text-muted-foreground sticky top-0 z-20" style={{ height: ROW_HEIGHT }}>
               <div className="w-10 shrink-0 flex items-center justify-center">
                 <Checkbox
                   checked={filtered.length > 0 && selected.size === filtered.length}
@@ -670,7 +737,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
               ref={scrollRef}
               onScroll={onScroll}
               className="overflow-y-auto"
-              style={{ height: VISIBLE_TABLE_HEIGHT, maxHeight: VISIBLE_TABLE_HEIGHT }}
+              style={{ height: currentTableHeight, maxHeight: currentTableHeight }}
             >
               {filtered.length === 0 ? (
                 <div className="flex flex-col items-center justify-center text-center text-sm text-muted-foreground py-12 gap-2">
@@ -807,6 +874,14 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
 
         {/* ─── Excel Import ────────────────────────────────────────────── */}
         <TabsContent value="excel" className="space-y-4 mt-4">
+          <Alert variant="default">
+            <FileSpreadsheet className="h-4 w-4" />
+            <AlertTitle>Smart Excel Import</AlertTitle>
+            <AlertDescription>
+              Drop any Excel file — the system automatically detects columns by header name (Arabic or English).
+              No specific format or column order required. Unrecognized columns are ignored.
+            </AlertDescription>
+          </Alert>
           <div
             className="flex flex-col items-center justify-center gap-3 rounded-md border-2 border-dashed border-muted-foreground/30 p-10 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/20 transition-colors"
             onClick={() => excelInputRef.current?.click()}
@@ -820,7 +895,10 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
             <FileSpreadsheet className="h-10 w-10 text-muted-foreground" />
             <div>
               <div className="text-sm font-medium">Drop an Excel file or click to browse</div>
-              <div className="text-xs text-muted-foreground mt-1">.xlsx — header-based mapping with Arabic + English aliases</div>
+              <div className="text-xs text-muted-foreground mt-1">.xlsx — smart header mapping with Arabic + English aliases</div>
+              <div className="text-xs text-muted-foreground mt-2">
+                Recognized columns: Name/الاسم, National ID/الهوية, Nationality/الجنسية, Job/الوظيفة, Phone/الهاتف, Email/البريد
+              </div>
             </div>
             <input
               ref={excelInputRef}
@@ -852,7 +930,8 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
             <ClipboardPaste className="h-4 w-4" />
             <AlertTitle>Copy &amp; Paste</AlertTitle>
             <AlertDescription>
-              Paste rows directly from Excel/Sheets (tab-delimited) or CSV (comma-delimited). We auto-detect the delimiter and map known headers (name, ID, nationality, job).
+              Paste rows directly from Excel/Sheets (tab-delimited) or CSV (comma-delimited).
+              Smart header detection supports Arabic + English column names. Unrecognized columns are ignored.
             </AlertDescription>
           </Alert>
           <Textarea
