@@ -1,0 +1,153 @@
+// /api/sessions/[id]/enrollments/[enrollmentId]/trainer-opportunity
+// ====================================================================
+// Marks the trainer opportunity as used on the enrollment. This is NOT
+// a RetestRequest — per business rules, the trainer opportunity:
+//   - Does NOT create a Retest record
+//   - Does NOT notify the contractor
+//   - Does NOT change the session or training request
+//   - Is allowed ONLY once per enrollment
+//   - Is available ONLY to the assigned trainer of the session
+//   - Is available ONLY before session status = COMPLETED
+//
+// POST: mark the opportunity as used (sets trainerOpportunityUsed=true).
+//   Body: { passed: boolean, scorePercent?: number }
+//   - The trainer records whether the trainee passed or failed the
+//     immediate opportunity. If passed, the normal certificate workflow
+//     continues. If failed, the trainee becomes "Awaiting Official Retest".
+//
+// RBAC:
+//   - TRAINER: allowed ONLY if they are the assigned trainer of the session.
+//   - COORDINATOR / SUPER_ADMIN: always allowed.
+//   - CONTRACTOR: blocked (no sessions.edit permission).
+import { NextRequest } from "next/server";
+import { db } from "@/lib/db";
+import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+
+export const POST = withModuleAction("sessions", "edit", async ({ req, params, user }) => {
+  const sessionId = params.id as string;
+  const enrollmentId = params.enrollmentId as string;
+  const body = await req.json().catch(() => ({}));
+  const { passed, scorePercent } = body;
+
+  if (passed === undefined) {
+    return fail("passed is required (true/false)", 422, "VALIDATION_ERROR");
+  }
+
+  // Fetch the enrollment + session (with trainerId for RBAC check)
+  const enrollment = await db.sessionEnrollment.findUnique({
+    where: { id: enrollmentId },
+    include: {
+      trainingSession: {
+        select: { id: true, refNumber: true, trainerId: true, status: true, lifecycleStatus: true },
+      },
+    },
+  });
+
+  if (!enrollment || enrollment.deletedAt || enrollment.sessionId !== sessionId) {
+    return notFound("Enrollment not found");
+  }
+
+  const session = enrollment.trainingSession;
+
+  // ── Rule: only before session COMPLETED ─────────────────────────────────
+  if (session.status === "COMPLETED" || session.lifecycleStatus === "COMPLETED") {
+    return fail(
+      "Cannot use trainer opportunity: session is already completed. The opportunity is only available before the session is closed.",
+      422,
+      "SESSION_COMPLETED",
+    );
+  }
+
+  // ── Rule: only the ASSIGNED trainer (or coordinator/admin) ──────────────
+  if (user.role === "TRAINER") {
+    // The user's trainerId must match the session's trainerId.
+    const trainerUser = await db.user.findUnique({
+      where: { id: user.id },
+      select: { trainerId: true },
+    });
+    if (!trainerUser?.trainerId || trainerUser.trainerId !== session.trainerId) {
+      return fail(
+        "Forbidden — only the assigned trainer of this session can use the trainer opportunity.",
+        403,
+        "NOT_ASSIGNED_TRAINER",
+      );
+    }
+  }
+
+  // ── Rule: only once ─────────────────────────────────────────────────────
+  if (enrollment.trainerOpportunityUsed) {
+    return fail(
+      "Trainer opportunity has already been used for this enrollment. It can never be repeated.",
+      422,
+      "TRAINER_OPPORTUNITY_ALREADY_USED",
+    );
+  }
+
+  // ── Rule: final test must be FAILED ─────────────────────────────────────
+  if (enrollment.finalTestStatus !== "FAILED") {
+    return fail(
+      `Cannot use trainer opportunity: final test status is ${enrollment.finalTestStatus}. The opportunity is only available after a failed final assessment.`,
+      422,
+      "FINAL_TEST_NOT_FAILED",
+    );
+  }
+
+  // ── Mark the opportunity as used ────────────────────────────────────────
+  const now = new Date();
+  const updated = await db.sessionEnrollment.update({
+    where: { id: enrollmentId },
+    data: {
+      trainerOpportunityUsed: true,
+      trainerOpportunityPassed: Boolean(passed),
+      trainerOpportunityAt: now,
+      trainerOpportunityBy: user.id,
+      // If passed, update finalTestStatus to PASSED so the certificate
+      // workflow can continue.
+      ...(passed && { finalTestStatus: "PASSED" }),
+      updatedBy: user.id,
+      updatedAt: now,
+    },
+  });
+
+  // ── Audit log (NO contractor notification per business rules) ───────────
+  await audit({
+    user,
+    action: "UPDATE",
+    entity: "SESSION",
+    entityId: sessionId,
+    entityRef: session.refNumber,
+    description: `Trainer opportunity used for ${enrollment.traineeId}: ${passed ? "PASSED" : "FAILED"}${scorePercent !== undefined ? ` (${scorePercent}%)` : ""}`,
+    descriptionAr: `تم استخدام فرصة المدرّب للمتدرب: ${passed ? "ناجح" : "راسب"}${scorePercent !== undefined ? ` (${scorePercent}%)` : ""}`,
+    req,
+    oldValue: {
+      trainerOpportunityUsed: false,
+      finalTestStatus: enrollment.finalTestStatus,
+    },
+    newValue: {
+      trainerOpportunityUsed: true,
+      trainerOpportunityPassed: Boolean(passed),
+      finalTestStatus: passed ? "PASSED" : enrollment.finalTestStatus,
+    },
+    metadata: {
+      action: "TRAINER_OPPORTUNITY_USED",
+      enrollmentId,
+      sessionId,
+      sessionRef: session.refNumber,
+      traineeId: enrollment.traineeId,
+      passed: Boolean(passed),
+      scorePercent: scorePercent ?? null,
+      usedBy: user.id,
+      usedByRole: user.role,
+    },
+  });
+
+  return ok({
+    enrollmentId,
+    trainerOpportunityUsed: true,
+    trainerOpportunityPassed: Boolean(passed),
+    finalTestStatus: passed ? "PASSED" : enrollment.finalTestStatus,
+    nextStep: passed
+      ? "Certificate workflow can continue."
+      : "Trainee is now 'Awaiting Official Retest'. Create an official retest to proceed.",
+  });
+});

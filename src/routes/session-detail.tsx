@@ -303,19 +303,31 @@ export function SessionDetailRoute() {
 
   // ── Trainer Immediate Opportunity: gives the trainee ONE immediate
   // additional chance in the SAME session. No scheduling, no notification,
-  // no official retest. Just creates a TRAINER_OPPORTUNITY retest record
-  // + a new exam attempt for the trainee to take immediately.
+  // no official retest. Just marks the enrollment's trainerOpportunityUsed
+  // field + records pass/fail.
+  //
+  // Business rules:
+  //   - Only the ASSIGNED trainer (or coordinator/admin) can use this.
+  //   - Only before session status = COMPLETED.
+  //   - Only once per enrollment.
+  //   - Does NOT create a RetestRequest record.
+  //   - Does NOT notify the contractor.
   const giveTrainerOpportunity = (row: Enrollment) =>
     run("opportunity", async () => {
-      await api.post("/api/retests", {
-        enrollmentId: row.id,
-        sessionId,
-        retestType: "TRAINER_OPPORTUNITY",
-        reason: "Trainer immediate opportunity",
+      // Ask the trainer whether the trainee passed or failed the opportunity.
+      // We use a simple confirm() for now — a proper dialog could be added later.
+      const passed = window.confirm(
+        t("session.trainerOpportunityConfirm") ||
+        "Did the trainee PASS the immediate opportunity? Click OK for PASS, Cancel for FAIL."
+      );
+      await api.post(`/api/sessions/${sessionId}/enrollments/${row.id}/trainer-opportunity`, {
+        passed,
       });
       toast({
         title: t("misc.success"),
-        description: t("session.trainerOpportunityGiven") || "Trainer opportunity given — trainee can now retake the test immediately.",
+        description: passed
+          ? (t("session.trainerOpportunityPassed") || "Trainee passed the opportunity — certificate workflow continues.")
+          : (t("session.trainerOpportunityFailed") || "Trainee failed the opportunity — awaiting official retest."),
       });
       await load();
     });

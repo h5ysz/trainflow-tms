@@ -856,6 +856,14 @@ model SessionEnrollment {
   finalTestStatus   String          @default("PENDING")
   evaluationStatus  String          @default("PENDING")
   certificateStatus String          @default("NOT_ELIGIBLE")
+  // ── Trainer Opportunity tracking ──
+  // Per business rules: the trainer can give ONE immediate opportunity
+  // (same session, no official retest, no notification). These fields
+  // track whether the opportunity has been used and its result.
+  trainerOpportunityUsed   Boolean   @default(false)
+  trainerOpportunityPassed Boolean?
+  trainerOpportunityAt     DateTime?
+  trainerOpportunityBy     String?
   attendanceId      String?
   createdAt         DateTime        @default(now())
   updatedAt         DateTime
