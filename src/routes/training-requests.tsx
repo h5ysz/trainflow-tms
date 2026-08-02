@@ -296,7 +296,20 @@ export function TrainingRequestsRoute() {
                 key={a.status}
                 variant={a.variant}
                 size="sm"
-                className={`h-8 ${a.tone === "success" ? "text-success" : a.tone === "destructive" ? "text-destructive" : a.tone === "info" ? "text-info" : ""}`}
+                className={`h-8 ${
+                  // For 'default' variant buttons (dark primary background), ALWAYS
+                  // use white text — the tone-based colors (text-info, text-success,
+                  // text-destructive) are too dark to read on the maroon background.
+                  a.variant === "default"
+                    ? "text-white"
+                    : a.tone === "success"
+                      ? "text-success"
+                      : a.tone === "destructive"
+                        ? "text-destructive"
+                        : a.tone === "info"
+                          ? "text-info"
+                          : ""
+                }`}
                 onClick={() => handleTransition(r, a.status)}
                 // Offer only transitions the caller can actually complete: everything
                 // if they hold requests.edit, otherwise just their own submit/cancel.
