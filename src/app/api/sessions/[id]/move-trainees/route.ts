@@ -13,6 +13,7 @@
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { recomputeSessionCounts, truncateForAudit } from "@/lib/sessions/session-management";
+import { randomUUID } from "node:crypto";
 
 export const POST = withModuleAction("sessions", "edit", async ({ req, params, user }) => {
   const sourceId = params.id as string;
@@ -115,6 +116,7 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
           updatedBy: user.id,
         },
         create: {
+          id: randomUUID(),
           sessionId: targetSessionId,
           traineeId: e.traineeId,
           companyId: e.companyId,
@@ -128,6 +130,7 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
           notes: e.notes,
           createdBy: user.id,
           updatedBy: user.id,
+          updatedAt: new Date(),
         },
       });
     }

@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   CalendarDays, ArrowLeft, ArrowRight, Users, Play, Pause, RotateCcw, CheckCircle2,
   GraduationCap, QrCode, BadgeCheck, Plus, Trash2, AlertCircle, Loader2, Building2,
+  RefreshCw, ArrowRightLeft,
 } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
@@ -107,6 +108,19 @@ export function SessionDetailRoute() {
   const [removeTarget, setRemoveTarget] = useState<Enrollment | null>(null);
   const [certResults, setCertResults] = useState<CertResult[] | null>(null);
 
+  // ── Replace Trainee state ──
+  const [replaceTarget, setReplaceTarget] = useState<Enrollment | null>(null);
+  const [replaceTraineeId, setReplaceTraineeId] = useState("");
+  const [replaceReason, setReplaceReason] = useState("");
+
+  // ── Move Trainee state ──
+  // moveTarget holds the enrollment(s) being moved. When multiple rows are
+  // selected, moveTarget is set to a sentinel and selectedEnrollments is used.
+  const [moveTarget, setMoveTarget] = useState<Enrollment | null>(null);
+  const [selectedEnrollmentIds, setSelectedEnrollmentIds] = useState<Set<string>>(new Set());
+  const [targetSessionId, setTargetSessionId] = useState("");
+  const [availableSessions, setAvailableSessions] = useState<{ id: string; refNumber: string; title: string }[]>([]);
+
   const Back = dir === "rtl" ? ArrowRight : ArrowLeft;
 
   const load = useCallback(async () => {
@@ -139,13 +153,13 @@ export function SessionDetailRoute() {
   }, [load]);
 
   useEffect(() => {
-    if (!enrollOpen) return;
+    if (!enrollOpen && !replaceTarget) return;
     if (trainees.length === 0) {
       api.getList<TraineeOption>("/trainees", { pageSize: 100 })
         .then((r) => setTrainees(r.rows.map((x) => ({ id: x.id, fullName: x.fullName, refNumber: x.refNumber }))))
         .catch(() => {});
     }
-  }, [enrollOpen, trainees.length]);
+  }, [enrollOpen, replaceTarget, trainees.length]);
 
   useEffect(() => {
     if (trainers.length === 0) {
@@ -154,6 +168,19 @@ export function SessionDetailRoute() {
         .catch(() => {});
     }
   }, [trainers.length]);
+
+  // Load available sessions (same course) when the Move dialog opens.
+  useEffect(() => {
+    if (!moveTarget && selectedEnrollmentIds.size === 0) return;
+    if (availableSessions.length > 0) return;
+    api.getList<{ id: string; refNumber: string; title: string }>("/sessions", { pageSize: 100 })
+      .then((r) => setAvailableSessions(
+        r.rows
+          .filter((s) => s.id !== sessionId)
+          .map((s) => ({ id: s.id, refNumber: s.refNumber, title: s.title }))
+      ))
+      .catch(() => {});
+  }, [moveTarget, selectedEnrollmentIds, availableSessions.length, sessionId]);
 
   // A detail route with no subject: send the user back to the list.
   if (!sessionId) {
@@ -221,6 +248,47 @@ export function SessionDetailRoute() {
       await load();
     });
 
+  // ── Replace Trainee: swap one enrolled trainee for another in a single
+  // atomic operation. Calls the dedicated /replace-trainee endpoint.
+  const replaceTrainee = () =>
+    run("replace", async () => {
+      if (!replaceTarget || !replaceTraineeId) return;
+      await api.post(`/sessions/${sessionId}/replace-trainee`, {
+        oldTraineeId: replaceTarget.traineeId,
+        newTraineeId: replaceTraineeId,
+        reason: replaceReason || undefined,
+      });
+      toast({ title: t("misc.success"), description: t("session.replaceSuccess") || t("misc.updateSuccess") });
+      setReplaceTarget(null);
+      setReplaceTraineeId("");
+      setReplaceReason("");
+      await load();
+    });
+
+  // ── Move Trainee(s): transfer one or more enrollments to another session.
+  // Uses the existing /move-trainees endpoint which already handles capacity
+  // checks, audit logging, and count recomputation.
+  const moveTrainees = () =>
+    run("move", async () => {
+      if (!targetSessionId) return;
+      const traineeIds = moveTarget
+        ? [moveTarget.traineeId]
+        : enrollments.filter((e) => selectedEnrollmentIds.has(e.id)).map((e) => e.traineeId);
+      if (traineeIds.length === 0) return;
+      await api.post(`/sessions/${sessionId}/move-trainees`, {
+        targetSessionId,
+        traineeIds,
+      });
+      toast({
+        title: t("misc.success"),
+        description: t("session.moveSuccess", { count: traineeIds.length }) || t("misc.updateSuccess"),
+      });
+      setMoveTarget(null);
+      setSelectedEnrollmentIds(new Set());
+      setTargetSessionId("");
+      await load();
+    });
+
   const activateQr = () =>
     run("qr", async () => {
       await api.post(`/sessions/${sessionId}/qr-activate`, {});
@@ -277,9 +345,37 @@ export function SessionDetailRoute() {
       className: "text-end",
       cell: (row) =>
         canEdit ? (
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setRemoveTarget(row)}>
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+          <div className="inline-flex items-center gap-0.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => { setReplaceTarget(row); setReplaceTraineeId(""); setReplaceReason(""); }}
+              title={t("session.replaceTrainee") || "Replace Trainee"}
+              disabled={row.certificateStatus === "ISSUED"}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => { setMoveTarget(row); setSelectedEnrollmentIds(new Set()); setTargetSessionId(""); }}
+              title={t("session.moveTrainee") || "Move to Another Session"}
+            >
+              <ArrowRightLeft className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-destructive"
+              onClick={() => setRemoveTarget(row)}
+              title={t("action.delete") || "Remove"}
+              disabled={row.certificateStatus === "ISSUED"}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         ) : null,
     },
   ];
@@ -494,6 +590,80 @@ export function SessionDetailRoute() {
         loading={busy === "remove"}
         onConfirm={() => void removeEnrollment()}
       />
+
+      {/* ── Replace Trainee Dialog ── */}
+      <FormDialog
+        open={replaceTarget !== null}
+        onOpenChange={(o) => { if (!o) { setReplaceTarget(null); setReplaceTraineeId(""); setReplaceReason(""); } }}
+        title={t("session.replaceTrainee") || "Replace Trainee"}
+        description={`${t("action.replace") || "Replace"}: ${replaceTarget?.trainee?.fullName ?? "—"}`}
+        icon={RefreshCw}
+        size="md"
+        onSubmit={replaceTrainee}
+        isSubmitting={busy === "replace"}
+      >
+        <div className="space-y-4">
+          <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+            <div className="font-medium text-foreground mb-1">{replaceTarget?.trainee?.fullName ?? "—"}</div>
+            <div>{t("session.replaceHint") || "Select a new trainee to replace the above. The old enrollment will be cancelled."}</div>
+          </div>
+          <Field label={t("session.newTrainee") || "New Trainee"} required>
+            <Select value={replaceTraineeId} onValueChange={setReplaceTraineeId}>
+              <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+              <SelectContent>
+                {trainees
+                  .filter((tr) => tr.id !== replaceTarget?.traineeId)
+                  .map((tr) => (
+                    <SelectItem key={tr.id} value={tr.id}>
+                      {tr.fullName} {tr.refNumber ? `(${tr.refNumber})` : ""}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label={t("session.reason") || "Reason (optional)"}>
+            <Input
+              value={replaceReason}
+              onChange={(e) => setReplaceReason(e.target.value)}
+              placeholder={t("session.reasonPlaceholder") || "e.g. Trainee could not attend"}
+            />
+          </Field>
+        </div>
+      </FormDialog>
+
+      {/* ── Move Trainee Dialog ── */}
+      <FormDialog
+        open={moveTarget !== null || selectedEnrollmentIds.size > 0}
+        onOpenChange={(o) => { if (!o) { setMoveTarget(null); setSelectedEnrollmentIds(new Set()); setTargetSessionId(""); } }}
+        title={t("session.moveTrainee") || "Move Trainee to Another Session"}
+        description={
+          moveTarget
+            ? `${t("action.move") || "Move"}: ${moveTarget.trainee?.fullName ?? "—"}`
+            : `${t("action.move") || "Move"} ${selectedEnrollmentIds.size} trainee(s)`
+        }
+        icon={ArrowRightLeft}
+        size="md"
+        onSubmit={moveTrainees}
+        isSubmitting={busy === "move"}
+      >
+        <div className="space-y-4">
+          <div className="rounded-md border bg-amber-50 dark:bg-amber-950/20 p-3 text-xs text-amber-700 dark:text-amber-400">
+            {t("session.moveHint") || "Trainees can only be moved to sessions of the same course. Capacity will be checked."}
+          </div>
+          <Field label={t("session.targetSession") || "Target Session"} required>
+            <Select value={targetSessionId} onValueChange={setTargetSessionId}>
+              <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+              <SelectContent>
+                {availableSessions.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.refNumber} — {s.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
+      </FormDialog>
     </div>
   );
 }

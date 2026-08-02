@@ -5,7 +5,7 @@ import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
 import { validateTrainerAssignment, validationErrorToResponse } from "@/lib/api/trainer-assignment";
-import { randomBytes } from "crypto";
+import { randomBytes, randomUUID } from "crypto";
 
 const ALLOWED_SORT_FIELDS = ["refNumber", "title", "startDate", "endDate", "createdAt", "status", "location", "city", "shift"];
 
@@ -149,6 +149,7 @@ export const POST = withModuleAction("sessions", "create", async ({ req, user })
 
   const session = await db.trainingSession.create({
     data: {
+      id: randomUUID(),
       refNumber,
       courseId,
       requestId: requestId ?? null,
@@ -177,6 +178,7 @@ export const POST = withModuleAction("sessions", "create", async ({ req, user })
       qrCodeGeneratedAt: new Date(),
       createdBy: user.id,
       updatedBy: user.id,
+      updatedAt: new Date(),
     },
   });
 
