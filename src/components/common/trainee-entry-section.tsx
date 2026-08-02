@@ -284,6 +284,34 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = React.useState(0);
 
+  // ── BUG-009 fix: force re-render after mount ──────────────────────────
+  // The virtualization calculates visibleSlice from scrollTop (0) and
+  // currentTableHeight (constant). On first render this should work, but
+  // inside a Dialog the TabsContent mounts lazily and the scroll container's
+  // layout isn't settled until after paint. This causes the table body to
+  // appear empty until the user interacts (resize, scroll, tab switch).
+  //
+  // Fix: use useLayoutEffect to synchronously set a "mounted" flag BEFORE
+  // the browser paints. This triggers a second render with the correct
+  // layout, so the rows appear immediately.
+  const [mounted, setMounted] = React.useState(false);
+  React.useLayoutEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Also re-trigger on trainees change (e.g. after Excel import the table
+  // should immediately show the new rows without requiring a scroll).
+  React.useLayoutEffect(() => {
+    if (mounted && scrollRef.current) {
+      // Reset scroll to top when trainees change so the virtualization
+      // re-calculates from scrollTop=0.
+      if (scrollRef.current.scrollTop !== 0) {
+        scrollRef.current.scrollTop = 0;
+      }
+      setScrollTop(0);
+    }
+  }, [trainees, mounted]);
+
   // ─── Viewport-aware Full Screen height ─────────────────────────────────
   // When Full Screen is active the section becomes `fixed inset-0` and should
   // fill the entire viewport. We compute the available table height from the
@@ -352,15 +380,39 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
   // In Full Screen mode the table should fill the viewport. We reserve:
   //   - ~64 px for the section padding (top + bottom of fixed inset-0)
   //   - ~48 px for the tabs row (tabs + Full Screen button)
-  //   - ~88 px for the stat cards row
-  //   - ~56 px for the toolbar (search + add/duplicate/delete buttons)
-  //   - ~56 px for the pagination row
-  //   - some buffer for borders/gaps = ~80 px
-  // Total reserved ≈ 392 px. Min 320 px to avoid negative values on tiny screens.
+  // ── BUG-009 fix: measure the actual scroll container height ───────────
+  // The constant VISIBLE_TABLE_HEIGHT (480) is a fallback. The real height
+  // might differ if the dialog hasn't been laid out yet. We measure the
+  // scrollRef's clientHeight on mount and when the window resizes, then use
+  // whichever is larger (the measured value or the constant). This ensures
+  // visibleCount is never 0 on first render.
+  const [measuredHeight, setMeasuredHeight] = React.useState(0);
+  React.useLayoutEffect(() => {
+    if (!scrollRef.current) return;
+    const measure = () => {
+      if (scrollRef.current) {
+        const h = scrollRef.current.clientHeight;
+        if (h > 0) setMeasuredHeight(h);
+      }
+    };
+    measure();
+    // Re-measure after a short delay to catch post-paint layout.
+    const t = setTimeout(measure, 50);
+    window.addEventListener("resize", measure);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("resize", measure);
+    };
+  }, [mounted, isFullscreen]);
+
   const FULLSCREEN_RESERVED_PX = 392;
-  const currentTableHeight = isFullscreen
+  // Use the measured height if available (and larger than the constant),
+  // otherwise fall back to the constant. This fixes the empty-table-on-
+  // first-render bug where the virtualization calculated 0 visible rows.
+  const effectiveTableHeight = isFullscreen
     ? Math.max(320, viewportHeight - FULLSCREEN_RESERVED_PX)
-    : VISIBLE_TABLE_HEIGHT;
+    : Math.max(VISIBLE_TABLE_HEIGHT, measuredHeight);
+  const currentTableHeight = effectiveTableHeight;
   const totalHeight = filtered.length * ROW_HEIGHT;
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 2);
   const visibleCount = Math.ceil(currentTableHeight / ROW_HEIGHT) + 4;
@@ -396,7 +448,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
     if (selected.size === 0) return;
     updateTrainees(trainees.filter((r) => !selected.has(r.id)));
     setSelected(new Set());
-    toast({ title: t("misc.success"), description: `Removed ${selected.size} row(s)` });
+    toast({ title: t("misc.success"), description: t("requests.rowsRemoved", { count: selected.size }) });
   }, [selected, trainees, updateTrainees, toast, t]);
 
   const toggleSelect = React.useCallback((id: string, checked: boolean) => {
@@ -439,7 +491,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
           ? { ...r, idAttachmentUrl: res.url, idAttachmentName: res.filename }
           : r
       )));
-      toast({ title: t("misc.success"), description: `ID attached: ${file.name}` });
+      toast({ title: t("misc.success"), description: t("requests.idAttached", { name: file.name }) });
     } catch (e) {
       toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
     }
@@ -460,7 +512,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
           ? { ...r, documents: [...r.documents, newDoc] }
           : r
       )));
-      toast({ title: t("misc.success"), description: `Document uploaded: ${file.name}` });
+      toast({ title: t("misc.success"), description: t("requests.documentUploaded", { name: file.name }) });
     } catch (e) {
       toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
     }
@@ -677,7 +729,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
     updateTrainees([...trainees, ...additions]);
     setPasteText("");
     setActiveTab("manual");
-    toast({ title: t("misc.success"), description: `Imported ${additions.length} row(s)` });
+    toast({ title: t("misc.success"), description: t("requests.rowsImported", { count: additions.length }) });
   }, [pasteText, trainees, updateTrainees, toast, t]);
 
   // ─── Submission safety ───────────────────────────────────────────────
@@ -696,7 +748,13 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
       className={cn(
         "space-y-4",
         className,
-        isFullscreen && "fixed inset-0 z-50 bg-background p-4 sm:p-6 lg:p-8 flex flex-col overflow-hidden"
+        // When fullscreen, we use a very high z-index (z-[200]) to escape above
+        // the parent Dialog overlay (z-50) AND the DialogContent (also z-50).
+        // The DialogContent uses translate-x/y-[-50%] which creates a new
+        // containing block, so `fixed inset-0` on a child would be relative
+        // to the dialog, not the viewport. Using z-[200] + `fixed` ensures
+        // the fullscreen section paints on top of everything.
+        isFullscreen && "fixed inset-0 z-[200] bg-background p-4 sm:p-6 lg:p-8 flex flex-col overflow-hidden"
       )}
       style={isFullscreen ? { maxHeight: "100vh" } : undefined}
     >
@@ -704,8 +762,8 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
         <div className="flex items-center justify-between gap-2">
           <TabsList className="w-full sm:w-auto">
             <TabsTrigger value="manual" className="flex-1 sm:flex-initial"><Users className="h-4 w-4 me-1.5" />{t("requests.trainees")}</TabsTrigger>
-            <TabsTrigger value="excel" className="flex-1 sm:flex-initial"><FileSpreadsheet className="h-4 w-4 me-1.5" />Excel Import</TabsTrigger>
-            <TabsTrigger value="paste" className="flex-1 sm:flex-initial"><ClipboardPaste className="h-4 w-4 me-1.5" />Copy &amp; Paste</TabsTrigger>
+            <TabsTrigger value="excel" className="flex-1 sm:flex-initial"><FileSpreadsheet className="h-4 w-4 me-1.5" />{t("requests.excelImport")}</TabsTrigger>
+            <TabsTrigger value="paste" className="flex-1 sm:flex-initial"><ClipboardPaste className="h-4 w-4 me-1.5" />{t("requests.copyPaste")}</TabsTrigger>
           </TabsList>
           {activeTab === "manual" && (
             <Button
@@ -714,10 +772,10 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
               size="sm"
               className="shrink-0"
               onClick={() => setIsFullscreen(!isFullscreen)}
-              title={isFullscreen ? "Exit Full Screen" : "Full Screen"}
+              title={isFullscreen ? t("requests.fullscreenExit") : t("requests.fullscreen")}
             >
               {isFullscreen ? <Minimize2 className="h-4 w-4 me-1" /> : <Maximize2 className="h-4 w-4 me-1" />}
-              {isFullscreen ? "Exit" : "Full Screen"}
+              {isFullscreen ? t("requests.fullscreenExit") : t("requests.fullscreen")}
             </Button>
           )}
         </div>
@@ -728,7 +786,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
             <StatCard
               icon={<Users className="h-4 w-4" />}
-              label="Total"
+              label={t("requests.stats.total")}
               value={stats.total}
               active={filter === "all"}
               onClick={() => setFilter("all")}
@@ -736,7 +794,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
             />
             <StatCard
               icon={<CheckCircle2 className="h-4 w-4 text-emerald-600" />}
-              label="Valid"
+              label={t("requests.stats.valid")}
               value={stats.valid}
               active={filter === "valid"}
               tone="success"
@@ -745,7 +803,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
             />
             <StatCard
               icon={<AlertCircle className="h-4 w-4 text-destructive" />}
-              label="Invalid"
+              label={t("requests.stats.invalid")}
               value={stats.invalid}
               active={filter === "invalid"}
               tone="destructive"
@@ -757,7 +815,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
             />
             <StatCard
               icon={<Copy className="h-4 w-4 text-amber-600" />}
-              label="Duplicates"
+              label={t("requests.stats.duplicates")}
               value={stats.duplicates}
               active={filter === "duplicates"}
               tone="warning"
@@ -774,7 +832,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
             />
             <StatCard
               icon={<Paperclip className="h-4 w-4 text-muted-foreground" />}
-              label="Missing Attachments"
+              label={t("requests.stats.missingAttachments")}
               value={stats.missingAttachment}
               active={filter === "missing-attachment"}
               onClick={() => setFilter("missing-attachment")}
@@ -791,9 +849,9 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
               <Button type="button" variant="outline" size="sm" onClick={() => addRows(1)}>
                 <Plus className="h-3.5 w-3.5 me-1" />{t("requests.addRow")}
               </Button>
-              <Button type="button" variant="outline" size="sm" onClick={() => addRows(10)}>+10</Button>
-              <Button type="button" variant="outline" size="sm" onClick={() => addRows(50)}>+50</Button>
-              <Button type="button" variant="outline" size="sm" onClick={() => addRows(100)}>+100</Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => addRows(10)} title={t("requests.addRow10")}>+10</Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => addRows(50)} title={t("requests.addRow50")}>+50</Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => addRows(100)} title={t("requests.addRow100")}>+100</Button>
               <Button
                 type="button"
                 variant="outline"
@@ -801,7 +859,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
                 onClick={() => bulkIdInputRef.current?.click()}
                 disabled={trainees.length === 0}
               >
-                <Upload className="h-3.5 w-3.5 me-1" />Bulk Upload IDs
+                <Upload className="h-3.5 w-3.5 me-1" />{t("requests.bulkUploadIds")}
               </Button>
               <input
                 ref={bulkIdInputRef}
@@ -859,15 +917,15 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
                 <Checkbox
                   checked={filtered.length > 0 && selected.size === filtered.length}
                   onCheckedChange={(v) => toggleSelectAll(Boolean(v))}
-                  aria-label="Select all visible"
+                  aria-label={t("requests.selectAllVisible")}
                 />
               </div>
               <div className="w-10 shrink-0 text-center">#</div>
               <div className="flex-1 min-w-[160px] px-2">{t("requests.traineeName")}</div>
               <div className="w-40 shrink-0 px-2">{t("requests.nationalId")}</div>
-              <div className="w-32 shrink-0 px-2">Nationality</div>
-              <div className="w-32 shrink-0 px-2">Job Title</div>
-              <div className="w-56 shrink-0 px-2">ID & Documents</div>
+              <div className="w-32 shrink-0 px-2">{t("requests.nationality")}</div>
+              <div className="w-32 shrink-0 px-2">{t("requests.jobTitle")}</div>
+              <div className="w-56 shrink-0 px-2">{t("requests.idAndDocuments")}</div>
               <div className="w-12 shrink-0" />
             </div>
 
@@ -881,7 +939,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
               {filtered.length === 0 ? (
                 <div className="flex flex-col items-center justify-center text-center text-sm text-muted-foreground py-12 gap-2">
                   <Users className="h-8 w-8 opacity-40" />
-                  <div>{trainees.length === 0 ? t("requests.noTraineesYet") : "No rows match your filters."}</div>
+                  <div>{trainees.length === 0 ? t("requests.noTraineesYet") : t("requests.noRowsMatchFilters")}</div>
                 </div>
               ) : (
                 <div style={{ height: totalHeight, position: "relative" }}>
@@ -911,7 +969,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
                             type="text"
                             value={row.fullName}
                             onChange={(e) => updateField(row.id, "fullName", e.target.value)}
-                            placeholder="Full name"
+                            placeholder={t("requests.placeholderFullName")}
                             className="w-full h-7 rounded border border-transparent bg-transparent px-1.5 text-sm outline-none focus:border-input focus:bg-background"
                             aria-invalid={!row.valid && !row.fullName.trim()}
                           />
@@ -921,7 +979,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
                             type="text"
                             value={row.nationalId}
                             onChange={(e) => updateField(row.id, "nationalId", e.target.value)}
-                            placeholder="ID / Iqama"
+                            placeholder={t("requests.placeholderNationalId")}
                             className="w-full h-7 rounded border border-transparent bg-transparent px-1.5 text-sm font-mono outline-none focus:border-input focus:bg-background"
                             aria-invalid={!row.valid && !row.nationalId.trim()}
                           />
@@ -965,7 +1023,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
                                 size="icon"
                                 className="h-6 w-6"
                                 onClick={() => removeIdForRow(row.id)}
-                                aria-label="Remove ID attachment"
+                                aria-label={t("requests.removeIdAttachment")}
                               >
                                 <X className="h-3 w-3" />
                               </Button>
@@ -1001,9 +1059,9 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
 
             {/* Footer */}
             <div className="flex items-center justify-between border-t px-3 py-2 text-xs text-muted-foreground">
-              <span>Showing {filtered.length} of {trainees.length}</span>
+              <span>{t("requests.showingOf", { shown: filtered.length, total: trainees.length })}</span>
               {filtered.length > 0 && (
-                <span>Scroll to load more (windowed {startIndex + 1}–{endIndex} of {filtered.length})</span>
+                <span>{t("requests.windowedRange", { start: startIndex + 1, end: endIndex, total: filtered.length })}</span>
               )}
             </div>
             </div>
@@ -1023,10 +1081,9 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
         <TabsContent value="excel" className="space-y-4 mt-4">
           <Alert variant="default">
             <FileSpreadsheet className="h-4 w-4" />
-            <AlertTitle>Smart Excel Import</AlertTitle>
+            <AlertTitle>{t("requests.excelImport")}</AlertTitle>
             <AlertDescription>
-              Drop any Excel file — the system automatically detects columns by header name (Arabic or English).
-              No specific format or column order required. Unrecognized columns are ignored.
+              {t("requests.excelImportDesc")}
             </AlertDescription>
           </Alert>
           <div
@@ -1041,10 +1098,10 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
           >
             <FileSpreadsheet className="h-10 w-10 text-muted-foreground" />
             <div>
-              <div className="text-sm font-medium">Drop an Excel file or click to browse</div>
-              <div className="text-xs text-muted-foreground mt-1">.xlsx — smart header mapping with Arabic + English aliases</div>
+              <div className="text-sm font-medium">{t("requests.dropExcelOrBrowse")}</div>
+              <div className="text-xs text-muted-foreground mt-1">{t("requests.excelFormatHint")}</div>
               <div className="text-xs text-muted-foreground mt-2">
-                Recognized columns: Name/الاسم, National ID/الهوية, Nationality/الجنسية, Job/الوظيفة, Phone/الهاتف, Email/البريد
+                {t("requests.recognizedColumns")}
               </div>
             </div>
             <input
@@ -1075,25 +1132,24 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
         <TabsContent value="paste" className="space-y-4 mt-4">
           <Alert variant="default">
             <ClipboardPaste className="h-4 w-4" />
-            <AlertTitle>Copy &amp; Paste</AlertTitle>
+            <AlertTitle>{t("requests.copyPaste")}</AlertTitle>
             <AlertDescription>
-              Paste rows directly from Excel/Sheets (tab-delimited) or CSV (comma-delimited).
-              Smart header detection supports Arabic + English column names. Unrecognized columns are ignored.
+              {t("requests.copyPasteDesc")}
             </AlertDescription>
           </Alert>
           <Textarea
             rows={10}
             value={pasteText}
             onChange={(e) => setPasteText(e.target.value)}
-            placeholder={"Name\tNational ID\tNationality\tJob Title\nAhmed Ali\t1234567890\tEgypt\tElectrician\n...\n— or comma-separated —\nName,National ID\nAhmed Ali,1234567890"}
+            placeholder={t("requests.copyPastePlaceholder")}
             className="font-mono text-xs"
           />
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" size="sm" onClick={() => setPasteText("")} disabled={!pasteText}>
-              <RotateCcw className="h-3.5 w-3.5 me-1" />Clear
+              <RotateCcw className="h-3.5 w-3.5 me-1" />{t("requests.clear")}
             </Button>
             <Button type="button" size="sm" onClick={parsePasted} disabled={!pasteText.trim()}>
-              <CopyPlus className="h-3.5 w-3.5 me-1" />Import Rows
+              <CopyPlus className="h-3.5 w-3.5 me-1" />{t("requests.importRows")}
             </Button>
           </div>
         </TabsContent>
@@ -1365,7 +1421,7 @@ function StatCard({
           className="text-[10px] text-primary hover:underline self-start"
           onClick={(e) => { e.stopPropagation(); onJump(); }}
         >
-          Jump to first →
+          {t("requests.jumpToFirst")}
         </button>
       )}
     </div>
@@ -1383,11 +1439,12 @@ function PreviewStat({ label, value, tone }: { label: string; value: number; ton
 }
 
 function BulkUploadPanel({ state, onDismiss }: { state: BulkUploadState; onDismiss: () => void }) {
+  const { t } = useI18n();
   const pct = state.total > 0 ? Math.round((state.done / state.total) * 100) : 0;
   const label =
-    state.phase === "uploading" ? `Uploading ${state.done}/${state.total}…`
-    : state.phase === "matching" ? "Matching files to trainees…"
-    : state.phase === "completed" ? `Done: ${state.matched} matched, ${state.unmatched.length} unmatched`
+    state.phase === "uploading" ? t("requests.bulkUploading", { done: state.done, total: state.total })
+    : state.phase === "matching" ? t("requests.bulkMatching")
+    : state.phase === "completed" ? t("requests.bulkDone", { matched: state.matched, unmatched: state.unmatched.length })
     : "";
   return (
     <div className="rounded-md border bg-muted/20 p-3 space-y-2">
@@ -1407,7 +1464,7 @@ function BulkUploadPanel({ state, onDismiss }: { state: BulkUploadState; onDismi
       <Progress value={state.phase === "matching" ? 100 : pct} />
       {state.phase === "completed" && state.unmatched.length > 0 && (
         <div className="text-xs text-muted-foreground">
-          <div className="font-medium mb-1">Unmatched files:</div>
+          <div className="font-medium mb-1">{t("requests.bulkUnmatchedFiles")}</div>
           <ul className="list-disc ms-4 space-y-0.5 max-h-24 overflow-y-auto">
             {state.unmatched.map((u) => (
               <li key={u.filename} className="font-mono truncate">{u.filename}</li>
@@ -1433,21 +1490,21 @@ function SubmissionSafetyBar({
     <div className="rounded-md border bg-muted/20 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
       <div className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
         {total === 0 ? (
-          <><AlertCircle className="h-3.5 w-3.5" />Add at least one trainee before submitting.</>
+          <><AlertCircle className="h-3.5 w-3.5" />{t("requests.addAtLeastOneTrainee")}</>
         ) : !canSubmit ? (
           <>
             <AlertCircle className="h-3.5 w-3.5 text-destructive" />
-            <span>Submission blocked:</span>
-            {invalid > 0 && <Badge variant="destructive" className="text-xs">{invalid} invalid row(s)</Badge>}
-            {duplicates > 0 && <Badge variant="destructive" className="text-xs">{duplicates} duplicate ID(s)</Badge>}
+            <span>{t("requests.submissionBlocked")}</span>
+            {invalid > 0 && <Badge variant="destructive" className="text-xs">{t("requests.invalidRowsCount", { count: invalid })}</Badge>}
+            {duplicates > 0 && <Badge variant="destructive" className="text-xs">{t("requests.duplicateIdsCount", { count: duplicates })}</Badge>}
           </>
         ) : (
-          <><CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />Ready to submit — {total} valid trainee(s).</>
+          <><CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />{t("requests.readyToSubmit", { count: total })}</>
         )}
       </div>
       {onSaveDraft && (
         <Button type="button" variant="outline" size="sm" onClick={onSaveDraft}>
-          <Save className="h-3.5 w-3.5 me-1" />Save Draft
+          <Save className="h-3.5 w-3.5 me-1" />{t("requests.saveDraft")}
         </Button>
       )}
     </div>
@@ -1488,7 +1545,7 @@ function RowIdReplace({ onPick }: { onPick: (file: File) => void }) {
         size="icon"
         className="h-6 w-6"
         onClick={() => ref.current?.click()}
-        aria-label="Replace attachment"
+        aria-label={t("requests.replaceAttachment")}
       >
         <RotateCcw className="h-3 w-3" />
       </Button>
@@ -1528,6 +1585,7 @@ function RowDocUpload({
   onUpload: (file: File, docType: TraineeDocument["type"]) => void;
   onRemove: (docIndex: number) => void;
 }) {
+  const { t } = useI18n();
   const [showMenu, setShowMenu] = React.useState(false);
   const fileRef = React.useRef<HTMLInputElement | null>(null);
   const [pendingType, setPendingType] = React.useState<TraineeDocument["type"]>("other");
@@ -1542,7 +1600,7 @@ function RowDocUpload({
     <div className="relative flex items-center gap-1">
       {/* Show document count badge */}
       {documents.length > 0 && (
-        <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1 py-0.5 rounded bg-blue-50 text-blue-700" title={`${documents.length} document(s)`}>
+        <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1 py-0.5 rounded bg-blue-50 text-blue-700" title={t("requests.documentsCount", { count: documents.length })}>
           <FileText className="h-2.5 w-2.5" />
           {documents.length}
         </span>
@@ -1555,7 +1613,7 @@ function RowDocUpload({
         size="sm"
         className="h-7 px-2 text-xs"
         onClick={() => setShowMenu(!showMenu)}
-        title="Upload additional documents"
+        title={t("requests.uploadAdditionalDocuments")}
       >
         <FolderUp className="h-3 w-3" />
       </Button>
@@ -1564,14 +1622,14 @@ function RowDocUpload({
         <>
           <div className="fixed inset-0 z-30" onClick={() => setShowMenu(false)} />
           <div className="absolute top-full mt-1 end-0 z-40 w-44 rounded-md border bg-background shadow-lg p-1 text-xs">
-            <div className="px-2 py-1 font-medium text-muted-foreground">Upload document:</div>
+            <div className="px-2 py-1 font-medium text-muted-foreground">{t("requests.uploadDocument")}</div>
             {([
-              { type: "iqama" as const, label: "Iqama / إقامة" },
-              { type: "id" as const, label: "National ID / هوية" },
-              { type: "passport" as const, label: "Passport / جواز" },
-              { type: "certificate" as const, label: "Certificate / شهادة" },
-              { type: "medical" as const, label: "Medical / طبي" },
-              { type: "other" as const, label: "Other / أخرى" },
+              { type: "iqama" as const, label: t("requests.docTypes.iqama") },
+              { type: "id" as const, label: t("requests.docTypes.id") },
+              { type: "passport" as const, label: t("requests.docTypes.passport") },
+              { type: "certificate" as const, label: t("requests.docTypes.certificate") },
+              { type: "medical" as const, label: t("requests.docTypes.medical") },
+              { type: "other" as const, label: t("requests.docTypes.other") },
             ]).map((opt) => (
               <button
                 key={opt.type}
