@@ -53,10 +53,13 @@ const BLOCKED_STATUSES = new Set([
 export async function resolveEffectivePermissions(dbUser: {
   role: UserRole;
   roleId: string | null;
+  Role?: { permissions: unknown } | null;
   roleRecord?: { permissions: unknown } | null;
 }): Promise<string[]> {
-  if (dbUser.roleId && dbUser.roleRecord?.permissions) {
-    return dbUser.roleRecord.permissions as string[];
+  // Prefer the eager-loaded Role relation (PascalCase, matches current schema).
+  const rolePerms = dbUser.Role?.permissions ?? dbUser.roleRecord?.permissions;
+  if (dbUser.roleId && rolePerms) {
+    return rolePerms as string[];
   }
   const fallbackRole = await db.role.findUnique({
     where: { code: dbUser.role },
@@ -87,7 +90,7 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
       roleId: true,
       companyId: true,
       trainerId: true,
-      roleRecord: { select: { permissions: true } },
+      Role: { select: { permissions: true } },
     },
   });
 

@@ -8,6 +8,7 @@ import { parseBody } from "@/lib/api/validate";
 import { loginSchema } from "@/lib/api/schemas";
 import { setSessionCookie, ok, fail, resolveEffectivePermissions } from "@/lib/auth/api";
 import { recordAudit } from "@/lib/auth/audit";
+import { randomUUID } from "node:crypto";
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_DURATION_MIN = 15;
@@ -22,6 +23,7 @@ async function logLoginAttempt(opts: {
   try {
     await db.loginHistory.create({
       data: {
+        id: randomUUID(),
         userId: opts.userId ?? null,
         email: opts.email,
         success: opts.success,
@@ -132,7 +134,7 @@ export async function POST(req: NextRequest) {
 
     const dbUser = await db.user.findUnique({
       where: { id: userId },
-      include: { company: true, trainer: true, roleRecord: { select: { permissions: true } } },
+      include: { Company: true, Trainer: true, Role: { select: { permissions: true } } },
     });
     if (!dbUser || dbUser.deletedAt) {
       return fail("Invalid account", 401);
@@ -178,7 +180,7 @@ export async function POST(req: NextRequest) {
         permissions,
         language: dbUser.language,
         companyId: dbUser.companyId,
-        companyName: dbUser.company?.name ?? null,
+        companyName: dbUser.Company?.name ?? null,
         trainerId: dbUser.trainerId,
         avatarUrl: dbUser.avatarUrl ?? null,
         forcePasswordChange: dbUser.forcePasswordChange,

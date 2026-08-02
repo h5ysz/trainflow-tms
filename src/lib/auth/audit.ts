@@ -17,6 +17,7 @@
 
 import { db } from "@/lib/db";
 import type { JwtPayload } from "./jwt";
+import { randomUUID } from "node:crypto";
 
 export type AuditAction =
   | "LOGIN"
@@ -116,6 +117,7 @@ export async function recordAudit(entry: AuditEntry): Promise<void> {
 
     await db.auditLog.create({
       data: {
+        id: randomUUID(),
         userId: entry.userId ?? null,
         userRole: entry.userRole ?? null,
         action: entry.action as string,
