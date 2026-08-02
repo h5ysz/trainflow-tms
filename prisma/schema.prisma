@@ -911,18 +911,56 @@ model SessionPayment {
   invoiceIssuedAt DateTime?
   invoiceDueDate  DateTime?
   notes           String?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime
-  createdBy       String?
-  updatedBy       String?
-  deletedAt       DateTime?
+  // ── Payment verification workflow ──
+  // PENDING → PARTIALLY_VERIFIED → VERIFIED | REJECTED
+  verificationStatus  String  @default("PENDING")
+  verifiedBy          String?
+  verifiedAt          DateTime?
+  verificationNotes   String?
+  // Coordinator grants certificate printing permission after full payment.
+  printingReleased    Boolean @default(false)
+  printingReleasedBy  String?
+  printingReleasedAt  DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime
+  createdBy        String?
+  updatedBy        String?
+  deletedAt        DateTime?
   company         Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   trainingSession TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  receipts        PaymentReceipt[]
 
   @@unique([sessionId, companyId])
   @@index([invoiceRef])
   @@index([companyId])
   @@index([sessionId])
+}
+
+// ── Payment Receipts ──────────────────────────────────────────────────────
+// Uploaded by contractors as proof of bank transfer. Reviewed by coordinators
+// who verify the amount and update the SessionPayment's paidAmount.
+model PaymentReceipt {
+  id              String   @id
+  sessionPaymentId String
+  filename        String
+  originalName    String
+  url             String
+  amount          Float
+  currency        String  @default("SAR")
+  // PENDING → VERIFIED | REJECTED
+  status          String  @default("PENDING")
+  uploadedById    String?
+  uploadedAt      DateTime @default(now())
+  verifiedById    String?
+  verifiedAt      DateTime?
+  rejectionReason String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime
+  sessionPayment  SessionPayment @relation(fields: [sessionPaymentId], references: [id], onDelete: Cascade)
+
+  @@index([sessionPaymentId])
+  @@index([status])
 }
 
 model Setting {

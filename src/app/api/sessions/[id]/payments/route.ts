@@ -16,6 +16,7 @@
 import { db } from "@/lib/db";
 import { withModuleAction, ok, fail, audit } from "@/lib/auth/api";
 import { autoUpdateReleaseStatus } from "@/lib/certificates/release-checklist";
+import { randomUUID } from "node:crypto";
 
 export const GET = withModuleAction("sessions", "view", async ({ req, params }) => {
   const sessionId = params.id as string;
@@ -93,6 +94,7 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
       updatedBy: user.id,
     },
     create: {
+      id: randomUUID(),
       sessionId,
       companyId,
       totalAmount,
@@ -104,6 +106,7 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
       notes: notes ?? null,
       createdBy: user.id,
       updatedBy: user.id,
+      updatedAt: new Date(),
     },
   });
 

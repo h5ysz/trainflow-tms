@@ -96,6 +96,29 @@ export const POST = withAuth(async ({ req, params, user }) => {
       continue;
     }
 
+    // ── Payment printing release check ────────────────────────────────────
+    // Even if the invoice is paid, the coordinator must explicitly release
+    // printing permission via /api/session-payments/[id]/release-printing.
+    // This is the final administrative gate before certificates become
+    // downloadable by the contractor.
+    if (cert.companyId) {
+      const sp = await db.sessionPayment.findUnique({
+        where: { sessionId_companyId: { sessionId: cert.sessionId, companyId: cert.companyId } },
+        select: { printingReleased: true },
+      });
+      if (sp && !sp.printingReleased) {
+        results.push({
+          certificateId: cert.id,
+          certificateRef: cert.refNumber,
+          traineeName: cert.traineeName,
+          released: false,
+          reason: "Printing not released by coordinator",
+        });
+        skippedCount++;
+        continue;
+      }
+    }
+
     // Release the certificate
     await db.certificate.update({
       where: { id: cert.id },
