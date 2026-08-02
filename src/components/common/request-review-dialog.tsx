@@ -44,6 +44,7 @@ import {
   Settings2, Check, X, RotateCcw, Save, CalendarRange, ArrowRight,
   AlertCircle, Download, Eye, Loader2, Building2, CalendarDays,
   MapPin, Globe, UserCircle, Hash,
+  Upload, Trash2, CheckCircle2, XCircle, File,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -86,7 +87,49 @@ interface ReviewTrainee {
   mobile?: string | null;
   email?: string | null;
   idAttachmentUrl?: string | null;
+  // JSON-encoded array of { url, filename, type, uploadedAt, uploadedById }
+  // returned by /api/requests/[id] — parsed lazily via parseTraineeDocuments().
+  documents?: string | null;
   company?: { id: string; name: string } | null;
+}
+
+// Document types managed per trainee. The order here defines the column order
+// in the review dialog table.
+const DOC_TYPES = ["iqama", "id", "passport", "certificate", "medical"] as const;
+type DocType = (typeof DOC_TYPES)[number];
+
+interface ParsedDoc {
+  url: string;
+  filename: string;
+  type: DocType | "other";
+  uploadedAt: string;
+}
+
+function parseTraineeDocuments(raw?: string | null): ParsedDoc[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (d) => d && typeof d.url === "string" && typeof d.type === "string"
+    );
+  } catch {
+    return [];
+  }
+}
+
+// Backward compat: also surface the legacy idAttachmentUrl as an "id" type document.
+function getEffectiveDocuments(trainee: ReviewTrainee): ParsedDoc[] {
+  const docs = parseTraineeDocuments(trainee.documents);
+  if (trainee.idAttachmentUrl && !docs.some((d) => d.type === "id" || d.type === "iqama")) {
+    docs.push({
+      url: trainee.idAttachmentUrl,
+      filename: fileNameFromUrl(trainee.idAttachmentUrl),
+      type: "id",
+      uploadedAt: new Date().toISOString(),
+    });
+  }
+  return docs;
 }
 
 interface ReviewRequestCourse {
@@ -98,7 +141,17 @@ interface ReviewRequestCourse {
   notes?: string | null;
   course: { id: string; title: string | null; code: string | null; refNumber: string | null };
   trainees: { id: string; trainee: ReviewTrainee }[];
+  // Backend returns the join rows under trainingRequestCourseTrainee (Prisma's
+  // default relation name). Frontend aliases it to `trainees` for readability.
+  trainingRequestCourseTrainee?: { id: string; trainee: ReviewTrainee }[];
   _count?: { sessions?: number };
+}
+
+// Resolve the actual trainee join rows for a request course, regardless of
+// whether the backend sent them under `trainees` (legacy alias) or
+// `trainingRequestCourseTrainee` (Prisma's default relation name).
+function getRequestCourseTrainees(rc: ReviewRequestCourse): { id: string; trainee: ReviewTrainee }[] {
+  return rc.trainees ?? rc.trainingRequestCourseTrainee ?? [];
 }
 
 interface ReviewSession {
@@ -295,7 +348,7 @@ export function RequestReviewDialog({
   const allTrainees = useMemo<{ course: string; trainee: ReviewTrainee }[]>(() => {
     if (!detail) return [];
     return detail.requestCourses.flatMap((rc) =>
-      rc.trainees.map((tr) => ({ course: rc.course.title ?? rc.course.code ?? "—", trainee: tr.trainee }))
+      getRequestCourseTrainees(rc).map((tr) => ({ course: rc.course.title ?? rc.course.code ?? "—", trainee: tr.trainee }))
     );
   }, [detail]);
 
@@ -595,7 +648,12 @@ export function RequestReviewDialog({
                     <GeneralSection detail={detail} formData={formData} setField={setField} canEdit={canEdit} />
                   </TabsContent>
                   <TabsContent value="trainees" className="m-0 p-5">
-                    <TraineesSection detail={detail} onPreview={(url, label) => { setPreviewUrl(url); setPreviewLabel(label); }} />
+                    <TraineesSection
+                      detail={detail}
+                      onPreview={(url, label) => { setPreviewUrl(url); setPreviewLabel(label); }}
+                      onChanged={() => { /* detail is re-fetched on action save; documents update optimistically */ }}
+                      canEdit={canEdit}
+                    />
                   </TabsContent>
                   <TabsContent value="import" className="m-0 p-5">
                     <ImportSection detail={detail} />
@@ -919,25 +977,105 @@ function GeneralSection({ detail, formData, setField, canEdit }: {
   );
 }
 
-function TraineesSection({ detail, onPreview }: {
+function TraineesSection({ detail, onPreview, onChanged, canEdit }: {
   detail: RequestDetail;
   onPreview: (url: string, label: string) => void;
+  onChanged?: () => void;
+  canEdit?: boolean;
 }) {
   const { t } = useI18n();
+  const { toast } = useToast();
+  // Track which (traineeId, docType) pair is currently uploading or removing.
+  // Key format: `${traineeId}:${docType}`.
+  const [pending, setPending] = useState<Record<string, "upload" | "remove">>({});
+  // Mutable trainee-documents state so the UI updates instantly after upload
+  // without waiting for the parent to refetch the whole request detail.
+  const [docsOverride, setDocsOverride] = useState<Record<string, ParsedDoc[]>>({});
+
+  const DOC_LABELS: Record<DocType, string> = {
+    iqama: t("requests.review.docIqama") || "Iqama",
+    id: t("requests.review.docId") || "ID",
+    passport: t("requests.review.docPassport") || "Passport",
+    certificate: t("requests.review.docCertificate") || "Certificate",
+    medical: t("requests.review.docMedical") || "Medical",
+  };
 
   if (detail.requestCourses.length === 0) {
     return <EmptyHint text={t("requests.review.noTrainees")} />;
   }
 
+  async function handleUpload(traineeId: string, docType: DocType, file: File, traineeName: string) {
+    const key = `${traineeId}:${docType}`;
+    setPending((p) => ({ ...p, [key]: "upload" }));
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("type", docType);
+      const res = await api.post<ParsedDoc>(`/api/trainees/${traineeId}/documents`, fd);
+      setDocsOverride((prev) => {
+        const existing = prev[traineeId] ?? getEffectiveDocumentsForTrainee(traineeId);
+        const filtered =
+          docType === "other"
+            ? existing
+            : existing.filter((d) => d.type !== docType);
+        return { ...prev, [traineeId]: [...filtered, res] };
+      });
+      toast({ title: t("requests.review.docUploaded"), description: `${DOC_LABELS[docType]} · ${traineeName}` });
+      onChanged?.();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "Upload failed";
+      toast({ title: t("requests.review.docUploadFailed"), description: msg, variant: "destructive" });
+    } finally {
+      setPending((p) => {
+        const next = { ...p };
+        delete next[key];
+        return next;
+      });
+    }
+  }
+
+  async function handleRemove(traineeId: string, docType: DocType, url: string, traineeName: string) {
+    const key = `${traineeId}:${docType}`;
+    setPending((p) => ({ ...p, [key]: "remove" }));
+    try {
+      await api.delete(`/api/trainees/${traineeId}/documents?type=${docType}&url=${encodeURIComponent(url)}`);
+      setDocsOverride((prev) => {
+        const existing = prev[traineeId] ?? getEffectiveDocumentsForTrainee(traineeId);
+        return { ...prev, [traineeId]: existing.filter((d) => !(d.type === docType && d.url === url)) };
+      });
+      toast({ title: t("requests.review.docRemoved"), description: `${DOC_LABELS[docType]} · ${traineeName}` });
+      onChanged?.();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "Remove failed";
+      toast({ title: t("requests.review.docRemoveFailed"), description: msg, variant: "destructive" });
+    } finally {
+      setPending((p) => {
+        const next = { ...p };
+        delete next[key];
+        return next;
+      });
+    }
+  }
+
+  // Helper to find a trainee across all requestCourses (used by upload/remove handlers
+  // to seed docsOverride from the latest server data).
+  function getEffectiveDocumentsForTrainee(traineeId: string): ParsedDoc[] {
+    for (const rc of detail.requestCourses) {
+      const found = getRequestCourseTrainees(rc).find((t) => t.trainee.id === traineeId);
+      if (found) return getEffectiveDocuments(found.trainee);
+    }
+    return [];
+  }
+
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-6 max-w-[1400px]">
       {detail.requestCourses.map((rc) => (
         <div key={rc.id}>
           <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
             <Users className="h-4 w-4 text-primary" />
             {rc.course.title ?? rc.course.code ?? "—"}
             <span className="text-xs font-normal text-muted-foreground">
-              · {t("requests.review.traineesInCourse", { count: rc.trainees.length, course: rc.course.title ?? rc.course.code ?? "—" })}
+              · {t("requests.review.traineesInCourse", { count: getRequestCourseTrainees(rc).length, course: rc.course.title ?? rc.course.code ?? "—" })}
             </span>
           </h3>
           <div className="rounded-md border overflow-hidden">
@@ -949,58 +1087,160 @@ function TraineesSection({ detail, onPreview }: {
                     <Th>{t("requests.review.traineeNationality")}</Th>
                     <Th>{t("requests.review.traineeJobTitle")}</Th>
                     <Th>{t("requests.review.traineeIdNumber")}</Th>
-                    <Th className="text-end">{t("requests.review.traineeAttachment")}</Th>
+                    {DOC_TYPES.map((dt) => (
+                      <Th key={dt} className="text-center min-w-[120px]">{DOC_LABELS[dt]}</Th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {rc.trainees.length === 0 ? (
+                  {getRequestCourseTrainees(rc).length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="p-6 text-center text-muted-foreground">
+                      <td colSpan={4 + DOC_TYPES.length} className="p-6 text-center text-muted-foreground">
                         {t("requests.review.noTrainees")}
                       </td>
                     </tr>
-                  ) : rc.trainees.map(({ trainee }) => (
-                    <tr key={trainee.id} className="border-t hover:bg-muted/30">
-                      <Td>
-                        <div className="flex items-center gap-2">
-                          <UserCircle className="h-3.5 w-3.5 text-muted-foreground" />
-                          <div>
-                            <div className="font-medium">{trainee.fullName}</div>
-                            {trainee.refNumber && (
-                              <div className="text-[10px] font-mono text-muted-foreground">{trainee.refNumber}</div>
-                            )}
+                  ) : getRequestCourseTrainees(rc).map(({ trainee }) => {
+                    const docs = docsOverride[trainee.id] ?? getEffectiveDocuments(trainee);
+                    return (
+                      <tr key={trainee.id} className="border-t hover:bg-muted/30">
+                        <Td>
+                          <div className="flex items-center gap-2">
+                            <UserCircle className="h-3.5 w-3.5 text-muted-foreground" />
+                            <div>
+                              <div className="font-medium">{trainee.fullName}</div>
+                              {trainee.refNumber && (
+                                <div className="text-[10px] font-mono text-muted-foreground">{trainee.refNumber}</div>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </Td>
-                      <Td>{trainee.nationality ?? "—"}</Td>
-                      <Td>{trainee.jobTitle ?? "—"}</Td>
-                      <Td><span className="font-mono">{trainee.nationalId}</span></Td>
-                      <Td className="text-end">
-                        {trainee.idAttachmentUrl ? (
-                          <div className="inline-flex items-center gap-1">
-                            <Button variant="ghost" size="sm" className="h-7 px-2"
-                              onClick={() => onPreview(trainee.idAttachmentUrl as string, trainee.fullName)}>
-                              <Eye className="h-3.5 w-3.5 me-1" />
-                              {t("requests.review.preview")}
-                            </Button>
-                            <Button asChild variant="ghost" size="sm" className="h-7 px-2">
-                              <a href={trainee.idAttachmentUrl as string} target="_blank" rel="noreferrer" download>
-                                <Download className="h-3.5 w-3.5" />
-                              </a>
-                            </Button>
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">{t("requests.review.noAttachment")}</span>
-                        )}
-                      </Td>
-                    </tr>
-                  ))}
+                        </Td>
+                        <Td>{trainee.nationality ?? "—"}</Td>
+                        <Td>{trainee.jobTitle ?? "—"}</Td>
+                        <Td><span className="font-mono">{trainee.nationalId}</span></Td>
+                        {DOC_TYPES.map((dt) => {
+                          const doc = docs.find((d) => d.type === dt);
+                          const key = `${trainee.id}:${dt}`;
+                          const isPending = Boolean(pending[key]);
+                          return (
+                            <Td key={dt} className="text-center">
+                              <DocumentCell
+                                doc={doc}
+                                docType={dt}
+                                label={DOC_LABELS[dt]}
+                                pending={isPending}
+                                pendingAction={pending[key]}
+                                canEdit={!!canEdit}
+                                traineeName={trainee.fullName}
+                                onPreview={(url) => onPreview(url, `${trainee.fullName} · ${DOC_LABELS[dt]}`)}
+                                onUpload={(file) => handleUpload(trainee.id, dt, file, trainee.fullName)}
+                                onRemove={(url) => handleRemove(trainee.id, dt, url, trainee.fullName)}
+                              />
+                            </Td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ─── Document cell: shows status badge + upload/preview/download/remove actions ──
+function DocumentCell({
+  doc, docType, label, pending, pendingAction, canEdit, traineeName,
+  onPreview, onUpload, onRemove,
+}: {
+  doc?: ParsedDoc;
+  docType: DocType;
+  label: string;
+  pending: boolean;
+  pendingAction?: "upload" | "remove";
+  canEdit: boolean;
+  traineeName: string;
+  onPreview: (url: string) => void;
+  onUpload: (file: File) => void;
+  onRemove: (url: string) => void;
+}) {
+  const inputId = `doc-input-${docType}-${traineeName.replace(/\s+/g, "-")}`;
+  const isImage = doc ? isImageUrl(doc.url) : false;
+  const isPdf = doc ? isPdfUrl(doc.url) : false;
+
+  if (pending) {
+    return (
+      <div className="inline-flex items-center gap-1 text-muted-foreground">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <span className="text-[10px]">{pendingAction === "upload" ? "Uploading…" : "Removing…"}</span>
+      </div>
+    );
+  }
+
+  if (!doc) {
+    if (!canEdit) {
+      return (
+        <span className="inline-flex items-center gap-1 text-muted-foreground text-[10px]">
+          <XCircle className="h-3 w-3" />
+          <span>—</span>
+        </span>
+      );
+    }
+    return (
+      <label
+        htmlFor={inputId}
+        className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-dashed border-muted-foreground/40 hover:border-primary hover:bg-primary/5 cursor-pointer text-[10px] text-muted-foreground hover:text-primary transition-colors"
+        title={`Upload ${label}`}
+      >
+        <Upload className="h-3 w-3" />
+        <span>Upload</span>
+        <input
+          id={inputId}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,application/pdf"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onUpload(f);
+            e.currentTarget.value = ""; // allow re-uploading same file
+          }}
+        />
+      </label>
+    );
+  }
+
+  return (
+    <div className="inline-flex flex-col items-center gap-1">
+      <span className="inline-flex items-center gap-1 text-emerald-600 text-[10px] font-medium">
+        <CheckCircle2 className="h-3 w-3" />
+        <span>Uploaded</span>
+      </span>
+      <div className="inline-flex items-center gap-0.5">
+        <Button
+          variant="ghost" size="sm" className="h-6 px-1.5"
+          onClick={() => onPreview(doc.url)}
+          title={`Preview ${label}`}
+        >
+          {isImage ? <Eye className="h-3 w-3" /> : isPdf ? <FileText className="h-3 w-3" /> : <File className="h-3 w-3" />}
+        </Button>
+        <Button asChild variant="ghost" size="sm" className="h-6 px-1.5" title={`Download ${label}`}>
+          <a href={doc.url} target="_blank" rel="noreferrer" download>
+            <Download className="h-3 w-3" />
+          </a>
+        </Button>
+        {canEdit && (
+          <Button
+            variant="ghost" size="sm" className="h-6 px-1.5 text-destructive hover:text-destructive hover:bg-destructive/10"
+            onClick={() => onRemove(doc.url)}
+            title={`Remove ${label}`}
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -1012,7 +1252,7 @@ function ImportSection({ detail }: { detail: RequestDetail }) {
   // request row. We reconstruct what we CAN from the data: total/valid trainee
   // counts per course. When the request was created from a real Excel import
   // the row count matches the trainee list length; invalid rows are unknown.
-  const totalRows = detail.requestCourses.reduce((sum, rc) => sum + rc.trainees.length, 0);
+  const totalRows = detail.requestCourses.reduce((sum, rc) => sum + getRequestCourseTrainees(rc).length, 0);
   const hasImportData = totalRows > 0;
 
   return (
@@ -1038,7 +1278,7 @@ function ImportSection({ detail }: { detail: RequestDetail }) {
             </h4>
             <div className="space-y-2">
               {detail.requestCourses.map((rc) => {
-                const count = rc.trainees.length;
+                const count = getRequestCourseTrainees(rc).length;
                 const tooFew = count < (rc.minTrainees ?? 10);
                 const tooMany = count > (rc.maxTrainees ?? 20);
                 const ok = !tooFew && !tooMany;
@@ -1165,11 +1405,11 @@ function ActionsSection({ detail, formData, setField, canEdit, canCreateSession,
   // create a session with no trainees and no course context).
   const hasNoCourses = detail.requestCourses.length === 0;
   const overCapacityCourses = detail.requestCourses.filter((rc) => {
-    const count = rc.trainees.length;
+    const count = getRequestCourseTrainees(rc).length;
     return count > (rc.maxTrainees ?? 20);
   });
   const underMinimumCourses = detail.requestCourses.filter((rc) => {
-    const count = rc.trainees.length;
+    const count = getRequestCourseTrainees(rc).length;
     return count < (rc.minTrainees ?? 10);
   });
   // Hard block: only the zero-courses case. The Approve button is disabled
@@ -1207,7 +1447,7 @@ function ActionsSection({ detail, formData, setField, canEdit, canCreateSession,
               <div className="font-medium text-info">{t("requests.review.approvalCapacityAdvisory")}</div>
               <ul className="list-disc list-inside space-y-0.5">
                 {overCapacityCourses.map((rc) => {
-                  const count = rc.trainees.length;
+                  const count = getRequestCourseTrainees(rc).length;
                   const cap = rc.maxTrainees ?? 20;
                   const sessions = Math.ceil(count / cap);
                   return (
@@ -1225,7 +1465,7 @@ function ActionsSection({ detail, formData, setField, canEdit, canCreateSession,
                   <li key={rc.id}>
                     {t("requests.review.approvalUnderMinimum", {
                       course: rc.course.title ?? rc.course.code ?? "—",
-                      count: rc.trainees.length,
+                      count: getRequestCourseTrainees(rc).length,
                       min: rc.minTrainees ?? 10,
                     })}
                   </li>

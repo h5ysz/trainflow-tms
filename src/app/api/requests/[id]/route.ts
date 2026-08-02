@@ -17,19 +17,21 @@ export const GET = withModuleAction("requests", "view", async ({ params, user })
         where: { deletedAt: null },
         include: {
           course: { select: { id: true, title: true, code: true, refNumber: true } },
-          trainees: {
+          trainingRequestCourseTrainee: {
             where: { deletedAt: null },
             include: {
               trainee: {
                 select: {
                   id: true, refNumber: true, fullName: true, nationalId: true,
                   nationality: true, jobTitle: true, mobile: true, email: true,
+                  idAttachmentUrl: true,
+                  documents: true,
                   company: { select: { id: true, name: true } },
                 },
               },
             },
           },
-          _count: { select: { sessions: true } },
+          _count: { select: { trainingSession: true } },
         },
       },
       sessions: {

@@ -990,6 +990,11 @@ model Trainee {
   status                       String                         @default("ACTIVE")
   notes                        String?
   idAttachmentUrl              String?
+  // ── Multi-document support (Iqama, ID, Passport, Certificate, Medical, Other) ──
+  // JSON-encoded array of { url, filename, type, uploadedAt, uploadedById }.
+  // Kept as a single String column on SQLite to avoid a separate join table
+  // while still supporting arbitrary document types per trainee.
+  documents                    String?
   dateOfBirth                  DateTime?
   idExpiry                     DateTime?
   createdAt                    DateTime                       @default(now())
