@@ -102,7 +102,10 @@ export const COLUMN_ALIASES: ColumnAlias[] = [
   },
   {
     field: "companyName",
-    required: true,
+    // NOT required at the Excel-column level: contractors usually select the
+    // company in the parent request form, not per-row in the Excel sheet.
+    // The validation in buildPreview() only enforces name + nationalId.
+    required: false,
     aliases: [
       "اسم الشركة",
       "الشركة",
@@ -180,7 +183,10 @@ export const COLUMN_ALIASES: ColumnAlias[] = [
   },
   {
     field: "courseTitle",
-    required: true,
+    // NOT required at the Excel-column level: the course is selected in the
+    // parent request form. Many real Excel sheets don't have a course column
+    // at all (the whole sheet is for one course).
+    required: false,
     aliases: [
       "اسم الدورة",
       "الدورة",
@@ -207,16 +213,102 @@ export const COLUMN_ALIASES: ColumnAlias[] = [
   },
 ];
 
-/** Normalize a header string for matching: lowercase, trim, collapse spaces. */
+/** Normalize a header string for matching:
+ *  - lowercase
+ *  - replace newlines/tabs with spaces
+ *  - trim
+ *  - collapse multiple spaces
+ *  - strip parentheses and slash/backslash (so "Name (English)" → "name english",
+ *    "الإقامة/الهوية" → "اقامة الهوية")
+ *  - strip Arabic diacritics (tashkeel) for more lenient matching
+ */
 function normalizeHeader(h: string): string {
   return h
     .toLowerCase()
+    .replace(/[\r\n\t]+/g, " ")          // newlines/tabs → space (bilingual headers like "الاسم\nName")
     .trim()
     .replace(/\s+/g, " ")
     .replace(/[()]/g, "")
     .replace(/[/\\]/g, " ")
+    .replace(/[\u064B-\u065F\u0670]/g, "") // Arabic diacritics
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * Auto-detect which row in the first `maxScan` rows is the header row.
+ *
+ * Real-world Saudi training-registration sheets often have 1-5 rows of
+ * instructions (long Arabic + English text in merged cells) BEFORE the
+ * actual column headers. Hardcoding row 1 as headers causes every column
+ * to be "missing" and every row to be invalid.
+ *
+ * Strategy: scan the first `maxScan` rows, run resolveColumnMapping on each,
+ * and pick the row with the highest number of matched fields. Ties are
+ * broken by the lowest row number (earliest header wins).
+ *
+ * Returns { headerRowNumber, headers } where headerRowNumber is 1-indexed
+ * (Excel's row numbering). If no row matches any alias, returns row 1 as
+ * a safe fallback so the UI can still show "missing required columns".
+ */
+export interface HeaderDetectionResult {
+  headerRowNumber: number;        // 1-indexed
+  headers: string[];              // raw header strings from that row
+  matchCount: number;             // how many fields were matched
+}
+
+export function detectHeaderRow(
+  getRow: (rowNumber: number) => { getCell: (colIndex: number) => unknown; cellCount: number } | null,
+  maxScan = 10
+): HeaderDetectionResult {
+  let best: { rowNumber: number; headers: string[]; matchCount: number } = {
+    rowNumber: 1,
+    headers: [],
+    matchCount: -1,
+  };
+
+  for (let r = 1; r <= maxScan; r++) {
+    const row = getRow(r);
+    if (!row) break;
+    const headers: string[] = [];
+    let nonEmptyCount = 0;
+    let maxCellLen = 0;
+    let totalCellLen = 0;
+    for (let c = 1; c <= Math.max(row.cellCount, 1); c++) {
+      const raw = cellToString(row.getCell(c)) ?? "";
+      headers.push(raw);
+      if (raw.trim() !== "") nonEmptyCount++;
+      maxCellLen = Math.max(maxCellLen, raw.length);
+      totalCellLen += raw.length;
+    }
+    // Skip rows with only ONE non-empty cell — these are typically
+    // instruction banners spanning merged cells.
+    if (nonEmptyCount < 2) continue;
+    // Skip rows where any single cell is very long (>80 chars) — these are
+    // instruction paragraphs, not column headers. Real header cells are
+    // short labels like "Name", "الاسم", "National ID".
+    if (maxCellLen > 80) continue;
+    // Skip rows where the average cell length is >40 chars — even if no
+    // single cell is huge, a row full of medium-length instructional text
+    // is not a header row.
+    if (nonEmptyCount > 0 && totalCellLen / nonEmptyCount > 40) continue;
+
+    // Count how many fields this row would match.
+    const mapping = resolveColumnMapping(headers);
+    const matchCount = Object.keys(mapping.mapping).length;
+    if (matchCount > best.matchCount) {
+      best = { rowNumber: r, headers, matchCount };
+    }
+    // If we found a row that matches 3+ fields, that's almost certainly
+    // the header row — stop scanning.
+    if (matchCount >= 3) break;
+  }
+
+  return {
+    headerRowNumber: best.rowNumber,
+    headers: best.headers,
+    matchCount: best.matchCount,
+  };
 }
 
 /**
@@ -248,6 +340,7 @@ export function resolveColumnMapping(headers: string[]): ColumnMappingResult {
     normalized: normalizeHeader(cellToString(h) ?? ""),
   }));
 
+  // Pass 1: exact normalized match (strictest — highest confidence).
   for (const aliasEntry of COLUMN_ALIASES) {
     let found = false;
     const usedIndices = new Set(Object.values(mapping));
@@ -270,6 +363,55 @@ export function resolveColumnMapping(headers: string[]): ColumnMappingResult {
       });
     }
   }
+
+  // Pass 2: partial (contains) match for fields that didn't get an exact match.
+  // This catches headers like "الاسم باللغة الإنجليزية" (contains "الاسم") or
+  // "رقم بطاقة الأحوال / الإقامة" (contains "الاقامة" AND "الهوية" — but
+  // those are separate aliases so each will match independently).
+  //
+  // IMPORTANT: only allow HEADER to contain ALIAS (not the other way around).
+  // Allowing alias-to-contain-header would cause short headers like "م" (the
+  // Arabic sequence-number column) to match aliases like "الاسم" (which ends
+  // in "م") — a false positive. We also require the header to be at least 4
+  // chars and the alias to be at least 4 chars to avoid noise.
+  for (const aliasEntry of COLUMN_ALIASES) {
+    if (mapping[aliasEntry.field] !== undefined) continue; // already matched in pass 1
+    const usedIndices = new Set(Object.values(mapping));
+    for (const alias of aliasEntry.aliases) {
+      const normalizedAlias = normalizeHeader(alias);
+      // Skip very short aliases (e.g., "id", "م") — they'd match too many headers.
+      if (normalizedAlias.length < 4) continue;
+      const match = normalizedHeaders.find((h) => {
+        if (usedIndices.has(h.index)) return false;
+        if (h.normalized.length < 4) return false; // skip very short headers too
+        if (h.normalized.length === 0) return false;
+        // Only allow HEADER to contain ALIAS. The reverse (alias contains
+        // header) causes false positives as described above.
+        return h.normalized.includes(normalizedAlias);
+      });
+      if (match) {
+        mapping[aliasEntry.field] = match.index;
+        matchedHeaders[aliasEntry.field] = match.raw;
+        break;
+      }
+    }
+    // If still not matched and the field is required, it's already in
+    // missingRequired from pass 1 — no need to re-add.
+  }
+
+  // Recompute missingRequired: a field is only "missing required" if it's
+  // required AND has no mapping after both passes.
+  const finalMissing: typeof missingRequired = [];
+  for (const aliasEntry of COLUMN_ALIASES) {
+    if (aliasEntry.required && mapping[aliasEntry.field] === undefined) {
+      finalMissing.push({
+        field: aliasEntry.field,
+        canonicalAlias: aliasEntry.aliases[0],
+      });
+    }
+  }
+  missingRequired.length = 0;
+  missingRequired.push(...finalMissing);
 
   // Identify unmatched headers (for informational display)
   const matchedIndices = new Set(Object.values(mapping));
@@ -434,17 +576,26 @@ export function buildPreview(
     const errors: string[] = [];
 
     if (requiredFieldsMissing) {
-      // If required columns are missing entirely, flag every row
-      errors.push("Required column(s) missing from file");
+      // If required columns are missing entirely, flag every row — but only
+      // if the row has ANY data. Completely empty rows are skipped silently
+      // below (see the empty-row filter in the route).
+      if (!data.name && !data.nationalId && !data.jobTitle && !data.nationality && !data.companyName) {
+        // Completely empty row — don't add an error, it'll be filtered out.
+      } else {
+        errors.push("MISSING_REQUIRED_COLUMNS");
+      }
     } else {
-      if (!data.name) errors.push("Missing trainee name");
-      if (!data.nationalId) errors.push("Missing national ID / Iqama");
-      if (!data.companyName) errors.push("Missing company name");
-      if (!data.courseTitle) errors.push("Missing course title");
+      // Only validate the trainee-essential fields: name + nationalId.
+      // Company name and course title are NOT required on every Excel row
+      // because they're often set at the request level (the parent form),
+      // not per-trainee. This matches the contractor workflow where one
+      // Excel sheet = one company + one course.
+      if (!data.name) errors.push("MISSING_NAME");
+      if (!data.nationalId) errors.push("MISSING_NATIONAL_ID");
     }
 
     if (duplicateRowSet.has(rowNumber)) {
-      errors.push("Duplicate national ID in file");
+      errors.push("DUPLICATE_NATIONAL_ID");
     }
 
     return {

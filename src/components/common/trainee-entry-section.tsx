@@ -101,6 +101,29 @@ export interface ImportPreview {
   missingRequiredColumns: { field: string; canonicalAlias: string }[];
   rows: ImportPreviewRow[];
   duplicateNationalIds: { nationalId: string; rows: number[] }[];
+  // 1-indexed row number where the header row was detected. When the Excel
+  // file has instructional rows above the headers, this will be > 1.
+  detectedHeaderRow?: number;
+}
+
+// Translate row-error codes returned by the API into the current locale.
+// The API returns stable machine codes (MISSING_NAME, DUPLICATE_NATIONAL_ID,
+// etc.) so the frontend can localize them — instead of returning pre-baked
+// English strings that would leak into the Arabic UI.
+function translateRowError(code: string, t: (k: string) => string): string {
+  switch (code) {
+    case "MISSING_REQUIRED_COLUMNS":
+      return t("requests.import.errMissingRequiredColumns");
+    case "MISSING_NAME":
+      return t("requests.import.errMissingName");
+    case "MISSING_NATIONAL_ID":
+      return t("requests.import.errMissingNationalId");
+    case "DUPLICATE_NATIONAL_ID":
+      return t("requests.import.errDuplicateId");
+    default:
+      // Unknown code — show it verbatim so the user sees something.
+      return code;
+  }
 }
 
 interface UploadIdResponse {
@@ -1080,11 +1103,13 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
       <Dialog open={previewOpen} onOpenChange={(o) => { setPreviewOpen(o); if (!o) { setPreview(null); setExcelPendingFile(null); setPreviewFullscreen(false); } }}>
         <DialogContent
           className={cn(
-            "max-h-[90vh] overflow-hidden p-0 gap-0",
-            previewFullscreen ? "max-w-[95vw] w-[95vw]" : "max-w-4xl"
+            "p-0 gap-0",
+            previewFullscreen
+              ? "max-w-[98vw] w-[98vw] max-h-[96vh] h-[96vh]"
+              : "max-w-4xl max-h-[90vh]"
           )}
         >
-          <DialogHeader className="p-5 border-b">
+          <DialogHeader className="p-5 border-b shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <FileSpreadsheet className="h-5 w-5 text-primary" />
               {t("requests.import.preview")}
@@ -1094,18 +1119,21 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
                 size="sm"
                 className="ms-auto h-7 px-2"
                 onClick={() => setPreviewFullscreen((v) => !v)}
-                title={previewFullscreen ? "Restore" : "Maximize"}
+                title={previewFullscreen ? t("requests.fullscreenExit") : t("requests.fullscreen")}
               >
                 {previewFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-                {previewFullscreen ? (t("requests.fullscreenExit") || "Restore") : (t("requests.fullscreen") || "Maximize")}
+                {previewFullscreen ? t("requests.fullscreenExit") : t("requests.fullscreen")}
               </Button>
             </DialogTitle>
             <DialogDescription>
-              {excelPendingFile?.name ?? "Spreadsheet"} — review the detected column mapping and sample rows before importing.
+              {excelPendingFile?.name ?? t("requests.import.spreadsheet")} — {t("requests.import.reviewMapping")}
             </DialogDescription>
           </DialogHeader>
 
-          <div className={cn("overflow-y-auto p-5 space-y-4", previewFullscreen ? "max-h-[80vh]" : "max-h-[60vh]")}>
+          <div className={cn(
+            "p-5 space-y-4 overflow-y-auto",
+            previewFullscreen ? "flex-1 min-h-0" : "max-h-[60vh]"
+          )}>
             {previewLoading ? (
               <div className="flex flex-col items-center justify-center py-12 gap-2">
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -1129,9 +1157,23 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
                 ) : (
                   <Alert variant="default">
                     <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                    <AlertTitle>All required columns matched</AlertTitle>
+                    <AlertTitle>{t("requests.import.allColumnsMatched")}</AlertTitle>
                     <AlertDescription>
-                      {preview.matchedColumns.length} of {preview.matchedColumns.length + preview.unmatchedHeaders.length} columns recognized.
+                      {t("requests.import.columnsRecognized", {
+                        matched: preview.matchedColumns.length,
+                        total: preview.matchedColumns.length + preview.unmatchedHeaders.length,
+                      })}
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {/* Detected header row notice */}
+                {preview.detectedHeaderRow && preview.detectedHeaderRow > 1 && (
+                  <Alert>
+                    <CheckCircle2 className="h-4 w-4 text-primary" />
+                    <AlertTitle>{t("requests.import.headerDetected")}</AlertTitle>
+                    <AlertDescription>
+                      {t("requests.import.headerDetectedDesc", { row: preview.detectedHeaderRow })}
                     </AlertDescription>
                   </Alert>
                 )}
@@ -1151,17 +1193,16 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Field</TableHead>
-                          <TableHead>Column #</TableHead>
-                          <TableHead>Header (as uploaded)</TableHead>
-                                                  </TableRow>
+                          <TableHead>{t("requests.import.field")}</TableHead>
+                          <TableHead>{t("requests.import.columnHeader")}</TableHead>
+                        </TableRow>
                       </TableHeader>
                       <TableBody>
                         {preview.matchedColumns.map((c) => (
                           <TableRow key={c.field + "-" + c.header}>
-                            <TableCell className="font-mono text-xs">{c.field}</TableCell>
-                                                        <TableCell className="text-xs">{c.header}</TableCell>
-                                                      </TableRow>
+                            <TableCell className="font-mono text-xs">{t(`requests.import.fields.${c.field}` as never) || c.field}</TableCell>
+                            <TableCell className="text-xs whitespace-pre-line">{c.header}</TableCell>
+                          </TableRow>
                         ))}
                       </TableBody>
                     </Table>
@@ -1174,7 +1215,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
                     <div className="text-xs font-semibold mb-2">{t("requests.import.unmatchedHeaders")}</div>
                     <div className="flex flex-wrap gap-1">
                       {preview.unmatchedHeaders.map((h, i) => (
-                        <Badge key={`${h}-${i}`} variant="outline" className="text-xs">{h}</Badge>
+                        <Badge key={`${h}-${i}`} variant="outline" className="text-xs whitespace-pre-line">{h}</Badge>
                       ))}
                     </div>
                   </div>
@@ -1196,13 +1237,16 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
                 )}
 
                 {/* Sample rows */}
-                <div>
+                <div className={cn(previewFullscreen && "flex flex-col min-h-0 flex-1")}>
                   <div className="text-xs font-semibold mb-2">{t("requests.import.rowPreview")}</div>
-                  <div className="rounded-md border overflow-x-auto max-h-72 overflow-y-auto">
+                  <div className={cn(
+                    "rounded-md border overflow-x-auto overflow-y-auto",
+                    previewFullscreen ? "flex-1 min-h-0" : "max-h-72"
+                  )}>
                     <Table>
                       <TableHeader className="sticky top-0 bg-background">
                         <TableRow>
-                          <TableHead className="w-16">Row</TableHead>
+                          <TableHead className="w-16">{t("requests.import.rowNum")}</TableHead>
                           <TableHead>{t("requests.traineeName")}</TableHead>
                           <TableHead>{t("requests.nationalId")}</TableHead>
                           <TableHead>{t("requests.import.status")}</TableHead>
@@ -1216,8 +1260,8 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
                             <TableCell className="text-xs font-mono">{r.nationalId || "—"}</TableCell>
                             <TableCell>
                               {r.valid
-                                ? <Badge className="text-emerald-600 border-emerald-200 bg-emerald-50" variant="outline">OK</Badge>
-                                : <Badge variant="destructive" className="text-xs">{r.errors.join("; ")}</Badge>}
+                                ? <Badge className="text-emerald-600 border-emerald-200 bg-emerald-50" variant="outline">{t("requests.import.ok")}</Badge>
+                                : <Badge variant="destructive" className="text-xs">{r.errors.map((e) => translateRowError(e, t)).join(" · ")}</Badge>}
                             </TableCell>
                           </TableRow>
                         ))}
