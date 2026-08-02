@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   CalendarDays, ArrowLeft, ArrowRight, Users, Play, Pause, RotateCcw, CheckCircle2,
   GraduationCap, QrCode, BadgeCheck, Plus, Trash2, AlertCircle, Loader2, Building2,
-  RefreshCw, ArrowRightLeft,
+  RefreshCw, ArrowRightLeft, ClipboardCheck,
 } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
@@ -114,12 +114,24 @@ export function SessionDetailRoute() {
   const [replaceReason, setReplaceReason] = useState("");
 
   // ── Move Trainee state ──
-  // moveTarget holds the enrollment(s) being moved. When multiple rows are
-  // selected, moveTarget is set to a sentinel and selectedEnrollments is used.
   const [moveTarget, setMoveTarget] = useState<Enrollment | null>(null);
   const [selectedEnrollmentIds, setSelectedEnrollmentIds] = useState<Set<string>>(new Set());
   const [targetSessionId, setTargetSessionId] = useState("");
   const [availableSessions, setAvailableSessions] = useState<{ id: string; refNumber: string; title: string }[]>([]);
+
+  // ── Retest state ──
+  const [retestTarget, setRetestTarget] = useState<Enrollment | null>(null);
+  const [retestSessions, setRetestSessions] = useState<{ id: string; refNumber: string; title: string }[]>([]);
+  const [retestForm, setRetestForm] = useState({
+    retestSessionId: "",
+    retestTrainerId: "",
+    retestDate: "",
+    retestShift: "MORNING",
+    retestLocation: "",
+    retestVenue: "",
+    reason: "",
+    moveTrainee: false,
+  });
 
   const Back = dir === "rtl" ? ArrowRight : ArrowLeft;
 
@@ -169,9 +181,9 @@ export function SessionDetailRoute() {
     }
   }, [trainers.length]);
 
-  // Load available sessions (same course) when the Move dialog opens.
+  // Load available sessions (same course) when the Move OR Retest dialog opens.
   useEffect(() => {
-    if (!moveTarget && selectedEnrollmentIds.size === 0) return;
+    if (!moveTarget && selectedEnrollmentIds.size === 0 && !retestTarget) return;
     if (availableSessions.length > 0) return;
     api.getList<{ id: string; refNumber: string; title: string }>("/sessions", { pageSize: 100 })
       .then((r) => setAvailableSessions(
@@ -180,7 +192,7 @@ export function SessionDetailRoute() {
           .map((s) => ({ id: s.id, refNumber: s.refNumber, title: s.title }))
       ))
       .catch(() => {});
-  }, [moveTarget, selectedEnrollmentIds, availableSessions.length, sessionId]);
+  }, [moveTarget, selectedEnrollmentIds, retestTarget, availableSessions.length, sessionId]);
 
   // A detail route with no subject: send the user back to the list.
   if (!sessionId) {
@@ -289,6 +301,45 @@ export function SessionDetailRoute() {
       await load();
     });
 
+  // ── Retest: create + schedule a retest for a failed trainee.
+  // This is a two-step process:
+  //   1. POST /api/retests — creates the retest request (status=PENDING_RETEST)
+  //   2. POST /api/retests/[id] with action=schedule — schedules it
+  // Both steps happen in a single UI action for the user's convenience.
+  const scheduleRetest = () =>
+    run("retest", async () => {
+      if (!retestTarget) return;
+      // Step 1: create the retest request
+      const created = await api.post<{ id: string; refNumber: string }>("/api/retests", {
+        enrollmentId: retestTarget.id,
+        sessionId,
+        reason: retestForm.reason || undefined,
+      });
+      // Step 2: schedule it
+      await api.post(`/api/retests/${created.id}`, {
+        action: "schedule",
+        retestSessionId: retestForm.retestSessionId || undefined,
+        retestTrainerId: retestForm.retestTrainerId || undefined,
+        retestDate: retestForm.retestDate || undefined,
+        retestShift: retestForm.retestShift || undefined,
+        retestLocation: retestForm.retestLocation || undefined,
+        retestVenue: retestForm.retestVenue || undefined,
+        reason: retestForm.reason || undefined,
+        moveTrainee: retestForm.moveTrainee,
+      });
+      toast({
+        title: t("misc.success"),
+        description: t("session.retestScheduled") || `Retest ${created.refNumber} scheduled`,
+      });
+      setRetestTarget(null);
+      setRetestForm({
+        retestSessionId: "", retestTrainerId: "", retestDate: "",
+        retestShift: "MORNING", retestLocation: "", retestVenue: "",
+        reason: "", moveTrainee: false,
+      });
+      await load();
+    });
+
   const activateQr = () =>
     run("qr", async () => {
       await api.post(`/sessions/${sessionId}/qr-activate`, {});
@@ -364,6 +415,23 @@ export function SessionDetailRoute() {
               title={t("session.moveTrainee") || "Move to Another Session"}
             >
               <ArrowRightLeft className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => {
+                setRetestTarget(row);
+                setRetestForm({
+                  retestSessionId: "", retestTrainerId: "", retestDate: "",
+                  retestShift: "MORNING", retestLocation: "", retestVenue: "",
+                  reason: "", moveTrainee: false,
+                });
+              }}
+              title={t("session.retest") || "Schedule Retest"}
+              disabled={row.certificateStatus === "ISSUED" || row.finalTestStatus !== "FAILED"}
+            >
+              <ClipboardCheck className="h-3.5 w-3.5" />
             </Button>
             <Button
               variant="ghost"
@@ -662,6 +730,101 @@ export function SessionDetailRoute() {
               </SelectContent>
             </Select>
           </Field>
+        </div>
+      </FormDialog>
+
+      {/* ── Retest Dialog ── */}
+      <FormDialog
+        open={retestTarget !== null}
+        onOpenChange={(o) => { if (!o) { setRetestTarget(null); setRetestForm({ retestSessionId: "", retestTrainerId: "", retestDate: "", retestShift: "MORNING", retestLocation: "", retestVenue: "", reason: "", moveTrainee: false }); } }}
+        title={t("session.retest") || "Schedule Retest"}
+        description={`${t("session.retestFor") || "Retest for"}: ${retestTarget?.trainee?.fullName ?? "—"}`}
+        icon={ClipboardCheck}
+        size="lg"
+        onSubmit={scheduleRetest}
+        isSubmitting={busy === "retest"}
+      >
+        <div className="space-y-4">
+          <div className="rounded-md border bg-amber-50 dark:bg-amber-950/20 p-3 text-xs text-amber-700 dark:text-amber-400">
+            {t("session.retestHint") || "This trainee failed the final assessment. Schedule a retest — you can keep them in this session, move them to another session, change the trainer, date, time, or room."}
+          </div>
+          <FormGrid>
+            <Field label={t("session.retestSession") || "Retest Session (leave empty = same session)"}>
+              <Select
+                value={retestForm.retestSessionId}
+                onValueChange={(v) => setRetestForm((f) => ({ ...f, retestSessionId: v }))}
+              >
+                <SelectTrigger><SelectValue placeholder={t("session.sameSession") || "Same session"} /></SelectTrigger>
+                <SelectContent>
+                  {availableSessions.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.refNumber} — {s.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label={t("sessions.trainer") || "Trainer"}>
+              <Select
+                value={retestForm.retestTrainerId}
+                onValueChange={(v) => setRetestForm((f) => ({ ...f, retestTrainerId: v }))}
+              >
+                <SelectTrigger><SelectValue placeholder={t("session.sameTrainer") || "Same trainer"} /></SelectTrigger>
+                <SelectContent>
+                  {trainers.map((tr) => <SelectItem key={tr.id} value={tr.id}>{tr.fullName}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label={t("session.retestDate") || "Retest Date"}>
+              <Input
+                type="datetime-local"
+                value={retestForm.retestDate}
+                onChange={(e) => setRetestForm((f) => ({ ...f, retestDate: e.target.value }))}
+              />
+            </Field>
+            <Field label={t("sessions.shift") || "Shift"}>
+              <Select
+                value={retestForm.retestShift}
+                onValueChange={(v) => setRetestForm((f) => ({ ...f, retestShift: v }))}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MORNING">{t("sessions.shift.MORNING") || "Morning"}</SelectItem>
+                  <SelectItem value="EVENING">{t("sessions.shift.EVENING") || "Evening"}</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label={t("sessions.location") || "Location"}>
+              <Input
+                value={retestForm.retestLocation}
+                onChange={(e) => setRetestForm((f) => ({ ...f, retestLocation: e.target.value }))}
+                placeholder={t("sessions.location") || "Location"}
+              />
+            </Field>
+            <Field label={t("sessions.venue") || "Venue / Room"}>
+              <Input
+                value={retestForm.retestVenue}
+                onChange={(e) => setRetestForm((f) => ({ ...f, retestVenue: e.target.value }))}
+                placeholder={t("sessions.venue") || "Hall A"}
+              />
+            </Field>
+          </FormGrid>
+          <Field label={t("session.reason") || "Reason (optional)"}>
+            <Input
+              value={retestForm.reason}
+              onChange={(e) => setRetestForm((f) => ({ ...f, reason: e.target.value }))}
+              placeholder={t("session.retestReasonPlaceholder") || "e.g. Trainee requested retest"}
+            />
+          </Field>
+          {retestForm.retestSessionId && (
+            <label className="flex items-center gap-2 text-xs cursor-pointer">
+              <input
+                type="checkbox"
+                checked={retestForm.moveTrainee}
+                onChange={(e) => setRetestForm((f) => ({ ...f, moveTrainee: e.target.checked }))}
+                className="rounded"
+              />
+              {t("session.moveTraineeToRetestSession") || "Move trainee to the retest session"}
+            </label>
+          )}
         </div>
       </FormDialog>
     </div>

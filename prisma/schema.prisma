@@ -1240,6 +1240,51 @@ model TrainingSession {
   @@index([status])
 }
 
+// ── Retest Management ────────────────────────────────────────────────────
+// Tracks the full lifecycle of a retest when a trainee fails the final
+// assessment. Linked to the original enrollment (NOT a new request) so the
+// trainee's history stays in one place.
+model RetestRequest {
+  id                  String   @id
+  refNumber           String   @unique
+  enrollmentId        String
+  sessionId           String
+  courseId            String
+  traineeName         String
+  traineeIdNational   String?
+  companyId           String?
+  // The session where the retest will take place. Can be the same session
+  // (retest in-place) or a different one (moved to another session).
+  retestSessionId     String?
+  retestTrainerId     String?
+  retestDate          DateTime?
+  retestShift         String?
+  retestLocation      String?
+  retestVenue         String?
+  // PENDING_RETEST → SCHEDULED → RESCHEDULED → COMPLETED | CANCELLED
+  status              String   @default("PENDING_RETEST")
+  // The exam attempt that triggered this retest (the failed one).
+  failedAttemptId     String?
+  // The exam attempt created for this retest (the new one).
+  retestAttemptId     String?
+  reason              String?
+  scheduledBy         String?
+  scheduledAt         DateTime?
+  cancelledBy         String?
+  cancelledAt         DateTime?
+  cancellationReason  String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime
+  createdBy           String?
+  updatedBy           String?
+  deletedAt           DateTime?
+
+  @@index([enrollmentId])
+  @@index([sessionId])
+  @@index([status])
+  @@index([companyId])
+}
+
 model User {
   id                  String         @id
   email               String         @unique
