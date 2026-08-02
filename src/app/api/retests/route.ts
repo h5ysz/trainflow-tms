@@ -1,10 +1,21 @@
 // /api/retests — list all retests + create a new retest request
 //
-// GET:  list retests (filterable by sessionId, enrollmentId, status, companyId)
-// POST: create a new retest request when a trainee fails the final assessment
+// GET:  list retests (filterable by sessionId, enrollmentId, status, companyId, retestType)
+// POST: create a new retest request — supports two types:
+//   - retestType: "TRAINER_OPPORTUNITY" → Trainer Immediate Opportunity
+//     (same session only, no contractor notification, no official retest)
+//   - retestType: "OFFICIAL" → Official Retest
+//     (full workflow with contractor notifications + scheduling)
 //
-// RBAC: requires `sessions.edit` permission (coordinators + trainers).
-// Contractors are blocked — they can only receive notifications.
+// Business rules:
+//   - TRAINER_OPPORTUNITY: max 1 per enrollment. Does NOT notify contractor.
+//   - OFFICIAL: max 1 per enrollment (after trainer opportunity is used).
+//     Notifies contractor "Assessment Failed" on creation.
+//   - If an OFFICIAL retest already exists for this enrollment, reject.
+//
+// RBAC:
+//   - TRAINER_OPPORTUNITY: Trainer + Coordinator (sessions.edit)
+//   - OFFICIAL: Trainer + Coordinator (sessions.edit)
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
@@ -24,6 +35,7 @@ export const GET = withModuleAction("sessions", "view", async ({ req, user }) =>
   if (q.filters.enrollmentId) where.enrollmentId = q.filters.enrollmentId;
   if (q.filters.status) where.status = q.filters.status;
   if (q.filters.companyId) where.companyId = q.filters.companyId;
+  if (q.filters.retestType) where.retestType = q.filters.retestType;
 
   // Contractors see only their own company's retests
   if (user.role === "CONTRACTOR" && user.companyId) {
@@ -47,11 +59,14 @@ export const GET = withModuleAction("sessions", "view", async ({ req, user }) =>
 
 export const POST = withModuleAction("sessions", "edit", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
-  const { enrollmentId, sessionId, failedAttemptId, reason } = body;
+  const { enrollmentId, sessionId, failedAttemptId, reason, retestType } = body;
 
   if (!enrollmentId || !sessionId) {
     return fail("enrollmentId and sessionId are required", 422, "VALIDATION_ERROR");
   }
+
+  const type = (retestType === "TRAINER_OPPORTUNITY" ? "TRAINER_OPPORTUNITY" : "OFFICIAL") as
+    "TRAINER_OPPORTUNITY" | "OFFICIAL";
 
   // Fetch the enrollment + session + course + trainee info
   const enrollment = await db.sessionEnrollment.findUnique({
@@ -97,20 +112,57 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, user }) =
     );
   }
 
-  // Check if there's already an active retest for this enrollment
-  const existingRetest = await db.retestRequest.findFirst({
+  // ── Check existing retests for this enrollment ──────────────────────────
+  const existingTrainerOpp = await db.retestRequest.findFirst({
     where: {
       enrollmentId,
-      status: { in: ["PENDING_RETEST", "SCHEDULED", "RESCHEDULED"] },
+      retestType: "TRAINER_OPPORTUNITY",
       deletedAt: null,
     },
   });
-  if (existingRetest) {
+  const existingOfficial = await db.retestRequest.findFirst({
+    where: {
+      enrollmentId,
+      retestType: "OFFICIAL",
+      status: { in: ["PENDING_RETEST", "SCHEDULED", "RESCHEDULED", "COMPLETED"] },
+      deletedAt: null,
+    },
+  });
+
+  if (type === "TRAINER_OPPORTUNITY" && existingTrainerOpp) {
     return fail(
-      `An active retest already exists for this enrollment (Ref: ${existingRetest.refNumber}). Cancel it before creating a new one.`,
+      "A trainer immediate opportunity has already been used for this enrollment. Only one is allowed.",
       422,
-      "RETEST_ALREADY_EXISTS",
-      { existingRetestRef: existingRetest.refNumber },
+      "TRAINER_OPPORTUNITY_ALREADY_USED",
+    );
+  }
+
+  if (type === "OFFICIAL" && existingOfficial) {
+    return fail(
+      `An official retest already exists for this enrollment (Ref: ${existingOfficial.refNumber}). Only one official retest is allowed.`,
+      422,
+      "OFFICIAL_RETEST_ALREADY_EXISTS",
+      { existingRetestRef: existingOfficial.refNumber },
+    );
+  }
+
+  // ── Official retest requires that the trainer opportunity was already used ──
+  // Business rule: Attempt #1 → Trainer Opportunity → Official Retest.
+  // The trainer opportunity must be exhausted before an official retest.
+  if (type === "OFFICIAL" && !existingTrainerOpp) {
+    return fail(
+      "Cannot create an official retest before the trainer immediate opportunity has been used. The trainer must first give the trainee an immediate opportunity in the same session.",
+      422,
+      "TRAINER_OPPORTUNITY_REQUIRED_FIRST",
+    );
+  }
+
+  // ── If the trainer opportunity was used and FAILED, allow official retest ──
+  if (type === "OFFICIAL" && existingTrainerOpp && existingTrainerOpp.passed === true) {
+    return fail(
+      "Cannot create an official retest: the trainee already passed the trainer immediate opportunity.",
+      422,
+      "ALREADY_PASSED",
     );
   }
 
@@ -127,17 +179,25 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, user }) =
       traineeName: trainee.fullName,
       traineeIdNational: trainee.nationalId,
       companyId: trainee.companyId,
-      status: "PENDING_RETEST",
+      retestType: type,
+      status: type === "TRAINER_OPPORTUNITY" ? "SCHEDULED" : "PENDING_RETEST",
       failedAttemptId: failedAttempt.id,
       reason: reason ?? null,
+      // For trainer opportunity, the retest happens in the SAME session —
+      // no scheduling fields are set (the trainer just gives the opportunity
+      // immediately during the current session).
+      scheduledBy: type === "TRAINER_OPPORTUNITY" ? user.id : null,
+      scheduledAt: type === "TRAINER_OPPORTUNITY" ? now : null,
       createdBy: user.id,
       updatedBy: user.id,
       updatedAt: now,
     },
   });
 
-  // Notify the contractor that the trainee failed
-  if (trainee.companyId) {
+  // ── Notifications ───────────────────────────────────────────────────────
+  // TRAINER_OPPORTUNITY: NO contractor notification (per business rules).
+  // OFFICIAL: notify contractor "Assessment Failed".
+  if (type === "OFFICIAL" && trainee.companyId) {
     await notifyContractors(
       {
         companyId: trainee.companyId,
@@ -157,11 +217,11 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, user }) =
     entity: "RETEST",
     entityId: retest.id,
     entityRef: retest.refNumber,
-    description: `Created retest request ${retest.refNumber} for ${trainee.fullName} (failed with ${failedAttempt.scorePercent}%)`,
-    descriptionAr: `تم إنشاء طلب إعادة اختبار ${retest.refNumber} للمتدرب ${trainee.fullName} (راسب بنسبة ${failedAttempt.scorePercent}%)`,
+    description: `${type === "TRAINER_OPPORTUNITY" ? "Trainer immediate opportunity" : "Official retest"} created for ${trainee.fullName} (failed with ${failedAttempt.scorePercent}%)`,
+    descriptionAr: `${type === "TRAINER_OPPORTUNITY" ? "فرصة المدرّب الفورية" : "إعادة الاختبار الرسمية"} للمتدرب ${trainee.fullName} (راسب بنسبة ${failedAttempt.scorePercent}%)`,
     req,
     metadata: {
-      action: "RETEST_CREATED",
+      action: type === "TRAINER_OPPORTUNITY" ? "TRAINER_OPPORTUNITY_USED" : "OFFICIAL_RETEST_CREATED",
       enrollmentId,
       sessionId,
       sessionRef: session.refNumber,

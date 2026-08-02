@@ -37,7 +37,7 @@ interface RetestNotificationContext {
  */
 export async function notifyContractors(
   ctx: RetestNotificationContext,
-  type: "FAILED_ASSESSMENT" | "RETEST_SCHEDULED" | "RETEST_RESCHEDULED" | "RETEST_CANCELLED" | "RETEST_PASSED",
+  type: "FAILED_ASSESSMENT" | "RETEST_SCHEDULED" | "RETEST_RESCHEDULED" | "RETEST_CANCELLED" | "RETEST_PASSED" | "RETEST_FAILED" | "TRAINING_REQUEST_CLOSED",
 ): Promise<void> {
   // Find all contractor users for this company.
   const contractors = await db.user.findMany({
@@ -74,7 +74,7 @@ export async function notifyContractors(
 }
 
 function buildNotificationContent(
-  type: "FAILED_ASSESSMENT" | "RETEST_SCHEDULED" | "RETEST_RESCHEDULED" | "RETEST_CANCELLED" | "RETEST_PASSED",
+  type: "FAILED_ASSESSMENT" | "RETEST_SCHEDULED" | "RETEST_RESCHEDULED" | "RETEST_CANCELLED" | "RETEST_PASSED" | "RETEST_FAILED" | "TRAINING_REQUEST_CLOSED",
   ctx: RetestNotificationContext,
 ): {
   title: string;
@@ -128,6 +128,22 @@ function buildNotificationContent(
         message: `Trainee ${ctx.traineeName}${coursePart} passed the retest. Certificate can now be issued.`,
         messageAr: `المتدرب ${ctx.traineeName}${coursePart} نجح في إعادة الاختبار. يمكن الآن إصدار الشهادة.`,
         notifType: "SUCCESS",
+      };
+    case "RETEST_FAILED":
+      return {
+        title: "Retest Failed — Training Request Closed",
+        titleAr: "رسوب في إعادة الاختبار — تم إغلاق طلب التدريب",
+        message: `Trainee ${ctx.traineeName}${coursePart} failed the official retest. The training request is now closed. A new training request and payment are required for any further attempts.`,
+        messageAr: `المتدرب ${ctx.traineeName}${coursePart} رسب في إعادة الاختبار الرسمي. تم إغلاق طلب التدريب. يلزم إنشاء طلب تدريب جديد ودفع رسوم جديدة لأي محاولات مستقبلية.`,
+        notifType: "ERROR",
+      };
+    case "TRAINING_REQUEST_CLOSED":
+      return {
+        title: "Training Request Closed",
+        titleAr: "تم إغلاق طلب التدريب",
+        message: `Training request for ${ctx.traineeName}${coursePart} has been closed due to retest failure. A new request is required for further training.`,
+        messageAr: `تم إغلاق طلب التدريب للمتدرب ${ctx.traineeName}${coursePart} بسبب رسوب إعادة الاختبار. يلزم إنشاء طلب جديد لمواصلة التدريب.`,
+        notifType: "ERROR",
       };
   }
 }

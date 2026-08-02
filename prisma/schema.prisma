@@ -1253,6 +1253,10 @@ model RetestRequest {
   traineeName         String
   traineeIdNational   String?
   companyId           String?
+  // Distinguishes between a Trainer Immediate Opportunity (same session,
+  // no notification, no official retest) and an Official Retest (full
+  // workflow with contractor notifications + scheduling).
+  retestType          String   @default("OFFICIAL")  // "TRAINER_OPPORTUNITY" | "OFFICIAL"
   // The session where the retest will take place. Can be the same session
   // (retest in-place) or a different one (moved to another session).
   retestSessionId     String?
@@ -1267,6 +1271,8 @@ model RetestRequest {
   failedAttemptId     String?
   // The exam attempt created for this retest (the new one).
   retestAttemptId     String?
+  // Result of the retest: null = not yet taken, true = passed, false = failed
+  passed              Boolean?
   reason              String?
   scheduledBy         String?
   scheduledAt         DateTime?
@@ -1283,6 +1289,7 @@ model RetestRequest {
   @@index([sessionId])
   @@index([status])
   @@index([companyId])
+  @@index([retestType])
 }
 
 model User {

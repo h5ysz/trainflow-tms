@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   CalendarDays, ArrowLeft, ArrowRight, Users, Play, Pause, RotateCcw, CheckCircle2,
   GraduationCap, QrCode, BadgeCheck, Plus, Trash2, AlertCircle, Loader2, Building2,
-  RefreshCw, ArrowRightLeft, ClipboardCheck,
+  RefreshCw, ArrowRightLeft, ClipboardCheck, Zap,
 } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
@@ -301,6 +301,25 @@ export function SessionDetailRoute() {
       await load();
     });
 
+  // ── Trainer Immediate Opportunity: gives the trainee ONE immediate
+  // additional chance in the SAME session. No scheduling, no notification,
+  // no official retest. Just creates a TRAINER_OPPORTUNITY retest record
+  // + a new exam attempt for the trainee to take immediately.
+  const giveTrainerOpportunity = (row: Enrollment) =>
+    run("opportunity", async () => {
+      await api.post("/api/retests", {
+        enrollmentId: row.id,
+        sessionId,
+        retestType: "TRAINER_OPPORTUNITY",
+        reason: "Trainer immediate opportunity",
+      });
+      toast({
+        title: t("misc.success"),
+        description: t("session.trainerOpportunityGiven") || "Trainer opportunity given — trainee can now retake the test immediately.",
+      });
+      await load();
+    });
+
   // ── Retest: create + schedule a retest for a failed trainee.
   // This is a two-step process:
   //   1. POST /api/retests — creates the retest request (status=PENDING_RETEST)
@@ -420,6 +439,16 @@ export function SessionDetailRoute() {
               variant="ghost"
               size="icon"
               className="h-8 w-8"
+              onClick={() => void giveTrainerOpportunity(row)}
+              title={t("session.trainerOpportunity") || "Trainer Immediate Opportunity"}
+              disabled={row.certificateStatus === "ISSUED" || row.finalTestStatus !== "FAILED" || busy === "opportunity"}
+            >
+              {busy === "opportunity" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
               onClick={() => {
                 setRetestTarget(row);
                 setRetestForm({
@@ -428,7 +457,7 @@ export function SessionDetailRoute() {
                   reason: "", moveTrainee: false,
                 });
               }}
-              title={t("session.retest") || "Schedule Retest"}
+              title={t("session.retest") || "Schedule Official Retest"}
               disabled={row.certificateStatus === "ISSUED" || row.finalTestStatus !== "FAILED"}
             >
               <ClipboardCheck className="h-3.5 w-3.5" />
@@ -766,12 +795,18 @@ export function SessionDetailRoute() {
               <Select
                 value={retestForm.retestTrainerId}
                 onValueChange={(v) => setRetestForm((f) => ({ ...f, retestTrainerId: v }))}
+                disabled={user?.role === "TRAINER"}
               >
                 <SelectTrigger><SelectValue placeholder={t("session.sameTrainer") || "Same trainer"} /></SelectTrigger>
                 <SelectContent>
                   {trainers.map((tr) => <SelectItem key={tr.id} value={tr.id}>{tr.fullName}</SelectItem>)}
                 </SelectContent>
               </Select>
+              {user?.role === "TRAINER" && (
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  {t("session.trainerChangeCoordinatorOnly") || "Only coordinators can change the trainer."}
+                </p>
+              )}
             </Field>
             <Field label={t("session.retestDate") || "Retest Date"}>
               <Input
