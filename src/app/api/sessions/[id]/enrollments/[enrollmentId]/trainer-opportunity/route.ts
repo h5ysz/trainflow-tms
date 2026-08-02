@@ -22,6 +22,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { recalcCertificateEligibility } from "@/lib/api/enrollment-sync";
 
 export const POST = withModuleAction("sessions", "edit", async ({ req, params, user }) => {
   const sessionId = params.id as string;
@@ -34,11 +35,15 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
   }
 
   // Fetch the enrollment + session (with trainerId for RBAC check)
+  // + trainee (for certificate eligibility lookup)
   const enrollment = await db.sessionEnrollment.findUnique({
     where: { id: enrollmentId },
     include: {
       trainingSession: {
         select: { id: true, refNumber: true, trainerId: true, status: true, lifecycleStatus: true },
+      },
+      trainee: {
+        select: { id: true, fullName: true, nationalId: true },
       },
     },
   });
@@ -108,6 +113,22 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
       updatedAt: now,
     },
   });
+
+  // ── If PASSED: recalculate certificate eligibility ──────────────────────
+  // When the trainee passes the trainer opportunity, their finalTestStatus
+  // is now PASSED — the same as if they passed the original final assessment.
+  // We must call recalcCertificateEligibility to check if all conditions
+  // are met (attendance + final test + evaluation) and update
+  // certificateStatus to ELIGIBLE so the certificate release workflow
+  // can proceed normally.
+  if (passed) {
+    await recalcCertificateEligibility({
+      sessionId,
+      traineeName: enrollment.trainee?.fullName ?? undefined,
+      traineeIdNational: enrollment.trainee?.nationalId ?? undefined,
+      userId: user.id,
+    });
+  }
 
   // ── Audit log (NO contractor notification per business rules) ───────────
   await audit({
