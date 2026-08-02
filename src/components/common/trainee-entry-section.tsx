@@ -1342,6 +1342,7 @@ function StatCard({
   onClick: () => void;
   onJump: (() => void) | null;
 }) {
+  const { t } = useI18n();
   const toneClass =
     tone === "success" ? "border-emerald-200 bg-emerald-50/50"
     : tone === "destructive" ? "border-destructive/30 bg-destructive/5"
@@ -1486,6 +1487,7 @@ function RowIdUpload({ onPick }: { onPick: (file: File) => void }) {
 }
 
 function RowIdReplace({ onPick }: { onPick: (file: File) => void }) {
+  const { t } = useI18n();
   const ref = React.useRef<HTMLInputElement | null>(null);
   return (
     <>
