@@ -18,8 +18,10 @@ export interface FormDialogProps {
   children: React.ReactNode;
   onSubmit?: () => void;
   submitLabel?: string;
-  size?: "sm" | "md" | "lg" | "xl";
+  size?: "sm" | "md" | "lg" | "xl" | "xxl";
   isSubmitting?: boolean;
+  /** Optional footer rendered on the LEFT of the standard Cancel/Save buttons. */
+  footerExtra?: React.ReactNode;
 }
 
 const SIZES: Record<NonNullable<FormDialogProps["size"]>, string> = {
@@ -27,13 +29,18 @@ const SIZES: Record<NonNullable<FormDialogProps["size"]>, string> = {
   md: "max-w-lg",
   lg: "max-w-2xl",
   xl: "max-w-4xl",
+  xxl: "max-w-6xl",
 };
 
 export function FormDialog({
   open, onOpenChange, title, description, icon: Icon, children,
-  onSubmit, submitLabel, size = "md", isSubmitting,
+  onSubmit, submitLabel, size = "md", isSubmitting, footerExtra,
 }: FormDialogProps) {
   const { t } = useI18n();
+
+  // For xxl size, the inner ScrollArea's max-h-[60vh] is too small (we want
+  // the trainee grid + additional docs to fit). Bump to 75vh.
+  const scrollAreaMaxH = size === "xxl" ? "max-h-[75vh]" : "max-h-[60vh]";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -50,20 +57,25 @@ export function FormDialog({
           {description && <DialogDescription className="text-xs">{description}</DialogDescription>}
         </DialogHeader>
 
-        <ScrollArea className="max-h-[60vh]">
+        <ScrollArea className={scrollAreaMaxH}>
           <div className="p-5">
             {children}
           </div>
         </ScrollArea>
 
-        {onSubmit && (
-          <DialogFooter className="p-4 border-t bg-muted/30">
-            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-              {t("action.cancel")}
-            </Button>
-            <Button onClick={onSubmit} disabled={isSubmitting}>
-              {isSubmitting ? t("misc.saving") : (submitLabel ?? t("action.save"))}
-            </Button>
+        {(onSubmit || footerExtra) && (
+          <DialogFooter className="p-4 border-t bg-muted/30 flex items-center justify-between gap-2">
+            <div className="flex-shrink-0">{footerExtra}</div>
+            <div className="flex items-center gap-2 ms-auto">
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+                {t("action.cancel")}
+              </Button>
+              {onSubmit && (
+                <Button onClick={onSubmit} disabled={isSubmitting}>
+                  {isSubmitting ? t("misc.saving") : (submitLabel ?? t("action.save"))}
+                </Button>
+              )}
+            </div>
           </DialogFooter>
         )}
       </DialogContent>

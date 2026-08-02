@@ -107,6 +107,13 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
     companyId, courseId, traineeCount, preferredDateFrom, preferredDateTo,
     preferredLocation, preferredLanguage, notes, priority,
     status: requestedStatus,
+    // ── New: trainee list (Manual/Copy-Paste/Excel import) ──
+    // Each item is the client-side TraineeEntry: { fullName, nationalId, nationality?, jobTitle?, documents? }
+    trainees,
+    // ── New: request-level additional documents metadata ──
+    // Each item is { url, filename, type, uploadedAt } — files were already
+    // POSTed to /api/requests/upload-doc by the time this runs.
+    additionalDocuments,
   } = body;
 
   // Contractors auto-create their own company's request
@@ -127,26 +134,125 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
 
   const refNumber = await nextRefNumber("TRAINING_REQUEST");
 
+  // Compute traineeCount from the trainees array if provided (overrides integer)
+  const submittedTrainees: Array<{
+    fullName: string;
+    nationalId: string;
+    nationality?: string | null;
+    jobTitle?: string | null;
+    mobile?: string | null;
+    email?: string | null;
+    documents?: unknown[];
+  }> = Array.isArray(trainees) ? trainees : [];
+  const effectiveTraineeCount = submittedTrainees.length > 0 ? submittedTrainees.length : (traineeCount ?? 1);
+
   const now = new Date();
   const request = await db.trainingRequest.create({
     data: {
+      id: crypto.randomUUID(),
       refNumber,
       companyId: finalCompanyId,
       courseId,
       requestedBy: user.id,
-      traineeCount: traineeCount ?? 1,
+      traineeCount: effectiveTraineeCount,
       preferredDateFrom: preferredDateFrom ? new Date(preferredDateFrom) : null,
       preferredDateTo: preferredDateTo ? new Date(preferredDateTo) : null,
       preferredLocation: preferredLocation ?? null,
       preferredLanguage: preferredLanguage ?? null,
       notes: notes ?? null,
+      // Persist additional request-level documents as JSON (or null if none).
+      documents: Array.isArray(additionalDocuments) && additionalDocuments.length > 0
+        ? JSON.stringify(additionalDocuments)
+        : null,
       status: initialStatus,
       priority: priority ?? "NORMAL",
       ...(initialStatus === "SUBMITTED" && { submittedAt: now }),
       createdBy: user.id,
       updatedBy: user.id,
+      updatedAt: now,
     },
   });
+
+  // ── Create the TrainingRequestCourse + Trainees ──
+  // Even when no trainees were provided we still create the course-in-request
+  // row — the existing review/approval UI expects at least one.
+  if (submittedTrainees.length > 0 || courseId) {
+    const rc = await db.trainingRequestCourse.create({
+      data: {
+        id: crypto.randomUUID(),
+        requestId: request.id,
+        courseId,
+        traineeCount: submittedTrainees.length,
+        createdBy: user.id,
+        updatedBy: user.id,
+        updatedAt: now,
+      },
+    });
+
+    for (const t of submittedTrainees) {
+      // Basic validation — skip empty rows silently (client should already filter).
+      if (!t.fullName || !t.nationalId) continue;
+
+      // Reuse an existing Trainee row for the same company + nationalId when
+      // possible (common case when re-importing the same Excel sheet). This
+      // preserves historical document attachments across re-submissions.
+      const existing = await db.trainee.findFirst({
+        where: { companyId: finalCompanyId, nationalId: t.nationalId, deletedAt: null },
+      });
+      const trainee = existing
+        ? await db.trainee.update({
+            where: { id: existing.id },
+            data: {
+              fullName: t.fullName,
+              nationality: t.nationality ?? existing.nationality,
+              jobTitle: t.jobTitle ?? existing.jobTitle,
+              mobile: t.mobile ?? existing.mobile,
+              email: t.email ?? existing.email,
+              updatedAt: now,
+              updatedBy: user.id,
+              // Merge documents: keep existing ones, add any new ones from the
+              // payload that aren't already present (matched by url).
+              documents: JSON.stringify(mergeDocuments(
+                parseDocsSafe(existing.documents),
+                Array.isArray(t.documents) ? t.documents as never[] : [],
+              )),
+            },
+          })
+        : await db.trainee.create({
+            data: {
+              id: crypto.randomUUID(),
+              refNumber: await nextRefNumber("TRAINEE"),
+              fullName: t.fullName,
+              nationalId: t.nationalId,
+              nationality: t.nationality ?? null,
+              jobTitle: t.jobTitle ?? null,
+              mobile: t.mobile ?? null,
+              email: t.email ?? null,
+              companyId: finalCompanyId,
+              documents: Array.isArray(t.documents) && t.documents.length > 0
+                ? JSON.stringify(t.documents)
+                : null,
+              createdBy: user.id,
+              updatedBy: user.id,
+              updatedAt: now,
+            },
+          });
+
+      await db.trainingRequestCourseTrainee.create({
+        data: {
+          id: crypto.randomUUID(),
+          requestCourseId: rc.id,
+          traineeId: trainee.id,
+          createdBy: user.id,
+          updatedBy: user.id,
+          updatedAt: now,
+        },
+      }).catch(() => {
+        // Unique constraint violation: same trainee already linked to this course-in-request.
+        // Safe to ignore — the link already exists.
+      });
+    }
+  }
 
   await audit({
     user,
@@ -157,8 +263,36 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
     description: `Created training request ${request.refNumber} for ${company.name} - ${course.title}`,
     descriptionAr: `تم إنشاء طلب تدريب ${request.refNumber} لـ ${company.name} - ${course.title}`,
     req,
-    metadata: { initialStatus },
+    metadata: { initialStatus, traineeCount: effectiveTraineeCount, additionalDocs: Array.isArray(additionalDocuments) ? additionalDocuments.length : 0 },
   });
 
   return created(request);
 });
+
+// ── Helpers for the trainees[] merge logic ───────────────────────────────────
+
+function parseDocsSafe(raw: string | null | undefined): unknown[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function mergeDocuments(existing: unknown[], incoming: unknown[]): unknown[] {
+  if (incoming.length === 0) return existing;
+  const byUrl = new Map<string, unknown>();
+  for (const d of existing) {
+    if (d && typeof (d as { url?: string }).url === "string") {
+      byUrl.set((d as { url: string }).url, d);
+    }
+  }
+  for (const d of incoming) {
+    if (d && typeof (d as { url?: string }).url === "string") {
+      byUrl.set((d as { url: string }).url, d);
+    }
+  }
+  return Array.from(byUrl.values());
+}

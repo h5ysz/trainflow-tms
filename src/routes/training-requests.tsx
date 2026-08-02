@@ -6,6 +6,11 @@ import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
 import { FormDialog, Field, FormGrid } from "@/components/common/form-dialog";
 import { GenerateSessionsDialog } from "@/components/common/generate-sessions-dialog";
+import { TraineeEntrySection, type TraineeEntry } from "@/components/common/trainee-entry-section";
+import {
+  AdditionalDocumentsSection,
+  type AdditionalDocument,
+} from "@/components/common/additional-documents-section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -114,6 +119,15 @@ export function TrainingRequestsRoute() {
     preferredLanguage: "en",
     status: "DRAFT",
   });
+  // ── New: trainee list (Manual/Copy-Paste/Excel import) ──
+  // Replaces the old fixed `traineeCount` integer — the count is now derived
+  // from the array length at submission time.
+  const [trainees, setTrainees] = useState<TraineeEntry[]>([]);
+  // ── New: request-level additional documents ──
+  // (medical, vaccination, work permit, company letter, etc.) — files are
+  // POSTed to /api/requests/upload-doc, the resulting metadata is collected
+  // here and submitted alongside the request.
+  const [additionalDocs, setAdditionalDocs] = useState<AdditionalDocument[]>([]);
   const [companies, setCompanies] = useReactState<CompanyOption[]>([]);
   const [courses, setCourses] = useReactState<CourseOption[]>([]);
   const [importing, setImporting] = useState(false);
@@ -302,15 +316,47 @@ export function TrainingRequestsRoute() {
 
   const handleSubmit = async () => {
     if (!formData.courseId) {
-      toast({ title: t("misc.error"), description: "Course is required", variant: "destructive" });
+      toast({ title: t("misc.error"), description: t("requests.course") + " — " + t("misc.required"), variant: "destructive" });
+      return;
+    }
+    // Allow saving a DRAFT with no trainees (the user can come back later to
+    // add them). But block SUBMITTED requests with zero trainees — that's a
+    // coordinator-facing request that must have real trainees attached.
+    const isSubmitted = (formData.status as string) === "SUBMITTED";
+    if (isSubmitted && trainees.filter((t) => t.fullName && t.nationalId).length === 0) {
+      toast({
+        title: t("misc.error"),
+        description: t("requests.errors.noTraineesOnSubmit") || "Add at least one trainee before submitting.",
+        variant: "destructive",
+      });
       return;
     }
     setSubmitting(true);
     try {
-      await api.post("/requests", formData);
+      // Strip client-only fields from each trainee before sending — the API
+      // doesn't need valid/errors/id; it computes its own validation.
+      const payloadTrainees = trainees
+        .filter((tr) => tr.fullName && tr.nationalId)
+        .map((tr) => ({
+          fullName: tr.fullName,
+          nationalId: tr.nationalId,
+          nationality: tr.nationality || null,
+          jobTitle: tr.jobTitle || null,
+          // Carry any documents already attached at the client (e.g. uploaded
+          // via the row's RowDocUpload). The API merges them into Trainee.documents.
+          documents: Array.isArray(tr.documents) ? tr.documents : [],
+        }));
+      await api.post("/requests", {
+        ...formData,
+        trainees: payloadTrainees,
+        additionalDocuments: additionalDocs,
+      });
       toast({ title: t("misc.success"), description: t("misc.createSuccess") });
       setDialogOpen(false);
+      // Reset all form state — trainees + additionalDocs + formData.
       setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: "en", status: "DRAFT" });
+      setTrainees([]);
+      setAdditionalDocs([]);
       refetch();
     } catch (e) {
       toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
@@ -369,13 +415,33 @@ export function TrainingRequestsRoute() {
 
       <FormDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) {
+            // Reset all form state when the dialog closes — avoids stale
+            // trainees/docs leaking into the next "New" click.
+            setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: "en", status: "DRAFT" });
+            setTrainees([]);
+            setAdditionalDocs([]);
+          }
+        }}
         title={t("requests.new")}
         description={t("requests.subtitle")}
         icon={ClipboardList}
-        size="lg"
+        size="xxl"
         onSubmit={handleSubmit}
         isSubmitting={submitting}
+        footerExtra={
+          <div className="text-xs text-muted-foreground">
+            {trainees.length > 0 ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5" />
+                {trainees.filter((tr) => tr.fullName && tr.nationalId).length} / {trainees.length}{" "}
+                {t("requests.traineeCount")}
+              </span>
+            ) : null}
+          </div>
+        }
       >
         <div className="space-y-5">
           {/* Status selector: Draft or Submit immediately */}
@@ -393,7 +459,7 @@ export function TrainingRequestsRoute() {
             {user?.role !== "CONTRACTOR" && (
               <Field label={t("requests.company")} required>
                 <Select onValueChange={(v) => setField("companyId", v)}>
-                  <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t("requests.company")} /></SelectTrigger>
                   <SelectContent>
                     {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.name} ({c.refNumber})</SelectItem>)}
                   </SelectContent>
@@ -402,14 +468,11 @@ export function TrainingRequestsRoute() {
             )}
             <Field label={t("requests.course")} required>
               <Select onValueChange={(v) => setField("courseId", v)}>
-                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t("requests.course")} /></SelectTrigger>
                 <SelectContent>
                   {courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.title} ({c.code})</SelectItem>)}
                 </SelectContent>
               </Select>
-            </Field>
-            <Field label={t("requests.traineeCount")} required>
-              <Input type="number" min={1} value={formData.traineeCount as number} onChange={(e) => setField("traineeCount", parseInt(e.target.value, 10) || 1)} />
             </Field>
             <Field label={t("requests.priority")}>
               <Select value={formData.priority as string} onValueChange={(v) => setField("priority", v)}>
@@ -426,7 +489,7 @@ export function TrainingRequestsRoute() {
               <Input type="date" value={(formData.preferredDateTo as string) ?? ""} onChange={(e) => setField("preferredDateTo", e.target.value)} />
             </Field>
             <Field label={t("requests.preferredLocation")}>
-              <Input placeholder="Riyadh / On-site / Virtual" value={(formData.preferredLocation as string) ?? ""} onChange={(e) => setField("preferredLocation", e.target.value)} />
+              <Input placeholder={t("requests.preferredLocation")} value={(formData.preferredLocation as string) ?? ""} onChange={(e) => setField("preferredLocation", e.target.value)} />
             </Field>
             <Field label={t("requests.preferredLanguage")}>
               <Select value={formData.preferredLanguage as string} onValueChange={(v) => setField("preferredLanguage", v)}>
@@ -439,9 +502,33 @@ export function TrainingRequestsRoute() {
               </Select>
             </Field>
           </FormGrid>
+
           <Field label={t("requests.notes")}>
-            <Textarea rows={3} placeholder={t("requests.notes")} value={(formData.notes as string) ?? ""} onChange={(e) => setField("notes", e.target.value)} />
+            <Textarea rows={2} placeholder={t("requests.notes")} value={(formData.notes as string) ?? ""} onChange={(e) => setField("notes", e.target.value)} />
           </Field>
+
+          {/* ── Trainee Entry (3 methods: Manual / Copy-Paste / Excel) ── */}
+          {/* The TraineeEntrySection is self-contained: it owns its own tabs,
+              validation, full-screen mode, virtualization, etc. We only need
+              to pass the trainees array + onChange callback. */}
+          <div className="pt-2 border-t">
+            <TraineeEntrySection
+              trainees={trainees}
+              onChange={setTrainees}
+            />
+          </div>
+
+          {/* ── Additional Documents (request-level, any files) ── */}
+          <div className="pt-2 border-t">
+            <AdditionalDocumentsSection
+              value={additionalDocs}
+              onChange={setAdditionalDocs}
+              hint={
+                t("requests.additionalDocs.hint") ||
+                "Upload any supporting documents: medical certificate, vaccination, work permit, company letter, qualification, driving license, experience certificate, any PDF or image."
+              }
+            />
+          </div>
         </div>
       </FormDialog>
 

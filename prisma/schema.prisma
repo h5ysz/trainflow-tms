@@ -1104,6 +1104,10 @@ model TrainingRequest {
   preferredLocation     String?
   preferredLanguage     String?
   notes                 String?
+  // JSON-encoded array of additional request-level documents
+  // (medical certificate, vaccination, work permit, company letter, etc.).
+  // Each entry: { url, filename, type, uploadedAt, uploadedById }.
+  documents             String?
   status                String                  @default("DRAFT")
   priority              String                  @default("NORMAL")
   rejectionReason       String?

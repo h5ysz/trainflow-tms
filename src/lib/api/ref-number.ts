@@ -13,6 +13,7 @@
 
 import { db } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 
 type DbClient = typeof db | Prisma.TransactionClient;
 
@@ -80,12 +81,13 @@ export async function nextRefNumber(entityType: RefEntityType, client: DbClient 
   // allows one writer at a time, so writing via the global `db` connection
   // while an interactive transaction holds the write lock deadlocks until the
   // transaction (and query) timeouts fire.
+  const now = new Date();
   const counter = await client.refNumberCounter.upsert({
     where: {
       entityType_year: { entityType, year: yearKey },
     },
-    update: { sequence: { increment: 1 } },
-    create: { entityType, year: yearKey, sequence: 1 },
+    update: { sequence: { increment: 1 }, updatedAt: now },
+    create: { id: randomUUID(), entityType, year: yearKey, sequence: 1, updatedAt: now },
   });
 
   const prefix = PREFIX[entityType];
