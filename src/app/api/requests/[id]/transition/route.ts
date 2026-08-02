@@ -13,6 +13,7 @@ import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { canPerformAction } from "@/lib/auth/permissions";
 import { recordStatusChange } from "@/lib/auth/audit";
 import { canTransition } from "../../route";
+import { randomUUID } from "node:crypto";
 import type { TrainingRequestStatus } from "@prisma/client";
 
 // Transitions a requester may make on their own request, keyed by current status.
@@ -70,10 +71,45 @@ export const POST = withModuleAction("requests", "view", async ({ req, params, u
       updates.rejectedAt = null;
       updates.rejectionReason = null;
     }
+    // Resubmitting after REQUIRES_MODIFICATION clears the revision reason.
+    if (existing.status === "REQUIRES_MODIFICATION") {
+      updates.rejectionReason = null;
+    }
+  }
+  if (to === "REQUIRES_MODIFICATION") {
+    updates.reviewedAt = now;
   }
   if (to === "CANCELLED") updates.cancelledAt = now;
 
+  // Capture the reason for REQUIRES_MODIFICATION (passed in the body)
+  if (to === "REQUIRES_MODIFICATION" && body.revisionReason) {
+    updates.rejectionReason = body.revisionReason;
+  }
+
   const updated = await db.trainingRequest.update({ where: { id }, data: updates });
+
+  // ── Notify contractor when request is returned for revision ─────────────
+  if (to === "REQUIRES_MODIFICATION" && existing.companyId) {
+    const contractors = await db.user.findMany({
+      where: { role: "CONTRACTOR", companyId: existing.companyId, isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+    if (contractors.length > 0) {
+      await db.notification.createMany({
+        data: contractors.map((c) => ({
+          id: randomUUID(),
+          userId: c.id,
+          title: "Request Returned for Revision",
+          titleAr: "تم إرجاع الطلب للتعديل",
+          message: `Training request ${existing.refNumber} has been returned for revision. ${body.revisionReason ? `Reason: ${body.revisionReason}` : "Please review and resubmit."}`,
+          messageAr: `تم إرجاع طلب التدريب ${existing.refNumber} للتعديل. ${body.revisionReason ? `السبب: ${body.revisionReason}` : "يرجى المراجعة وإعادة الإرسال."}`,
+          type: "WARNING",
+          category: "TRAINING",
+          updatedAt: now,
+        })),
+      });
+    }
+  }
 
   await recordStatusChange({
     user,

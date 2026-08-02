@@ -158,6 +158,7 @@ export const dict = {
     "workflow.complete": "Complete",
     "workflow.cancel": "Cancel",
     "workflow.reject": "Reject",
+    "workflow.returnRevision": "Return for Revision",
     "workflow.resubmit": "Resubmit",
 
     // Trainees module
@@ -528,6 +529,9 @@ export const dict = {
     "requests.notes": "Notes",
     "requests.status": "Status",
     "requests.rejectionReason": "Rejection Reason",
+    "requests.revisionReason": "Reason for Revision",
+    "requests.revisionReasonRequired": "A reason is required",
+    "requests.revisionReasonPlaceholder": "Explain what the contractor needs to modify...",
     "requests.requestedBy": "Requested By",
     "requests.approvedBy": "Approved By",
     "requests.approvedAt": "Approved At",
@@ -1369,6 +1373,7 @@ export const dict = {
     "workflow.complete": "إكمال",
     "workflow.cancel": "إلغاء",
     "workflow.reject": "رفض",
+    "workflow.returnRevision": "إرجاع للتعديل",
     "workflow.resubmit": "إعادة التقديم",
 
     // Trainees module
@@ -1739,6 +1744,9 @@ export const dict = {
     "requests.notes": "ملاحظات",
     "requests.status": "الحالة",
     "requests.rejectionReason": "سبب الرفض",
+    "requests.revisionReason": "سبب التعديل المطلوب",
+    "requests.revisionReasonRequired": "السبب مطلوب",
+    "requests.revisionReasonPlaceholder": "اشرح ما يحتاج المقاول تعديله...",
     "requests.requestedBy": "مقدم الطلب",
     "requests.approvedBy": "معتمد من",
     "requests.approvedAt": "تاريخ الاعتماد",

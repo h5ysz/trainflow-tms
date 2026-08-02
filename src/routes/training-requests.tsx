@@ -66,6 +66,7 @@ const SELF_SERVICE_TRANSITIONS: Record<string, string[]> = {
   DRAFT: ["SUBMITTED", "CANCELLED"],
   SUBMITTED: ["CANCELLED"],
   REJECTED: ["SUBMITTED"],
+  REQUIRES_MODIFICATION: ["SUBMITTED", "CANCELLED"],
 };
 
 // Workflow transition matrix (mirror of backend)
@@ -80,7 +81,12 @@ const NEXT_ACTIONS: Record<string, { status: string; labelKey: string; variant: 
   ],
   UNDER_REVIEW: [
     { status: "APPROVED", labelKey: "workflow.approve", variant: "default", tone: "success" },
+    { status: "REQUIRES_MODIFICATION", labelKey: "workflow.returnRevision", variant: "outline", tone: "warning" },
     { status: "REJECTED", labelKey: "workflow.reject", variant: "ghost", tone: "destructive" },
+    { status: "CANCELLED", labelKey: "workflow.cancel", variant: "ghost", tone: "destructive" },
+  ],
+  REQUIRES_MODIFICATION: [
+    { status: "SUBMITTED", labelKey: "workflow.resubmit", variant: "default", tone: "info" },
     { status: "CANCELLED", labelKey: "workflow.cancel", variant: "ghost", tone: "destructive" },
   ],
   APPROVED: [
@@ -110,6 +116,9 @@ export function TrainingRequestsRoute() {
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<Request | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [revisionTarget, setRevisionTarget] = useState<Request | null>(null);
+  const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
+  const [revisionReason, setRevisionReason] = useState("");
   const [detailsTarget, setDetailsTarget] = useState<Request | null>(null);
   const [previewTarget, setPreviewTarget] = useState<Request | null>(null);
   const [editTarget, setEditTarget] = useState<Request | null>(null);
@@ -162,6 +171,12 @@ export function TrainingRequestsRoute() {
       setRejectDialogOpen(true);
       return;
     }
+    // "Return for Revision" requires a reason — open the revision dialog.
+    if (newStatus === "REQUIRES_MODIFICATION") {
+      setRevisionTarget(req);
+      setRevisionDialogOpen(true);
+      return;
+    }
     // Turning an APPROVED request into sessions is a real scheduling decision, not a
     // status flip — collect the dates and shifts first.
     if (newStatus === "SCHEDULED" && req.status === "APPROVED") {
@@ -188,6 +203,29 @@ export function TrainingRequestsRoute() {
       setRejectDialogOpen(false);
       setRejectTarget(null);
       setRejectReason("");
+      refetch();
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    }
+  };
+
+  // ── Return for Revision: coordinator returns the request to the contractor
+  // for modification. Requires a reason. Notifies the contractor.
+  const handleRevisionSubmit = async () => {
+    if (!revisionTarget) return;
+    if (!revisionReason.trim()) {
+      toast({ title: t("misc.error"), description: t("requests.revisionReasonRequired") || "A reason is required", variant: "destructive" });
+      return;
+    }
+    try {
+      await api.post(`/requests/${revisionTarget.id}/transition`, {
+        status: "REQUIRES_MODIFICATION",
+        revisionReason,
+      });
+      toast({ title: t("misc.success"), description: t("workflow.returnRevision") || "Returned for revision" });
+      setRevisionDialogOpen(false);
+      setRevisionTarget(null);
+      setRevisionReason("");
       refetch();
     } catch (e) {
       toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
@@ -284,7 +322,7 @@ export function TrainingRequestsRoute() {
       className: "text-end",
       cell: (r) => {
         const actions = NEXT_ACTIONS[r.status] ?? [];
-        const canEditRequest = r.status === "DRAFT" || r.status === "SUBMITTED";
+        const canEditRequest = r.status === "DRAFT" || r.status === "REQUIRES_MODIFICATION";
         return (
           <div className="flex justify-end items-center gap-1 flex-wrap">
             {/* Preview button — available for ALL requests */}
@@ -650,6 +688,32 @@ export function TrainingRequestsRoute() {
           <div className="mt-3 text-xs text-muted-foreground">
             <span>{t("requests.requestNumber")}: </span>
             <span className="font-mono font-semibold text-primary">{rejectTarget.refNumber}</span>
+          </div>
+        )}
+      </FormDialog>
+
+      {/* Revision dialog — coordinator returns request for modification */}
+      <FormDialog
+        open={revisionDialogOpen}
+        onOpenChange={(o) => { setRevisionDialogOpen(o); if (!o) { setRevisionTarget(null); setRevisionReason(""); } }}
+        title={t("workflow.returnRevision") || "Return for Revision"}
+        icon={RotateCcw}
+        size="sm"
+        onSubmit={handleRevisionSubmit}
+        isSubmitting={submitting}
+      >
+        <Field label={t("requests.revisionReason") || "Reason for revision"} required>
+          <Textarea
+            rows={4}
+            placeholder={t("requests.revisionReasonPlaceholder") || "Explain what the contractor needs to modify..."}
+            value={revisionReason}
+            onChange={(e) => setRevisionReason(e.target.value)}
+          />
+        </Field>
+        {revisionTarget && (
+          <div className="mt-3 text-xs text-muted-foreground">
+            <span>{t("requests.requestNumber")}: </span>
+            <span className="font-mono font-semibold text-primary">{revisionTarget.refNumber}</span>
           </div>
         )}
       </FormDialog>
