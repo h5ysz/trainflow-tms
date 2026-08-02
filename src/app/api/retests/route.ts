@@ -82,15 +82,12 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, user }) =
   const session = enrollment.trainingSession;
   const trainee = enrollment.trainee;
 
-  // ── Rule: trainer opportunity must be used AND failed first ─────────────
-  if (!enrollment.trainerOpportunityUsed) {
-    return fail(
-      "Cannot create an official retest before the trainer opportunity has been used. The trainer must first give the trainee an immediate opportunity in the same session.",
-      422,
-      "TRAINER_OPPORTUNITY_REQUIRED_FIRST",
-    );
-  }
-  if (enrollment.trainerOpportunityPassed === true) {
+  // ── Rule: Trainer Opportunity is OPTIONAL ───────────────────────────────
+  // The trainer may or may not grant a trainer opportunity. If they did
+  // grant one AND the trainee passed, no official retest is needed.
+  // But if the opportunity was not used, or was used and failed, the
+  // official retest can be created directly.
+  if (enrollment.trainerOpportunityUsed && enrollment.trainerOpportunityPassed === true) {
     return fail(
       "Cannot create an official retest: the trainee already passed the trainer opportunity.",
       422,
