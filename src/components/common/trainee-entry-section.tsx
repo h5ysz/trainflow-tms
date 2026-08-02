@@ -247,6 +247,10 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
   const [preview, setPreview] = React.useState<ImportPreview | null>(null);
   const [previewOpen, setPreviewOpen] = React.useState(false);
   const [previewLoading, setPreviewLoading] = React.useState(false);
+  // Maximize toggle for the Excel preview dialog. When true the dialog grows
+  // to 95vw so the user can see all preview rows + matched columns without
+  // scrolling inside the dialog itself.
+  const [previewFullscreen, setPreviewFullscreen] = React.useState(false);
   const [bulkUpload, setBulkUpload] = React.useState<BulkUploadState>({
     phase: "idle", total: 0, done: 0, matched: 0, unmatched: [],
   });
@@ -547,34 +551,49 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
     // Translate preview rows → TraineeEntry rows. companyName / courseTitle /
     // region etc. live on the parent request, not the trainee, so we only
     // carry the trainee-relevant fields forward.
+    //
+    // IMPORTANT: we do NOT filter by (r.name && r.nationalId) here. The
+    // preview might have rows where the columns didn't map (e.g. the user's
+    // Excel file uses unusual headers we didn't recognize). Those rows still
+    // represent real trainees the user wants to import — they just need to
+    // fill the missing fields manually in the editable table afterwards.
+    // Dropping them silently would lose data the user explicitly uploaded.
+    //
+    // We DO skip rows that are completely empty (no name AND no nationalId
+    // AND no jobTitle AND no nationality — clearly a blank row in the sheet).
     const additions: TraineeEntry[] = preview.rows
-      .filter((r) => r.name && r.nationalId)
+      .filter((r) => r.name || r.nationalId || r.jobTitle || r.nationality)
       .map((r) => ({
         id: makeId(),
-        fullName: r.name,
-        nationalId: r.nationalId,
+        fullName: r.name || "",
+        nationalId: r.nationalId || "",
         nationality: r.nationality ?? "",
         jobTitle: r.jobTitle ?? "",
         idAttachmentUrl: null,
         idAttachmentName: null,
         documents: [],
-        valid: false,
+        valid: false, // will be recomputed by the table's validation
         errors: [],
       }));
     if (additions.length === 0) {
-      toast({ title: t("misc.error"), description: "No valid rows to import", variant: "destructive" });
+      toast({
+        title: t("misc.error"),
+        description: t("requests.import.noValidRows") || "No rows to import — check the column mapping.",
+        variant: "destructive",
+      });
       return;
     }
     updateTrainees([...trainees, ...additions]);
     setPreviewOpen(false);
     setPreview(null);
     setExcelPendingFile(null);
+    setPreviewFullscreen(false);
     setActiveTab("manual");
     toast({
       title: t("misc.success"),
       description: t("requests.import.success", { requests: 1, trainees: additions.length }),
     });
-  }, [preview, excelPendingFile, trainees, updateTrainees, toast, t, setPreviewOpen, setPreview, setExcelPendingFile, setActiveTab]);
+  }, [preview, excelPendingFile, trainees, updateTrainees, toast, t, setPreviewOpen, setPreview, setExcelPendingFile, setPreviewFullscreen, setActiveTab]);
 
   // ─── Copy & Paste tab ────────────────────────────────────────────────
   const parsePasted = React.useCallback(() => {
@@ -1058,19 +1077,35 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
       </Tabs>
 
       {/* ─── Preview Dialog ───────────────────────────────────────────── */}
-      <Dialog open={previewOpen} onOpenChange={(o) => { setPreviewOpen(o); if (!o) { setPreview(null); setExcelPendingFile(null); } }}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden p-0 gap-0">
+      <Dialog open={previewOpen} onOpenChange={(o) => { setPreviewOpen(o); if (!o) { setPreview(null); setExcelPendingFile(null); setPreviewFullscreen(false); } }}>
+        <DialogContent
+          className={cn(
+            "max-h-[90vh] overflow-hidden p-0 gap-0",
+            previewFullscreen ? "max-w-[95vw] w-[95vw]" : "max-w-4xl"
+          )}
+        >
           <DialogHeader className="p-5 border-b">
             <DialogTitle className="flex items-center gap-2">
               <FileSpreadsheet className="h-5 w-5 text-primary" />
               {t("requests.import.preview")}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="ms-auto h-7 px-2"
+                onClick={() => setPreviewFullscreen((v) => !v)}
+                title={previewFullscreen ? "Restore" : "Maximize"}
+              >
+                {previewFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                {previewFullscreen ? (t("requests.fullscreenExit") || "Restore") : (t("requests.fullscreen") || "Maximize")}
+              </Button>
             </DialogTitle>
             <DialogDescription>
               {excelPendingFile?.name ?? "Spreadsheet"} — review the detected column mapping and sample rows before importing.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="overflow-y-auto max-h-[60vh] p-5 space-y-4">
+          <div className={cn("overflow-y-auto p-5 space-y-4", previewFullscreen ? "max-h-[80vh]" : "max-h-[60vh]")}>
             {previewLoading ? (
               <div className="flex flex-col items-center justify-center py-12 gap-2">
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -1194,13 +1229,49 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
             ) : null}
           </div>
 
-          <DialogFooter className="p-4 border-t bg-muted/30">
-            <Button variant="outline" onClick={() => { setPreviewOpen(false); setPreview(null); setExcelPendingFile(null); }}>
-              {t("misc.cancel")}
-            </Button>
-            <Button onClick={confirmExcelImport} disabled={!preview || previewLoading || (preview?.missingRequiredColumns?.length || 0) > 0 || preview?.validRows === 0}>
-              <ArrowRight className="h-4 w-4 me-1.5" />{t("requests.import.confirm")}
-            </Button>
+          <DialogFooter className="p-4 border-t bg-muted/30 flex items-center justify-between gap-2 flex-wrap">
+            {/* Status hint on the left — explains WHY the button is disabled
+                when it is. If columns are missing we still allow Confirm so
+                the user can import whatever fields WERE matched and fill the
+                rest manually in the editable table. */}
+            <div className="text-xs text-muted-foreground">
+              {previewLoading ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {t("requests.import.previewing")}
+                </span>
+              ) : preview ? (
+                <span>
+                  {preview.validRows > 0 ? (
+                    <>{preview.validRows} {t("requests.import.validRows")} · {preview.totalRows} {t("requests.import.totalRows")}</>
+                  ) : preview.totalRows > 0 ? (
+                    <span className="text-amber-600 inline-flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" />
+                      {t("requests.import.noValidRows") || "No valid rows — check column mapping."}
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-2 ms-auto">
+              <Button variant="outline" onClick={() => { setPreviewOpen(false); setPreview(null); setExcelPendingFile(null); setPreviewFullscreen(false); }}>
+                {t("misc.cancel")}
+              </Button>
+              <Button
+                onClick={confirmExcelImport}
+                disabled={
+                  !preview ||
+                  previewLoading ||
+                  preview?.totalRows === 0 ||
+                  // Allow import even with missing required columns — the user
+                  // can fill the missing fields manually in the editable table.
+                  // We only block when literally no rows were parsed.
+                  (preview?.rows?.length ?? 0) === 0
+                }
+              >
+                <ArrowRight className="h-4 w-4 me-1.5" />{t("requests.import.confirm")}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
