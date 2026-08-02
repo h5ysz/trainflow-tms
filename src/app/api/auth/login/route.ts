@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
 
     const dbUser = await db.user.findUnique({
       where: { id: userId },
-      include: { Company: true, Trainer: true, Role: { select: { permissions: true } } },
+      include: { company: true, trainer: true, roleRecord: { select: { permissions: true } } },
     });
     if (!dbUser || dbUser.deletedAt) {
       return fail("Invalid account", 401);
@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
         permissions,
         language: dbUser.language,
         companyId: dbUser.companyId,
-        companyName: dbUser.Company?.name ?? null,
+        companyName: dbUser.company?.name ?? null,
         trainerId: dbUser.trainerId,
         avatarUrl: dbUser.avatarUrl ?? null,
         forcePasswordChange: dbUser.forcePasswordChange,

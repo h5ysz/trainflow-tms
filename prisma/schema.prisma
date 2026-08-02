@@ -35,8 +35,8 @@ model Attendance {
   createdBy             String?
   updatedBy             String?
   deletedAt             DateTime?
-  TrainingSession       TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  ExamAttempt           ExamAttempt[]
+  trainingSession       TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  examAttempt           ExamAttempt[]
 
   @@index([certificateEligible])
   @@index([traineeIdNational])
@@ -63,7 +63,7 @@ model AuditLog {
   reason        String?
   metadata      String?
   createdAt     DateTime @default(now())
-  User          User?    @relation(fields: [userId], references: [id])
+  user          User?    @relation(fields: [userId], references: [id])
 
   @@index([ipAddress])
   @@index([createdAt])
@@ -87,7 +87,7 @@ model BankAccount {
   createdBy     String?
   updatedBy     String?
   deletedAt     DateTime?
-  Invoice       Invoice[]
+  invoices       Invoice[]
 
   @@index([isActive])
 }
@@ -130,13 +130,13 @@ model Certificate {
   updatedBy                           String?
   deletedAt                           DateTime?
   workerPassportId                    String?
-  WorkerPassport                      WorkerPassport?           @relation(fields: [workerPassportId], references: [id])
-  Certificate                         Certificate?              @relation("CertificateToCertificate", fields: [renewedFromId], references: [id])
+  workerPassport                      WorkerPassport?           @relation(fields: [workerPassportId], references: [id])
+  renewedFrom                         Certificate?              @relation("CertificateToCertificate", fields: [renewedFromId], references: [id])
   other_Certificate                   Certificate[]             @relation("CertificateToCertificate")
-  Company                             Company?                  @relation(fields: [companyId], references: [id])
-  Course                              Course                    @relation(fields: [courseId], references: [id])
-  TrainingSession                     TrainingSession           @relation(fields: [sessionId], references: [id])
-  CertificateVerification             CertificateVerification[]
+  company                             Company?                  @relation(fields: [companyId], references: [id])
+  course                              Course                    @relation(fields: [courseId], references: [id])
+  trainingSession                     TrainingSession           @relation(fields: [sessionId], references: [id])
+  verifications             CertificateVerification[]
 
   @@index([validUntil])
   @@index([renewedFromId])
@@ -156,7 +156,7 @@ model CertificateVerification {
   userAgent         String?
   countryCode       String?
   verifiedAt        DateTime    @default(now())
-  Certificate       Certificate @relation(fields: [certificateId], references: [id], onDelete: Cascade)
+  certificate       Certificate @relation(fields: [certificateId], references: [id], onDelete: Cascade)
 
   @@index([verifiedAt])
   @@index([certificateId])
@@ -174,7 +174,7 @@ model CheckInAttempt {
   success           Boolean
   failureReason     String?
   attendedAt        DateTime        @default(now())
-  TrainingSession   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  trainingSession   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([success])
   @@index([sessionId])
@@ -207,23 +207,23 @@ model Company {
   createdBy         String?
   updatedBy         String?
   deletedAt         DateTime?
-  Certificate       Certificate[]
-  Tenant            Tenant?             @relation(fields: [tenantId], references: [id])
-  CompanyContact    CompanyContact[]
-  CourseEvaluation  CourseEvaluation[]
-  ExamAttempt       ExamAttempt[]
-  Invoice           Invoice[]
-  Payment           Payment[]
-  Quotation         Quotation[]
-  Receipt           Receipt[]
-  SessionCompany    SessionCompany[]
-  SessionEnrollment SessionEnrollment[]
-  SessionPayment    SessionPayment[]
-  TestResult        TestResult[]
-  Trainee           Trainee[]
-  TrainingRequest   TrainingRequest[]
-  User              User[]
-  WorkerPassport    WorkerPassport[]
+  certificates       Certificate[]
+  tenant            Tenant?             @relation(fields: [tenantId], references: [id])
+  contacts    CompanyContact[]
+  evaluations  CourseEvaluation[]
+  examAttempts       ExamAttempt[]
+  invoices           Invoice[]
+  payments           Payment[]
+  quotations         Quotation[]
+  receipts           Receipt[]
+  sessionCompanies    SessionCompany[]
+  enrollments SessionEnrollment[]
+  sessionPayments    SessionPayment[]
+  testResults        TestResult[]
+  trainees           Trainee[]
+  trainingRequests   TrainingRequest[]
+  users              User[]
+  workerPassports    WorkerPassport[]
 
   @@index([tenantId])
   @@index([status])
@@ -246,7 +246,7 @@ model CompanyContact {
   createdBy        String?
   updatedBy        String?
   deletedAt        DateTime?
-  Company          Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company          Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
 }
@@ -266,8 +266,8 @@ model ComplianceRule {
   createdBy             String?
   updatedBy             String?
   deletedAt             DateTime?
-  Course                Course                  @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  ComplianceRuleVersion ComplianceRuleVersion[]
+  courses                Course                  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  versions ComplianceRuleVersion[]
 
   @@index([scopeType, scopeValue])
   @@index([isActive])
@@ -292,7 +292,7 @@ model ComplianceRuleVersion {
   changeType      String
   reason          String?
   previousValues  String?
-  ComplianceRule  ComplianceRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  complianceRule  ComplianceRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 
   @@index([changeType])
   @@index([changedAt])
@@ -326,15 +326,15 @@ model Course {
   createdBy                      String?
   updatedBy                      String?
   deletedAt                      DateTime?
-  Certificate                    Certificate[]
-  ComplianceRule                 ComplianceRule[]
-  Tenant                         Tenant?                 @relation(fields: [tenantId], references: [id])
-  CourseResource                 CourseResource[]
-  Question                       Question[]
-  TrainerCertification           TrainerCertification[]
-  TrainingRequest                TrainingRequest[]
-  TrainingRequestCourse          TrainingRequestCourse[]
-  TrainingSession                TrainingSession[]
+  certificates                    Certificate[]
+  complianceRules                 ComplianceRule[]
+  tenant                         Tenant?                 @relation(fields: [tenantId], references: [id])
+  resources                 CourseResource[]
+  questions                       Question[]
+  trainerCertifications           TrainerCertification[]
+  requests                TrainingRequest[]
+  requestCourses          TrainingRequestCourse[]
+  sessions                TrainingSession[]
 
   @@index([tenantId])
   @@index([category])
@@ -364,9 +364,9 @@ model CourseEvaluation {
   createdBy         String?
   updatedBy         String?
   deletedAt         DateTime?
-  Company           Company?        @relation(fields: [companyId], references: [id])
-  Trainer           Trainer?        @relation(fields: [trainerId], references: [id])
-  TrainingSession   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  company           Company?        @relation(fields: [companyId], references: [id])
+  trainer           Trainer?        @relation(fields: [trainerId], references: [id])
+  trainingSession   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
   @@index([attendanceId])
@@ -389,7 +389,7 @@ model CourseResource {
   createdBy   String?
   updatedBy   String?
   deletedAt   DateTime?
-  Course      Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  course      Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@index([type])
   @@index([courseId])
@@ -422,9 +422,9 @@ model ExamAttempt {
   createdBy         String?
   updatedBy         String?
   deletedAt         DateTime?
-  Company           Company?        @relation(fields: [companyId], references: [id])
-  Attendance        Attendance?     @relation(fields: [attendanceId], references: [id])
-  TrainingSession   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  company           Company?        @relation(fields: [companyId], references: [id])
+  attendance        Attendance?     @relation(fields: [attendanceId], references: [id])
+  trainingSession   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
   @@index([traineeEmail])
@@ -485,14 +485,14 @@ model Invoice {
   createdBy          String?
   updatedBy          String?
   deletedAt          DateTime?
-  BankAccount        BankAccount?     @relation(fields: [bankAccountId], references: [id])
-  Company            Company          @relation(fields: [companyId], references: [id])
-  TrainingSession    TrainingSession? @relation(fields: [sessionId], references: [id])
-  TrainingRequest    TrainingRequest? @relation(fields: [requestId], references: [id])
-  Quotation          Quotation?       @relation(fields: [quotationId], references: [id])
-  Payment            Payment[]
-  PaymentInvoice     PaymentInvoice[]
-  Receipt            Receipt[]
+  bankAccount        BankAccount?     @relation(fields: [bankAccountId], references: [id])
+  company            Company          @relation(fields: [companyId], references: [id])
+  trainingSession    TrainingSession? @relation(fields: [sessionId], references: [id])
+  trainingRequest    TrainingRequest? @relation(fields: [requestId], references: [id])
+  quotation          Quotation?       @relation(fields: [quotationId], references: [id])
+  payments            Payment[]
+  paymentInvoice     PaymentInvoice[]
+  receipts            Receipt[]
 
   @@index([dueDate])
   @@index([issueDate])
@@ -524,7 +524,7 @@ model LoginHistory {
   ipAddress     String?
   userAgent     String?
   attemptedAt   DateTime @default(now())
-  User          User?    @relation(fields: [userId], references: [id])
+  user          User?    @relation(fields: [userId], references: [id])
 
   @@index([attemptedAt])
   @@index([email])
@@ -548,7 +548,7 @@ model Notification {
   pushSentAt  DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime
-  User        User?     @relation(fields: [userId], references: [id])
+  user        User?     @relation(fields: [userId], references: [id])
 
   @@index([createdAt])
   @@index([userId, isRead])
@@ -578,10 +578,10 @@ model Payment {
   createdBy            String?
   updatedBy            String?
   deletedAt            DateTime?
-  Company              Company          @relation(fields: [companyId], references: [id])
-  Invoice              Invoice?         @relation(fields: [invoiceId], references: [id])
-  PaymentInvoice       PaymentInvoice[]
-  Receipt              Receipt[]
+  company              Company          @relation(fields: [companyId], references: [id])
+  invoice              Invoice?         @relation(fields: [invoiceId], references: [id])
+  paymentInvoice       PaymentInvoice[]
+  receipt              Receipt[]
 
   @@index([status])
   @@index([companyId])
@@ -593,8 +593,8 @@ model PaymentInvoice {
   paymentId String
   invoiceId String
   amount    Float
-  Invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  Payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
   @@index([invoiceId])
   @@index([paymentId])
@@ -637,7 +637,7 @@ model Question {
   createdBy      String?
   updatedBy      String?
   deletedAt      DateTime?
-  Course         Course?   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  course         Course?   @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@index([difficulty])
   @@index([category])
@@ -664,9 +664,9 @@ model Quotation {
   createdBy       String?
   updatedBy       String?
   deletedAt       DateTime?
-  Invoice         Invoice[]
-  Company         Company          @relation(fields: [companyId], references: [id])
-  TrainingRequest TrainingRequest? @relation(fields: [requestId], references: [id])
+  invoice         Invoice[]
+  company         Company          @relation(fields: [companyId], references: [id])
+  trainingRequest TrainingRequest? @relation(fields: [requestId], references: [id])
 
   @@index([status])
   @@index([requestId])
@@ -696,9 +696,9 @@ model Receipt {
   createdBy       String?
   updatedBy       String?
   deletedAt       DateTime?
-  Company         Company   @relation(fields: [companyId], references: [id])
-  Invoice         Invoice?  @relation(fields: [invoiceId], references: [id])
-  Payment         Payment?  @relation(fields: [paymentId], references: [id])
+  company         Company   @relation(fields: [companyId], references: [id])
+  invoice         Invoice?  @relation(fields: [invoiceId], references: [id])
+  payment         Payment?  @relation(fields: [paymentId], references: [id])
 
   @@index([receiptDate])
   @@index([companyId])
@@ -740,8 +740,8 @@ model ReportExecution {
   errorMessage        String?
   errorStack          String?
   createdAt           DateTime              @default(now())
-  ReportSchedule      ReportSchedule        @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-  ReportExecutionFile ReportExecutionFile[]
+  reportSchedule      ReportSchedule        @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  reportExecutionFile ReportExecutionFile[]
 
   @@index([emailStatus])
   @@index([createdAt])
@@ -760,7 +760,7 @@ model ReportExecutionFile {
   checksum        String?
   expiresAt       DateTime?
   createdAt       DateTime        @default(now())
-  ReportExecution ReportExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  reportExecution ReportExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
 
   @@index([expiresAt])
   @@index([executionId])
@@ -796,7 +796,7 @@ model ReportSchedule {
   createdBy       String?
   updatedBy       String?
   deletedAt       DateTime?
-  ReportExecution ReportExecution[]
+  reportExecution ReportExecution[]
 
   @@index([scheduleType])
   @@index([nextRunAt])
@@ -817,7 +817,7 @@ model Role {
   createdBy   String?
   updatedBy   String?
   deletedAt   DateTime?
-  User        User[]
+  user        User[]
 }
 
 model SessionCompany {
@@ -829,8 +829,8 @@ model SessionCompany {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime
   createdBy       String?
-  Company         Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  TrainingSession TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  company         Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  trainingSession TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@unique([sessionId, companyId])
   @@index([companyId])
@@ -862,9 +862,9 @@ model SessionEnrollment {
   createdBy         String?
   updatedBy         String?
   deletedAt         DateTime?
-  Company           Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  Trainee           Trainee         @relation(fields: [traineeId], references: [id], onDelete: Cascade)
-  TrainingSession   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  company           Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  trainee           Trainee         @relation(fields: [traineeId], references: [id], onDelete: Cascade)
+  trainingSession   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@unique([sessionId, traineeId])
   @@index([certificateStatus])
@@ -886,7 +886,7 @@ model SessionLifecycleEvent {
   notes           String?
   createdAt       DateTime        @default(now())
   createdBy       String?
-  TrainingSession TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  trainingSession TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([eventType])
   @@index([sessionId])
@@ -908,8 +908,8 @@ model SessionPayment {
   createdBy       String?
   updatedBy       String?
   deletedAt       DateTime?
-  Company         Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  TrainingSession TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  company         Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  trainingSession TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@unique([sessionId, companyId])
   @@index([invoiceRef])
@@ -941,10 +941,10 @@ model Tenant {
   createdBy String?
   updatedBy String?
   deletedAt DateTime?
-  Company   Company[]
-  Course    Course[]
-  Trainer   Trainer[]
-  User      User[]
+  company   Company[]
+  course    Course[]
+  trainer   Trainer[]
+  user      User[]
 
   @@index([status])
 }
@@ -969,8 +969,8 @@ model TestResult {
   createdBy         String?
   updatedBy         String?
   deletedAt         DateTime?
-  Company           Company?        @relation(fields: [companyId], references: [id])
-  TrainingSession   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  company           Company?        @relation(fields: [companyId], references: [id])
+  trainingSession   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
   @@index([traineeEmail])
@@ -997,9 +997,9 @@ model Trainee {
   createdBy                    String?
   updatedBy                    String?
   deletedAt                    DateTime?
-  SessionEnrollment            SessionEnrollment[]
-  Company                      Company                        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  TrainingRequestCourseTrainee TrainingRequestCourseTrainee[]
+  enrollments            SessionEnrollment[]
+  company                      Company                        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  trainingRequestCourseTrainee TrainingRequestCourseTrainee[]
 
   @@index([status])
   @@index([nationalId])
@@ -1030,12 +1030,12 @@ model Trainer {
   createdBy            String?
   updatedBy            String?
   deletedAt            DateTime?
-  CourseEvaluation     CourseEvaluation[]
-  Tenant               Tenant?                @relation(fields: [tenantId], references: [id])
-  TrainerCertification TrainerCertification[]
-  TrainerQualification TrainerQualification[]
-  TrainingSession      TrainingSession[]
-  User                 User?
+  evaluations     CourseEvaluation[]
+  tenant               Tenant?                @relation(fields: [tenantId], references: [id])
+  qualifications TrainerCertification[]
+  trainerQualification TrainerQualification[]
+  sessions      TrainingSession[]
+  user                 User?
 
   @@index([tenantId])
   @@index([status])
@@ -1055,9 +1055,9 @@ model TrainerCertification {
   createdBy            String?
   updatedBy            String?
   deletedAt            DateTime?
-  TrainerQualification TrainerQualification? @relation(fields: [qualificationId], references: [id])
-  Course               Course                @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  Trainer              Trainer               @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+  trainerQualification TrainerQualification? @relation(fields: [qualificationId], references: [id])
+  course               Course                @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  trainer              Trainer               @relation(fields: [trainerId], references: [id], onDelete: Cascade)
 
   @@unique([trainerId, courseId, deletedAt])
   @@index([status])
@@ -1080,8 +1080,8 @@ model TrainerQualification {
   createdBy            String?
   updatedBy            String?
   deletedAt            DateTime?
-  TrainerCertification TrainerCertification[]
-  Trainer              Trainer                @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+  trainerCertification TrainerCertification[]
+  trainer              Trainer                @relation(fields: [trainerId], references: [id], onDelete: Cascade)
 
   @@index([status])
   @@index([trainerId])
@@ -1116,12 +1116,12 @@ model TrainingRequest {
   createdBy             String?
   updatedBy             String?
   deletedAt             DateTime?
-  Invoice               Invoice[]
-  Quotation             Quotation[]
-  Course                Course?                 @relation(fields: [courseId], references: [id])
-  Company               Company                 @relation(fields: [companyId], references: [id])
-  TrainingRequestCourse TrainingRequestCourse[]
-  TrainingSession       TrainingSession[]
+  invoices               Invoice[]
+  quotations             Quotation[]
+  course                Course?                 @relation(fields: [courseId], references: [id])
+  company               Company                 @relation(fields: [companyId], references: [id])
+  requestCourses TrainingRequestCourse[]
+  sessions       TrainingSession[]
 
   @@index([courseId])
   @@index([companyId])
@@ -1141,10 +1141,10 @@ model TrainingRequestCourse {
   createdBy                    String?
   updatedBy                    String?
   deletedAt                    DateTime?
-  Course                       Course                         @relation(fields: [courseId], references: [id])
-  TrainingRequest              TrainingRequest                @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  TrainingRequestCourseTrainee TrainingRequestCourseTrainee[]
-  TrainingSession              TrainingSession[]
+  course                       Course                         @relation(fields: [courseId], references: [id])
+  trainingRequest              TrainingRequest                @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  trainingRequestCourseTrainee TrainingRequestCourseTrainee[]
+  trainingSession              TrainingSession[]
 
   @@unique([requestId, courseId, deletedAt])
   @@index([courseId])
@@ -1160,8 +1160,8 @@ model TrainingRequestCourseTrainee {
   createdBy             String?
   updatedBy             String?
   deletedAt             DateTime?
-  Trainee               Trainee               @relation(fields: [traineeId], references: [id], onDelete: Cascade)
-  TrainingRequestCourse TrainingRequestCourse @relation(fields: [requestCourseId], references: [id], onDelete: Cascade)
+  trainee               Trainee               @relation(fields: [traineeId], references: [id], onDelete: Cascade)
+  trainingRequestCourse TrainingRequestCourse @relation(fields: [requestCourseId], references: [id], onDelete: Cascade)
 
   @@unique([requestCourseId, traineeId])
   @@index([traineeId])
@@ -1206,21 +1206,21 @@ model TrainingSession {
   createdBy             String?
   updatedBy             String?
   deletedAt             DateTime?
-  Attendance            Attendance[]
-  Certificate           Certificate[]
-  CheckInAttempt        CheckInAttempt[]
-  CourseEvaluation      CourseEvaluation[]
-  ExamAttempt           ExamAttempt[]
-  Invoice               Invoice[]
-  SessionCompany        SessionCompany[]
-  SessionEnrollment     SessionEnrollment[]
-  SessionLifecycleEvent SessionLifecycleEvent[]
-  SessionPayment        SessionPayment[]
-  TestResult            TestResult[]
-  Trainer               Trainer?                @relation(fields: [trainerId], references: [id])
-  TrainingRequestCourse TrainingRequestCourse?  @relation(fields: [requestCourseId], references: [id])
-  TrainingRequest       TrainingRequest?        @relation(fields: [requestId], references: [id])
-  Course                Course                  @relation(fields: [courseId], references: [id])
+  attendance             Attendance[]
+  certificates           Certificate[]
+  checkIns        CheckInAttempt[]
+  evaluations      CourseEvaluation[]
+  examAttempts           ExamAttempt[]
+  invoice               Invoice[]
+  sessionCompanies        SessionCompany[]
+  enrollments     SessionEnrollment[]
+  sessionLifecycleEvent SessionLifecycleEvent[]
+  sessionPayments        SessionPayment[]
+  testResults            TestResult[]
+  trainer               Trainer?                @relation(fields: [trainerId], references: [id])
+  trainingRequestCourse TrainingRequestCourse?  @relation(fields: [requestCourseId], references: [id])
+  trainingRequest       TrainingRequest?        @relation(fields: [requestId], references: [id])
+  course                Course                  @relation(fields: [courseId], references: [id])
 
   @@index([lifecycleStatus])
   @@index([requestCourseId])
@@ -1259,13 +1259,13 @@ model User {
   createdBy           String?
   updatedBy           String?
   deletedAt           DateTime?
-  AuditLog            AuditLog[]
-  LoginHistory        LoginHistory[]
-  Notification        Notification[]
-  Role                Role?          @relation(fields: [roleId], references: [id])
-  Trainer             Trainer?       @relation(fields: [trainerId], references: [id])
-  Company             Company?       @relation(fields: [companyId], references: [id])
-  Tenant              Tenant?        @relation(fields: [tenantId], references: [id])
+  auditLogs            AuditLog[]
+  loginHistories        LoginHistory[]
+  notifications        Notification[]
+  roleRecord                Role?          @relation(fields: [roleId], references: [id])
+  trainer             Trainer?       @relation(fields: [trainerId], references: [id])
+  company             Company?       @relation(fields: [companyId], references: [id])
+  tenant              Tenant?        @relation(fields: [tenantId], references: [id])
 
   @@index([accountStatus])
   @@index([tenantId])
@@ -1289,8 +1289,8 @@ model WorkerPassport {
   createdBy      String?
   updatedBy      String?
   deletedAt      DateTime?
-  Certificate    Certificate[]
-  Company        Company?      @relation(fields: [companyId], references: [id])
+  certificate    Certificate[]
+  company        Company?      @relation(fields: [companyId], references: [id])
 
   @@index([passportNumber])
   @@index([qrToken])
