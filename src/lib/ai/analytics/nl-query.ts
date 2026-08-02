@@ -174,14 +174,14 @@ async function answerBestPassRateTrainer(scope: AnalyticsScope, intent: Intent):
   const yearStart = new Date(new Date().getFullYear(), 0, 1);
   const testResults = await db.testResult.findMany({
     where: { deletedAt: null, attemptedAt: { gte: yearStart } },
-    select: { passed: true, session: { select: { trainerId: true, trainer: { select: { id: true, fullName: true, refNumber: true } } } } },
+    select: { passed: true, trainingSession: { select: { trainerId: true, trainer: { select: { id: true, fullName: true, refNumber: true } } } } },
     take: 5000,
   });
   const byTrainer = new Map<string, { name: string; ref: string; passed: number; total: number }>();
   for (const r of testResults) {
-    const tid = r.session.trainerId;
+    const tid = r.trainingSession.trainerId;
     if (!tid) continue;
-    const e = byTrainer.get(tid) ?? { name: r.session.trainer?.fullName ?? "—", ref: r.session.trainer?.refNumber ?? "—", passed: 0, total: 0 };
+    const e = byTrainer.get(tid) ?? { name: r.trainingSession.trainer?.fullName ?? "—", ref: r.trainingSession.trainer?.refNumber ?? "—", passed: 0, total: 0 };
     e.total++;
     if (r.passed) e.passed++;
     byTrainer.set(tid, e);
@@ -481,8 +481,8 @@ async function answerCompareTrainers(scope: AnalyticsScope, intent: Intent, ques
   }
   const yearStart = new Date(new Date().getFullYear(), 0, 1);
   const testResults = await db.testResult.findMany({
-    where: { deletedAt: null, attemptedAt: { gte: yearStart }, session: { trainerId: { in: trainers.map((t) => t.id) } } },
-    select: { passed: true, session: { select: { trainerId: true } } },
+    where: { deletedAt: null, attemptedAt: { gte: yearStart }, trainingSession: { trainerId: { in: trainers.map((t) => t.id) } } },
+    select: { passed: true, trainingSession: { select: { trainerId: true } } },
     take: 5000,
   });
   const byTrainer = new Map<string, { name: string; ref: string; passed: number; total: number; sessions: number }>();
@@ -490,7 +490,7 @@ async function answerCompareTrainers(scope: AnalyticsScope, intent: Intent, ques
     byTrainer.set(t.id, { name: t.fullName, ref: t.refNumber, passed: 0, total: 0, sessions: 0 });
   }
   for (const r of testResults) {
-    const tid = r.session.trainerId;
+    const tid = r.trainingSession.trainerId;
     if (!tid) continue;
     const e = byTrainer.get(tid);
     if (!e) continue;

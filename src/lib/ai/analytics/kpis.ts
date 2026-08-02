@@ -252,7 +252,7 @@ export async function computeKpis(scope: AnalyticsScope, range: TimeRange): Prom
 async function getAttendanceStats(scope: AnalyticsScope, range: TimeRange) {
   const where: Record<string, unknown> = {
     deletedAt: null,
-    session: { startDate: { gte: range.from, lte: range.to }, deletedAt: null, ...sessionCompanyFilter(scope) },
+    trainingSession: { startDate: { gte: range.from, lte: range.to }, deletedAt: null, ...sessionCompanyFilter(scope) },
   };
   const stats = await db.attendance.groupBy({
     by: ["status"],
@@ -325,14 +325,14 @@ async function getTrainerPassRates(scope: AnalyticsScope, range: TimeRange) {
   // Group test results by session → trainer
   const testResults = await db.testResult.findMany({
     where: { deletedAt: null, attemptedAt: { gte: range.from, lte: range.to } },
-    select: { passed: true, session: { select: { trainerId: true, trainer: { select: { id: true, fullName: true, refNumber: true } } } } },
+    select: { passed: true, trainingSession: { select: { trainerId: true, trainer: { select: { id: true, fullName: true, refNumber: true } } } } },
     take: 1000,
   });
   const byTrainer = new Map<string, { name: string; ref: string; passed: number; total: number }>();
   for (const r of testResults) {
-    const tid = r.session.trainerId;
+    const tid = r.trainingSession.trainerId;
     if (!tid) continue;
-    const entry = byTrainer.get(tid) ?? { name: r.session.trainer?.fullName ?? "—", ref: r.session.trainer?.refNumber ?? "—", passed: 0, total: 0 };
+    const entry = byTrainer.get(tid) ?? { name: r.trainingSession.trainer?.fullName ?? "—", ref: r.trainingSession.trainer?.refNumber ?? "—", passed: 0, total: 0 };
     entry.total++;
     if (r.passed) entry.passed++;
     byTrainer.set(tid, entry);
