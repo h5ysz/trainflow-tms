@@ -122,7 +122,12 @@ export interface TraineeEntrySectionProps {
 
 const ROW_HEIGHT = 48;
 const VISIBLE_TABLE_HEIGHT = 480; // ~10 rows visible before scrolling
-const VISIBLE_TABLE_HEIGHT_FULLSCREEN = 600; // taller in fullscreen
+// In Full Screen mode we want the table to fill the viewport, not a fixed
+// 600 px. The parent dialog already reserves ~120 px of chrome (header,
+// buttons, stat cards). We compute the live height in a layout effect below
+// using `window.innerHeight`, but keep this as a sensible initial value for
+// the first paint (the layout effect overrides it once mounted).
+const VISIBLE_TABLE_HEIGHT_FULLSCREEN_INITIAL = 600;
 const STAT_HIGHLIGHT_MS = 3000;
 
 // ─── Smart Column Aliases (Arabic + English) ──────────────────────────────
@@ -252,6 +257,23 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = React.useState(0);
 
+  // ─── Viewport-aware Full Screen height ─────────────────────────────────
+  // When Full Screen is active the section becomes `fixed inset-0` and should
+  // fill the entire viewport. We compute the available table height from the
+  // live window size minus the chrome (tabs row + stat cards + toolbar +
+  // pagination). Without this the table would stay at the fixed
+  // VISIBLE_TABLE_HEIGHT_FULLSCREEN_INITIAL of 600 px even on a 1080p screen.
+  const [viewportHeight, setViewportHeight] = React.useState<number>(
+    typeof window !== "undefined" ? window.innerHeight : 900
+  );
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const update = () => setViewportHeight(window.innerHeight);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
   // ─── Derived stats (memoized) ──────────────────────────────────────────
   const stats = React.useMemo(() => {
     const idCounts = new Map<string, number>();
@@ -300,7 +322,18 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
   }, [trainees, search, filter]);
 
   // ─── Virtualization window ─────────────────────────────────────────────
-  const currentTableHeight = isFullscreen ? VISIBLE_TABLE_HEIGHT_FULLSCREEN : VISIBLE_TABLE_HEIGHT;
+  // In Full Screen mode the table should fill the viewport. We reserve:
+  //   - ~64 px for the section padding (top + bottom of fixed inset-0)
+  //   - ~48 px for the tabs row (tabs + Full Screen button)
+  //   - ~88 px for the stat cards row
+  //   - ~56 px for the toolbar (search + add/duplicate/delete buttons)
+  //   - ~56 px for the pagination row
+  //   - some buffer for borders/gaps = ~80 px
+  // Total reserved ≈ 392 px. Min 320 px to avoid negative values on tiny screens.
+  const FULLSCREEN_RESERVED_PX = 392;
+  const currentTableHeight = isFullscreen
+    ? Math.max(320, viewportHeight - FULLSCREEN_RESERVED_PX)
+    : VISIBLE_TABLE_HEIGHT;
   const totalHeight = filtered.length * ROW_HEIGHT;
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 2);
   const visibleCount = Math.ceil(currentTableHeight / ROW_HEIGHT) + 4;
@@ -617,8 +650,15 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
   const bulkIdInputRef = React.useRef<HTMLInputElement | null>(null);
 
   return (
-    <div className={cn("space-y-4", className, isFullscreen && "fixed inset-0 z-50 bg-background p-4 sm:p-6 lg:p-8 overflow-auto")}>
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
+    <div
+      className={cn(
+        "space-y-4",
+        className,
+        isFullscreen && "fixed inset-0 z-50 bg-background p-4 sm:p-6 lg:p-8 flex flex-col overflow-hidden"
+      )}
+      style={isFullscreen ? { maxHeight: "100vh" } : undefined}
+    >
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className={cn(isFullscreen && "flex flex-col flex-1 min-h-0")}>
         <div className="flex items-center justify-between gap-2">
           <TabsList className="w-full sm:w-auto">
             <TabsTrigger value="manual" className="flex-1 sm:flex-initial"><Users className="h-4 w-4 me-1.5" />{t("requests.trainees")}</TabsTrigger>
@@ -641,7 +681,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
         </div>
 
         {/* ─── Manual Entry ─────────────────────────────────────────────── */}
-        <TabsContent value="manual" className="space-y-4 mt-4">
+        <TabsContent value="manual" className={cn("space-y-4 mt-4", isFullscreen && "flex flex-col flex-1 min-h-0 overflow-hidden")}>
           {/* Stat cards (click to filter) */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
             <StatCard
@@ -761,7 +801,15 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
           )}
 
           {/* Table — virtualized, with horizontal + vertical scroll inside the table */}
-          <div className="rounded-md border" style={{ overflowX: "auto", overflowY: "auto", maxHeight: isFullscreen ? "calc(100vh - 280px)" : undefined }}>
+          <div
+            className={cn("rounded-md border", isFullscreen && "flex-1 min-h-0")}
+            style={{
+              overflowX: "auto",
+              overflowY: "auto",
+              maxHeight: isFullscreen ? "none" : undefined,
+              ...(isFullscreen ? { height: currentTableHeight } : {}),
+            }}
+          >
             <div style={{ minWidth: 1300, width: "max-content" }}>
             {/* Header row — sticky at top */}
             <div className="flex items-center bg-muted/80 backdrop-blur-sm border-b text-xs font-medium text-muted-foreground sticky top-0 z-20" style={{ height: ROW_HEIGHT }}>
