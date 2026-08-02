@@ -1,12 +1,12 @@
 "use client";
 
+import * as React from "react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/lib/i18n/context";
-import { type LucideIcon } from "lucide-react";
+import { type LucideIcon, Maximize2, Minimize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface FormDialogProps {
@@ -22,6 +22,10 @@ export interface FormDialogProps {
   isSubmitting?: boolean;
   /** Optional footer rendered on the LEFT of the standard Cancel/Save buttons. */
   footerExtra?: React.ReactNode;
+  /** When true, shows a Maximize/Restore button in the header that expands the
+   * dialog to ~98vw × 96vh. Useful for dialogs with large tables (e.g. the
+   * New Training Request dialog with the trainee entry grid). */
+  allowFullscreen?: boolean;
 }
 
 const SIZES: Record<NonNullable<FormDialogProps["size"]>, string> = {
@@ -35,17 +39,32 @@ const SIZES: Record<NonNullable<FormDialogProps["size"]>, string> = {
 export function FormDialog({
   open, onOpenChange, title, description, icon: Icon, children,
   onSubmit, submitLabel, size = "md", isSubmitting, footerExtra,
+  allowFullscreen = false,
 }: FormDialogProps) {
   const { t } = useI18n();
+  const [fullscreen, setFullscreen] = React.useState(false);
 
-  // For xxl size, the inner ScrollArea's max-h-[60vh] is too small (we want
-  // the trainee grid + additional docs to fit). Bump to 75vh.
-  const scrollAreaMaxH = size === "xxl" ? "max-h-[75vh]" : "max-h-[60vh]";
+  // Reset fullscreen when the dialog closes so the next open starts normal.
+  React.useEffect(() => {
+    if (!open) setFullscreen(false);
+  }, [open]);
+
+  // When fullscreen, override the size classes to fill the viewport.
+  // The DialogContent uses translate-x/y-[-50%] + fixed positioning, so we
+  // can't use percentage heights relative to the viewport inside it. Instead
+  // we use fixed vw/vh units on the content itself, and flex layout so the
+  // ScrollArea fills the space between the header and footer.
+  const contentClassName = cn(
+    "p-0 gap-0 overflow-hidden flex flex-col",
+    fullscreen
+      ? "max-w-[98vw] w-[98vw] max-h-[96vh] h-[96vh]"
+      : cn(SIZES[size], "max-h-[90vh]")
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn(SIZES[size], "p-0 gap-0 max-h-[90vh] overflow-hidden")}>
-        <DialogHeader className="p-5 border-b">
+      <DialogContent className={contentClassName}>
+        <DialogHeader className="p-5 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2 text-base">
             {Icon && (
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -53,18 +72,41 @@ export function FormDialog({
               </div>
             )}
             {title}
+            {allowFullscreen && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="ms-auto h-7 px-2"
+                onClick={() => setFullscreen((v) => !v)}
+                title={fullscreen ? t("requests.fullscreenExit") : t("requests.fullscreen")}
+                aria-label={fullscreen ? t("requests.fullscreenExit") : t("requests.fullscreen")}
+              >
+                {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                <span className="hidden sm:inline ms-1">
+                  {fullscreen ? t("requests.fullscreenExit") : t("requests.fullscreen")}
+                </span>
+              </Button>
+            )}
           </DialogTitle>
           {description && <DialogDescription className="text-xs">{description}</DialogDescription>}
         </DialogHeader>
 
-        <ScrollArea className={scrollAreaMaxH}>
+        {/* Body — flex-1 so it fills the space between header and footer.
+            When fullscreen, use min-h-0 so the flex child can shrink and
+            the inner scroll works. The max-h classes are only applied in
+            non-fullscreen mode (in fullscreen, the flex layout handles sizing). */}
+        <div className={cn(
+          "flex-1 min-h-0 overflow-y-auto",
+          !fullscreen && (size === "xxl" ? "max-h-[75vh]" : "max-h-[60vh]")
+        )}>
           <div className="p-5">
             {children}
           </div>
-        </ScrollArea>
+        </div>
 
         {(onSubmit || footerExtra) && (
-          <DialogFooter className="p-4 border-t bg-muted/30 flex items-center justify-between gap-2">
+          <DialogFooter className="p-4 border-t bg-muted/30 flex items-center justify-between gap-2 shrink-0">
             <div className="flex-shrink-0">{footerExtra}</div>
             <div className="flex items-center gap-2 ms-auto">
               <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>

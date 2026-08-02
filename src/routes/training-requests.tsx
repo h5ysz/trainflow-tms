@@ -431,6 +431,7 @@ export function TrainingRequestsRoute() {
         size="xxl"
         onSubmit={handleSubmit}
         isSubmitting={submitting}
+        allowFullscreen
         footerExtra={
           <div className="text-xs text-muted-foreground">
             {trainees.length > 0 ? (

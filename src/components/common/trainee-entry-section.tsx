@@ -278,18 +278,17 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
     phase: "idle", total: 0, done: 0, matched: 0, unmatched: [],
   });
   const [pasteText, setPasteText] = React.useState("");
-  const [isFullscreen, setIsFullscreen] = React.useState(false);
 
   // Refs for the virtualized scroll container.
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = React.useState(0);
 
-  // ── BUG-009 fix: force re-render after mount ──────────────────────────
+  // ── BUG-009/011 fix: force re-render after mount ─────────────────────
   // The virtualization calculates visibleSlice from scrollTop (0) and
-  // currentTableHeight (constant). On first render this should work, but
-  // inside a Dialog the TabsContent mounts lazily and the scroll container's
-  // layout isn't settled until after paint. This causes the table body to
-  // appear empty until the user interacts (resize, scroll, tab switch).
+  // currentTableHeight (constant). On first render inside a Dialog, the
+  // TabsContent mounts lazily and the scroll container's layout isn't
+  // settled until after paint. This causes the table body to appear empty
+  // until the user interacts (resize, scroll, tab switch).
   //
   // Fix: use useLayoutEffect to synchronously set a "mounted" flag BEFORE
   // the browser paints. This triggers a second render with the correct
@@ -311,23 +310,6 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
       setScrollTop(0);
     }
   }, [trainees, mounted]);
-
-  // ─── Viewport-aware Full Screen height ─────────────────────────────────
-  // When Full Screen is active the section becomes `fixed inset-0` and should
-  // fill the entire viewport. We compute the available table height from the
-  // live window size minus the chrome (tabs row + stat cards + toolbar +
-  // pagination). Without this the table would stay at the fixed
-  // VISIBLE_TABLE_HEIGHT_FULLSCREEN_INITIAL of 600 px even on a 1080p screen.
-  const [viewportHeight, setViewportHeight] = React.useState<number>(
-    typeof window !== "undefined" ? window.innerHeight : 900
-  );
-  React.useEffect(() => {
-    if (typeof window === "undefined") return;
-    const update = () => setViewportHeight(window.innerHeight);
-    update();
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
-  }, []);
 
   // ─── Derived stats (memoized) ──────────────────────────────────────────
   const stats = React.useMemo(() => {
@@ -403,16 +385,12 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
       clearTimeout(t);
       window.removeEventListener("resize", measure);
     };
-  }, [mounted, isFullscreen]);
+  }, [mounted]);
 
-  const FULLSCREEN_RESERVED_PX = 392;
   // Use the measured height if available (and larger than the constant),
   // otherwise fall back to the constant. This fixes the empty-table-on-
   // first-render bug where the virtualization calculated 0 visible rows.
-  const effectiveTableHeight = isFullscreen
-    ? Math.max(320, viewportHeight - FULLSCREEN_RESERVED_PX)
-    : Math.max(VISIBLE_TABLE_HEIGHT, measuredHeight);
-  const currentTableHeight = effectiveTableHeight;
+  const currentTableHeight = Math.max(VISIBLE_TABLE_HEIGHT, measuredHeight);
   const totalHeight = filtered.length * ROW_HEIGHT;
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 2);
   const visibleCount = Math.ceil(currentTableHeight / ROW_HEIGHT) + 4;
@@ -744,44 +722,18 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
   const bulkIdInputRef = React.useRef<HTMLInputElement | null>(null);
 
   return (
-    <div
-      className={cn(
-        "space-y-4",
-        className,
-        // When fullscreen, we use a very high z-index (z-[200]) to escape above
-        // the parent Dialog overlay (z-50) AND the DialogContent (also z-50).
-        // The DialogContent uses translate-x/y-[-50%] which creates a new
-        // containing block, so `fixed inset-0` on a child would be relative
-        // to the dialog, not the viewport. Using z-[200] + `fixed` ensures
-        // the fullscreen section paints on top of everything.
-        isFullscreen && "fixed inset-0 z-[200] bg-background p-4 sm:p-6 lg:p-8 flex flex-col overflow-hidden"
-      )}
-      style={isFullscreen ? { maxHeight: "100vh" } : undefined}
-    >
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className={cn(isFullscreen && "flex flex-col flex-1 min-h-0")}>
+    <div className={cn("space-y-4", className)}>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
         <div className="flex items-center justify-between gap-2">
           <TabsList className="w-full sm:w-auto">
             <TabsTrigger value="manual" className="flex-1 sm:flex-initial"><Users className="h-4 w-4 me-1.5" />{t("requests.trainees")}</TabsTrigger>
             <TabsTrigger value="excel" className="flex-1 sm:flex-initial"><FileSpreadsheet className="h-4 w-4 me-1.5" />{t("requests.excelImport")}</TabsTrigger>
             <TabsTrigger value="paste" className="flex-1 sm:flex-initial"><ClipboardPaste className="h-4 w-4 me-1.5" />{t("requests.copyPaste")}</TabsTrigger>
           </TabsList>
-          {activeTab === "manual" && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="shrink-0"
-              onClick={() => setIsFullscreen(!isFullscreen)}
-              title={isFullscreen ? t("requests.fullscreenExit") : t("requests.fullscreen")}
-            >
-              {isFullscreen ? <Minimize2 className="h-4 w-4 me-1" /> : <Maximize2 className="h-4 w-4 me-1" />}
-              {isFullscreen ? t("requests.fullscreenExit") : t("requests.fullscreen")}
-            </Button>
-          )}
         </div>
 
         {/* ─── Manual Entry ─────────────────────────────────────────────── */}
-        <TabsContent value="manual" className={cn("space-y-4 mt-4", isFullscreen && "flex flex-col flex-1 min-h-0 overflow-hidden")}>
+        <TabsContent value="manual" className="space-y-4 mt-4">
           {/* Stat cards (click to filter) */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
             <StatCard
@@ -902,12 +854,10 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
 
           {/* Table — virtualized, with horizontal + vertical scroll inside the table */}
           <div
-            className={cn("rounded-md border", isFullscreen && "flex-1 min-h-0")}
+            className="rounded-md border"
             style={{
               overflowX: "auto",
               overflowY: "auto",
-              maxHeight: isFullscreen ? "none" : undefined,
-              ...(isFullscreen ? { height: currentTableHeight } : {}),
             }}
           >
             <div style={{ minWidth: 1300, width: "max-content" }}>
