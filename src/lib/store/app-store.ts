@@ -53,11 +53,14 @@ export const useAppStore = create<AppState>()(
         set({ authLoading: true, authError: null });
         try {
           const { user } = await authApi.login(email, password);
+          // Contractors don't have dashboard.view permission — redirect them
+          // to their Training Requests page instead of showing "no permission".
+          const defaultRoute = user.role === "CONTRACTOR" ? "requests" : "dashboard";
           set({
             user,
             isAuthenticated: true,
             locale: (user.language as Locale) ?? "en",
-            currentRoute: "dashboard",
+            currentRoute: defaultRoute,
             routeParam: null,
             authLoading: false,
           });
