@@ -47,7 +47,7 @@ export const GET = withModuleAction("certificates", "view", async ({ req, user }
     db.certificate.findMany({
       where,
       include: {
-        session: {
+        trainingSession: {
           select: { id: true, refNumber: true, title: true, startDate: true, endDate: true },
         },
         course: { select: { id: true, title: true, code: true, refNumber: true } },

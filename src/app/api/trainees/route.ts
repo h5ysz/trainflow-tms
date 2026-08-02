@@ -37,7 +37,7 @@ export const GET = withModuleAction("trainees", "view", async ({ req, user }) =>
       where,
       include: {
         company: { select: { id: true, name: true, refNumber: true } },
-        _count: { select: { requestCourses: true } },
+        _count: { select: { trainingRequestCourseTrainee: true } },
       },
       orderBy,
       skip: (q.page - 1) * q.pageSize,
