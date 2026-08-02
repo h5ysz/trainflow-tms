@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -379,8 +380,7 @@ export function UserManagementRoute() {
             </Field>
             {!isEditing && (
               <Field label={t("users.password")} required hint={t("users.weakPassword")}>
-                <Input
-                  type="password"
+                <PasswordInput
                   value={(formData.password as string) ?? ""}
                   onChange={(e) => setField("password", e.target.value)}
                 />
@@ -431,7 +431,7 @@ export function UserManagementRoute() {
       >
         {/* Email is stubbed, so the admin sets the password and passes it on directly. */}
         <Field label={t("users.newPassword")} required hint={t("users.weakPassword")}>
-          <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+          <PasswordInput value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
         </Field>
       </FormDialog>
 

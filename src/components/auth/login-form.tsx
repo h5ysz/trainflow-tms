@@ -5,6 +5,7 @@ import { useI18n } from "@/lib/i18n/context";
 import { useAppStore } from "@/lib/store/app-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AlertCircle, Loader2, ArrowRight, Languages } from "lucide-react";
@@ -153,9 +154,8 @@ export function LoginForm() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="password" className="text-sm font-medium">{t("auth.password")}</Label>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSignIn()}

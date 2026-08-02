@@ -21,6 +21,8 @@ export const dict = {
     "auth.demoTitle": "Choose a demo role to explore the system",
     "auth.invalidCredentials": "Invalid email or password",
     "auth.signInWithRole": "Continue as {role}",
+    "auth.showPassword": "Show password",
+    "auth.hidePassword": "Hide password",
 
     // Roles
     "role.SUPER_ADMIN": "Super Admin",
@@ -1226,6 +1228,8 @@ export const dict = {
     "auth.demoTitle": "اختر دوراً تجريبياً لاستكشاف النظام",
     "auth.invalidCredentials": "بريد إلكتروني أو كلمة مرور غير صحيحة",
     "auth.signInWithRole": "المتابعة كـ {role}",
+    "auth.showPassword": "إظهار كلمة المرور",
+    "auth.hidePassword": "إخفاء كلمة المرور",
 
     // Roles
     "role.SUPER_ADMIN": "مدير النظام",

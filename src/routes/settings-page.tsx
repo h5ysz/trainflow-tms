@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -307,8 +308,7 @@ export function SettingsRoute() {
                   <Field label={t("settings.smtpPassword")}>
                     {/* Left empty means "keep the stored password" — saving the form
                         without retyping it must not wipe the secret. */}
-                    <Input
-                      type="password"
+                    <PasswordInput
                       autoComplete="new-password"
                       value={settings["email.smtpPassword"] ?? ""}
                       onChange={(e) => setSetting("email.smtpPassword", e.target.value)}
