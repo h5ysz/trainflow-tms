@@ -18,7 +18,7 @@ export interface FormDialogProps {
   children: React.ReactNode;
   onSubmit?: () => void;
   submitLabel?: string;
-  size?: "sm" | "md" | "lg" | "xl" | "xxl";
+  size?: "sm" | "md" | "lg" | "xl" | "xxl" | "3xl";
   isSubmitting?: boolean;
   /** Optional footer rendered on the LEFT of the standard Cancel/Save buttons. */
   footerExtra?: React.ReactNode;
@@ -29,11 +29,14 @@ export interface FormDialogProps {
 }
 
 const SIZES: Record<NonNullable<FormDialogProps["size"]>, string> = {
-  sm: "max-w-md",
-  md: "max-w-lg",
-  lg: "max-w-2xl",
-  xl: "max-w-4xl",
-  xxl: "max-w-6xl",
+  sm: "sm:max-w-md",
+  md: "sm:max-w-lg",
+  lg: "sm:max-w-2xl",
+  xl: "sm:max-w-4xl",
+  xxl: "sm:max-w-7xl",
+  // 3xl = almost full screen by default — for the New Training Request
+  // dialog which contains a large editable trainee grid + additional docs.
+  "3xl": "sm:max-w-[95vw] sm:w-[95vw]",
 };
 
 export function FormDialog({
@@ -54,6 +57,9 @@ export function FormDialog({
   // can't use percentage heights relative to the viewport inside it. Instead
   // we use fixed vw/vh units on the content itself, and flex layout so the
   // ScrollArea fills the space between the header and footer.
+  // Note: the base DialogContent has `grid gap-4 sm:max-w-lg` — we override
+  // with `flex flex-col` and the size-specific `sm:max-w-*`. tailwind-merge
+  // (via cn) ensures our classes win over the base ones.
   const contentClassName = cn(
     "p-0 gap-0 overflow-hidden flex flex-col",
     fullscreen
@@ -98,7 +104,7 @@ export function FormDialog({
             non-fullscreen mode (in fullscreen, the flex layout handles sizing). */}
         <div className={cn(
           "flex-1 min-h-0 overflow-y-auto",
-          !fullscreen && (size === "xxl" ? "max-h-[75vh]" : "max-h-[60vh]")
+          !fullscreen && (size === "3xl" ? "max-h-[82vh]" : size === "xxl" ? "max-h-[75vh]" : "max-h-[60vh]")
         )}>
           <div className="p-5">
             {children}

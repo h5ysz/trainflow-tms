@@ -428,7 +428,7 @@ export function TrainingRequestsRoute() {
         title={t("requests.new")}
         description={t("requests.subtitle")}
         icon={ClipboardList}
-        size="xxl"
+        size="3xl"
         onSubmit={handleSubmit}
         isSubmitting={submitting}
         allowFullscreen
