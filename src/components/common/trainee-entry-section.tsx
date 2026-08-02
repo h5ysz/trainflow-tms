@@ -23,7 +23,7 @@
 // stay smooth — only the visible slice is in the DOM.
 
 import * as React from "react";
-import { useI18n } from "@/lib/i18n/context";
+import { useI18n, type DictKey } from "@/lib/i18n/context";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
@@ -110,7 +110,7 @@ export interface ImportPreview {
 // The API returns stable machine codes (MISSING_NAME, DUPLICATE_NATIONAL_ID,
 // etc.) so the frontend can localize them — instead of returning pre-baked
 // English strings that would leak into the Arabic UI.
-function translateRowError(code: string, t: (k: string) => string): string {
+function translateRowError(code: string, t: (k: DictKey) => string): string {
   switch (code) {
     case "MISSING_REQUIRED_COLUMNS":
       return t("requests.import.errMissingRequiredColumns");

@@ -17,7 +17,7 @@ export const GET = withModuleAction("requests", "view", async ({ params, user })
         where: { deletedAt: null },
         include: {
           course: { select: { id: true, title: true, code: true, refNumber: true } },
-          trainingRequestCourseTrainee: {
+          trainees: {
             where: { deletedAt: null },
             include: {
               trainee: {
@@ -31,7 +31,7 @@ export const GET = withModuleAction("requests", "view", async ({ params, user })
               },
             },
           },
-          _count: { select: { trainingSession: true } },
+          _count: { select: { sessions: true } },
         },
       },
       sessions: {

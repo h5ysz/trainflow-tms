@@ -98,10 +98,14 @@ interface ReviewTrainee {
 const DOC_TYPES = ["iqama", "id", "passport", "certificate", "medical"] as const;
 type DocType = (typeof DOC_TYPES)[number];
 
+// The API also accepts "other", which has no dedicated column here: unlike the
+// typed documents it is additive, so uploading one never replaces an existing doc.
+type StoredDocType = DocType | "other";
+
 interface ParsedDoc {
   url: string;
   filename: string;
-  type: DocType | "other";
+  type: StoredDocType;
   uploadedAt: string;
 }
 
@@ -992,19 +996,20 @@ function TraineesSection({ detail, onPreview, onChanged, canEdit }: {
   // without waiting for the parent to refetch the whole request detail.
   const [docsOverride, setDocsOverride] = useState<Record<string, ParsedDoc[]>>({});
 
-  const DOC_LABELS: Record<DocType, string> = {
+  const DOC_LABELS: Record<StoredDocType, string> = {
     iqama: t("requests.review.docIqama") || "Iqama",
     id: t("requests.review.docId") || "ID",
     passport: t("requests.review.docPassport") || "Passport",
     certificate: t("requests.review.docCertificate") || "Certificate",
     medical: t("requests.review.docMedical") || "Medical",
+    other: t("requests.review.docOther") || "Other",
   };
 
   if (detail.requestCourses.length === 0) {
     return <EmptyHint text={t("requests.review.noTrainees")} />;
   }
 
-  async function handleUpload(traineeId: string, docType: DocType, file: File, traineeName: string) {
+  async function handleUpload(traineeId: string, docType: StoredDocType, file: File, traineeName: string) {
     const key = `${traineeId}:${docType}`;
     setPending((p) => ({ ...p, [key]: "upload" }));
     try {
