@@ -21,7 +21,7 @@
 //   - CONTRACTOR: blocked (no sessions.edit permission).
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { withModuleAction, ok, notFound, fail } from "@/lib/auth/api";
 import { recalcCertificateEligibility } from "@/lib/api/enrollment-sync";
 
 export const POST = withModuleAction("sessions", "edit", async ({ req, params, user }) => {
@@ -130,37 +130,11 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
     });
   }
 
-  // ── Audit log (NO contractor notification per business rules) ───────────
-  await audit({
-    user,
-    action: "UPDATE",
-    entity: "SESSION",
-    entityId: sessionId,
-    entityRef: session.refNumber,
-    description: `Trainer opportunity used for ${enrollment.traineeId}: ${passed ? "PASSED" : "FAILED"}${scorePercent !== undefined ? ` (${scorePercent}%)` : ""}`,
-    descriptionAr: `تم استخدام فرصة المدرّب للمتدرب: ${passed ? "ناجح" : "راسب"}${scorePercent !== undefined ? ` (${scorePercent}%)` : ""}`,
-    req,
-    oldValue: {
-      trainerOpportunityUsed: false,
-      finalTestStatus: enrollment.finalTestStatus,
-    },
-    newValue: {
-      trainerOpportunityUsed: true,
-      trainerOpportunityPassed: Boolean(passed),
-      finalTestStatus: passed ? "PASSED" : enrollment.finalTestStatus,
-    },
-    metadata: {
-      action: "TRAINER_OPPORTUNITY_USED",
-      enrollmentId,
-      sessionId,
-      sessionRef: session.refNumber,
-      traineeId: enrollment.traineeId,
-      passed: Boolean(passed),
-      scorePercent: scorePercent ?? null,
-      usedBy: user.id,
-      usedByRole: user.role,
-    },
-  });
+  // ── No Audit Log for Trainer Opportunity ────────────────────────────────
+  // Per business rules: Trainer Opportunity is an instructional decision,
+  // NOT an administrative workflow event. It must NOT appear in the Audit
+  // Log. Only official administrative events (Official Retest actions,
+  // session/trainer changes, enrollment changes) are audited.
 
   return ok({
     enrollmentId,
