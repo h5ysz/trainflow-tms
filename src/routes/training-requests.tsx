@@ -807,6 +807,10 @@ function fmtDate(value?: string | null) {
   return value ? new Date(value).toLocaleDateString() : null;
 }
 
+function fmtDateTime(value?: string | null) {
+  return value ? new Date(value).toLocaleString() : null;
+}
+
 function DetailRow({ label, value }: { label: string; value?: string | number | null }) {
   return (
     <div className="space-y-1">
