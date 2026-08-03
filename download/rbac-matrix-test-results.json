@@ -1,0 +1,391 @@
+[
+  {
+    "role": "CONTRACTOR",
+    "status": "DRAFT",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "[Edit]",
+      "Submit",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "CONTRACTOR",
+    "status": "SUBMITTED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "CONTRACTOR",
+    "status": "UNDER_REVIEW",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "CONTRACTOR",
+    "status": "REQUIRES_MODIFICATION",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "[Edit]",
+      "Resubmit",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "CONTRACTOR",
+    "status": "APPROVED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "CONTRACTOR",
+    "status": "REJECTED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "[Edit]",
+      "Resubmit"
+    ]
+  },
+  {
+    "role": "CONTRACTOR",
+    "status": "SCHEDULED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "CONTRACTOR",
+    "status": "IN_PROGRESS",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "CONTRACTOR",
+    "status": "COMPLETED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Details"
+    ]
+  },
+  {
+    "role": "CONTRACTOR",
+    "status": "CANCELLED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Details"
+    ]
+  },
+  {
+    "role": "COORDINATOR",
+    "status": "DRAFT",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "[Edit]",
+      "Submit",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "COORDINATOR",
+    "status": "SUBMITTED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Start Review",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "COORDINATOR",
+    "status": "UNDER_REVIEW",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Approve",
+      "Return for Revision",
+      "Reject",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "COORDINATOR",
+    "status": "REQUIRES_MODIFICATION",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "[Edit]",
+      "Resubmit",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "COORDINATOR",
+    "status": "APPROVED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Mark as Scheduled",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "COORDINATOR",
+    "status": "REJECTED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "[Edit]",
+      "Resubmit"
+    ]
+  },
+  {
+    "role": "COORDINATOR",
+    "status": "SCHEDULED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Start Session",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "COORDINATOR",
+    "status": "IN_PROGRESS",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Complete",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "COORDINATOR",
+    "status": "COMPLETED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Details"
+    ]
+  },
+  {
+    "role": "COORDINATOR",
+    "status": "CANCELLED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Details"
+    ]
+  },
+  {
+    "role": "SUPER_ADMIN",
+    "status": "DRAFT",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "[Edit]",
+      "Submit",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "SUPER_ADMIN",
+    "status": "SUBMITTED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Start Review",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "SUPER_ADMIN",
+    "status": "UNDER_REVIEW",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Approve",
+      "Return for Revision",
+      "Reject",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "SUPER_ADMIN",
+    "status": "REQUIRES_MODIFICATION",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "[Edit]",
+      "Resubmit",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "SUPER_ADMIN",
+    "status": "APPROVED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Mark as Scheduled",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "SUPER_ADMIN",
+    "status": "REJECTED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "[Edit]",
+      "Resubmit"
+    ]
+  },
+  {
+    "role": "SUPER_ADMIN",
+    "status": "SCHEDULED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Start Session",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "SUPER_ADMIN",
+    "status": "IN_PROGRESS",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Complete",
+      "Cancel"
+    ]
+  },
+  {
+    "role": "SUPER_ADMIN",
+    "status": "COMPLETED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Details"
+    ]
+  },
+  {
+    "role": "SUPER_ADMIN",
+    "status": "CANCELLED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Details"
+    ]
+  },
+  {
+    "role": "AUDITOR",
+    "status": "DRAFT",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Details"
+    ]
+  },
+  {
+    "role": "AUDITOR",
+    "status": "SUBMITTED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Details"
+    ]
+  },
+  {
+    "role": "AUDITOR",
+    "status": "UNDER_REVIEW",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Details"
+    ]
+  },
+  {
+    "role": "AUDITOR",
+    "status": "REQUIRES_MODIFICATION",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Details"
+    ]
+  },
+  {
+    "role": "AUDITOR",
+    "status": "APPROVED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Details"
+    ]
+  },
+  {
+    "role": "AUDITOR",
+    "status": "REJECTED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Details"
+    ]
+  },
+  {
+    "role": "AUDITOR",
+    "status": "SCHEDULED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Details"
+    ]
+  },
+  {
+    "role": "AUDITOR",
+    "status": "IN_PROGRESS",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Details"
+    ]
+  },
+  {
+    "role": "AUDITOR",
+    "status": "COMPLETED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Details"
+    ]
+  },
+  {
+    "role": "AUDITOR",
+    "status": "CANCELLED",
+    "found": true,
+    "buttons": [
+      "[Preview]",
+      "Details"
+    ]
+  }
+]

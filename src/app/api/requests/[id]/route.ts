@@ -1,6 +1,7 @@
 // /api/requests/[id] — get / update (incl. workflow transitions) / soft-delete
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { canPerformAction } from "@/lib/auth/permissions";
 import { recordStatusChange } from "@/lib/auth/audit";
 import { canTransition } from "../route";
 import { validateRequestForApproval, MIN_TRAINEES_PER_COURSE, MAX_TRAINEES_PER_COURSE } from "@/lib/api/request-validation";
@@ -50,17 +51,47 @@ export const GET = withModuleAction("requests", "view", async ({ params, user })
   return ok(request);
 });
 
-export const PUT = withModuleAction("requests", "edit", async ({ req, params, user }) => {
+// PUT — update an existing request (incl. workflow transitions).
+//
+// RBAC strategy:
+//   - Coordinators/Trainers/Super Admins hold `requests.edit` and may update any
+//     request, including reviewer-side transitions (UNDER_REVIEW, APPROVED,
+//     REJECTED, SCHEDULED, IN_PROGRESS, COMPLETED, REQUIRES_MODIFICATION).
+//   - Contractors do NOT hold `requests.edit`. They hold `requests.view` only.
+//     However, they still need to edit their own DRAFT/SUBMITTED/REJECTED
+//     requests (dates, notes, trainees, priority) AND drive self-service
+//     transitions (DRAFT→SUBMITTED, REJECTED→SUBMITTED, SUBMITTED→CANCELLED).
+//     Without this carve-out, the contractor's edit dialog always 403s.
+//
+// The handler therefore requires `requests.view` (so contractors can reach the
+// logic), then enforces:
+//   - Coordinators/etc. (with `requests.edit`) — no extra restrictions
+//   - Contractors — may only edit their own requests in DRAFT/SUBMITTED/REJECTED,
+//     AND may only transition to a self-service target status. Reviewer-side
+//     transitions (APPROVED, REJECTED, UNDER_REVIEW, SCHEDULED, IN_PROGRESS,
+//     COMPLETED, REQUIRES_MODIFICATION) remain 403 for contractors.
+export const PUT = withModuleAction("requests", "view", async ({ req, params, user }) => {
   const id = params.id as string;
   const body = await req.json().catch(() => ({}));
   const existing = await db.trainingRequest.findUnique({ where: { id } });
   if (!existing || existing.deletedAt) return notFound("Request not found");
 
-  // Contractors can edit only their own DRAFT/SUBMITTED/REJECTED requests
-  if (user.role === "CONTRACTOR") {
-    if (existing.companyId !== user.companyId) return fail("Forbidden", 403);
-    if (!["DRAFT", "SUBMITTED", "REJECTED"].includes(existing.status)) {
-      return fail("Cannot edit a request that has already entered review", 400);
+  const hasEdit = canPerformAction(user.permissions, "requests", "edit");
+
+  // Contractors (and any other role without `requests.edit`) get the self-service
+  // carve-out. Roles with `requests.edit` skip this block entirely.
+  if (!hasEdit) {
+    // 1. Must be the owner (company match)
+    if (user.role === "CONTRACTOR" && existing.companyId !== user.companyId) {
+      return fail("Forbidden — you can only edit your own company's requests", 403);
+    }
+    // 2. Existing status must be one of the editable self-service statuses
+    if (!["DRAFT", "SUBMITTED", "REJECTED", "REQUIRES_MODIFICATION"].includes(existing.status)) {
+      return fail(
+        "Cannot edit a request that has already entered review",
+        400,
+        "REQUEST_IN_REVIEW",
+      );
     }
   }
 
@@ -70,7 +101,27 @@ export const PUT = withModuleAction("requests", "edit", async ({ req, params, us
     status: newStatus, rejectionReason,
   } = body;
 
-  // Workflow enforcement
+  // Workflow enforcement — self-service allowlist for non-edit roles.
+  // Mirrors SELF_SERVICE_TRANSITIONS in /api/requests/[id]/transition.
+  if (!hasEdit && newStatus && newStatus !== existing.status) {
+    const SELF_SERVICE_TRANSITIONS: Record<string, string[]> = {
+      DRAFT: ["SUBMITTED", "CANCELLED"],
+      SUBMITTED: ["CANCELLED"],
+      REJECTED: ["SUBMITTED"],
+      REQUIRES_MODIFICATION: ["SUBMITTED", "CANCELLED"],
+    };
+    const allowed = SELF_SERVICE_TRANSITIONS[existing.status] ?? [];
+    if (!allowed.includes(newStatus)) {
+      return fail(
+        `Forbidden — ${existing.status} → ${newStatus} requires the requests.edit permission`,
+        403,
+        "FORBIDDEN_TRANSITION",
+        { from: existing.status, to: newStatus, allowed }
+      );
+    }
+  }
+
+  // Workflow enforcement — transition must be valid per the global state machine
   if (newStatus && newStatus !== existing.status) {
     if (!canTransition(existing.status as TrainingRequestStatus, newStatus as TrainingRequestStatus)) {
       return fail(

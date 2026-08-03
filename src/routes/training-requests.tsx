@@ -72,7 +72,10 @@ const SELF_SERVICE_TRANSITIONS: Record<string, string[]> = {
   REQUIRES_MODIFICATION: ["SUBMITTED", "CANCELLED"],
 };
 
-// Workflow transition matrix (mirror of backend)
+// Workflow transition matrix (mirror of backend).
+// Maps each status → the array of action buttons that can transition out of it.
+// NOTE: this is the SUPERSET of all transitions across all roles. The per-role
+// filter (getActionsForRole) below narrows this list down based on RBAC.
 const NEXT_ACTIONS: Record<string, { status: string; labelKey: string; variant: "default" | "outline" | "ghost"; tone?: "success" | "destructive" | "info" | "warning" }[]> = {
   DRAFT: [
     { status: "SUBMITTED", labelKey: "workflow.submit", variant: "default", tone: "info" },
@@ -110,6 +113,43 @@ const NEXT_ACTIONS: Record<string, { status: string; labelKey: string; variant: 
     { status: "SUBMITTED", labelKey: "workflow.resubmit", variant: "default", tone: "info" },
   ],
 };
+
+// Per-role action filter — narrows NEXT_ACTIONS based on what the user's role
+// is allowed to do. This is the single source of truth for "which action
+// buttons does this user see on a request in status X?".
+//
+// CONTRACTOR (self-service only):
+//   - DRAFT                  → Submit, Cancel
+//   - SUBMITTED              → Cancel
+//   - REQUIRES_MODIFICATION  → Resubmit, Cancel
+//   - REJECTED               → Resubmit
+//   - Under Review / Approved / Scheduled / In Progress / Completed / Cancelled → no actions
+//
+// COORDINATOR / TRAINER / SUPER_ADMIN / COMPANY_ADMIN (full workflow control):
+//   - See ALL transitions from NEXT_ACTIONS (no filtering)
+//
+// AUDITOR / VIEWER (read-only):
+//   - No action buttons at all
+const SELF_SERVICE_TARGETS = new Set([
+  "SUBMITTED", // submit / resubmit
+  "CANCELLED", // cancel own request
+]);
+
+function getActionsForRole(
+  status: string,
+  role: string | undefined,
+  hasEdit: boolean,
+): typeof NEXT_ACTIONS[string] {
+  const all = NEXT_ACTIONS[status] ?? [];
+  // Read-only viewers see no action buttons
+  if (!role) return [];
+  if (role === "AUDITOR" || role === "VIEWER") return [];
+  // Roles with `requests.edit` see the full workflow
+  if (hasEdit) return all;
+  // Contractors (and any other role without `requests.edit`) see only
+  // self-service actions (submit / resubmit / cancel own request).
+  return all.filter((a) => SELF_SERVICE_TARGETS.has(a.status));
+}
 
 export function TrainingRequestsRoute() {
   const { t } = useI18n();
@@ -323,11 +363,14 @@ export function TrainingRequestsRoute() {
       headerClassName: "text-end",
       className: "text-end",
       cell: (r) => {
-        const actions = NEXT_ACTIONS[r.status] ?? [];
-        const canEditRequest = r.status === "DRAFT" || r.status === "REQUIRES_MODIFICATION";
+        // Per-role RBAC: contractors see only self-service buttons (submit /
+        // resubmit / cancel). Coordinators/Trainers/Super Admins see the full
+        // workflow. Auditors/Viewers see nothing.
+        const actions = getActionsForRole(r.status, user?.role, canEdit);
+        const canEditRequest = (r.status === "DRAFT" || r.status === "REQUIRES_MODIFICATION" || r.status === "REJECTED") && canCreate;
         return (
           <div className="flex justify-end items-center gap-1 flex-wrap">
-            {/* Preview button — available for ALL requests */}
+            {/* Preview button — available for ALL requests + ALL roles (incl. read-only) */}
             <Button
               variant="ghost"
               size="icon"
@@ -337,8 +380,8 @@ export function TrainingRequestsRoute() {
             >
               <Eye className="h-3.5 w-3.5" />
             </Button>
-            {/* Edit button — only for DRAFT + SUBMITTED */}
-            {canEditRequest && canCreate && (
+            {/* Edit button — only for DRAFT + REQUIRES_MODIFICATION + REJECTED, only for users with requests.create */}
+            {canEditRequest && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -371,7 +414,6 @@ export function TrainingRequestsRoute() {
                           : ""
                 }`}
                 onClick={() => handleTransition(r, a.status)}
-                disabled={!canEdit && !(SELF_SERVICE_TRANSITIONS[r.status] ?? []).includes(a.status)}
               >
                 {a.status === "SUBMITTED" && r.status === "REJECTED" && <RotateCcw className="h-3.5 w-3.5 me-1" />}
                 {a.status === "APPROVED" && <Check className="h-3.5 w-3.5 me-1" />}
