@@ -337,7 +337,13 @@ function writeDateCell(cell: ExcelJS.Cell, value: Date | string | null | undefin
 // ─────────────────────────────────────────────────────────────────────────────
 export const GET = async (req: NextRequest) => {
   const user = await requireAuth();
-  if (!user.companyId) return fail("No company linked", 403);
+
+  // Contractors are scoped to their own company. Coordinators / Super Admin /
+  // Company Admin can export ALL companies' data (they don't have companyId).
+  const isGlobalRole = ["COORDINATOR", "SUPER_ADMIN", "COMPANY_ADMIN", "TRAINER", "AUDITOR"].includes(user.role);
+  if (!user.companyId && !isGlobalRole) {
+    return fail("No company linked", 403);
+  }
 
   const url = new URL(req.url);
   const scope = (url.searchParams.get("scope") || "last") as
@@ -353,11 +359,13 @@ export const GET = async (req: NextRequest) => {
     return fail("No items selected", 422, "VALIDATION_ERROR");
   }
 
-  const companyId = user.companyId;
+  const companyId = user.companyId; // undefined for global roles → no company filter
 
   // ── Build the TrainingRequest where-clause ──
-  // Used by every sheet that hangs off a TrainingRequest.
-  const reqWhere: Record<string, unknown> = { companyId, deletedAt: null };
+  // Contractors: scoped to their own company.
+  // Coordinators/Admins: see ALL companies (no companyId filter).
+  const reqWhere: Record<string, unknown> = { deletedAt: null };
+  if (companyId) reqWhere.companyId = companyId;
   let scopeCourseId: string | undefined;
   let scopeCourseTitle = "";
   let scopeRequestRef = "";
@@ -365,7 +373,7 @@ export const GET = async (req: NextRequest) => {
   switch (scope) {
     case "last": {
       const last = await db.trainingRequest.findFirst({
-        where: { companyId, deletedAt: null },
+        where: reqWhere,
         orderBy: { createdAt: "desc" },
         select: { id: true, refNumber: true },
       });
@@ -471,8 +479,8 @@ export const GET = async (req: NextRequest) => {
   ];
 
   const companyName = allRequests[0]?.company?.name
-    ?? (await db.company.findUnique({ where: { id: companyId }, select: { name: true } }))?.name
-    ?? "";
+    ?? (companyId ? (await db.company.findUnique({ where: { id: companyId }, select: { name: true } }))?.name : null)
+    ?? (isGlobalRole ? (locale === "ar" ? "جميع الشركات" : "All Companies") : "");
   const scopeLabels: Record<string, string> = {
     last: locale === "ar" ? `آخر طلب (${scopeRequestRef})` : `Last request (${scopeRequestRef})`,
     specific_request: locale === "ar" ? `طلب محدد (${scopeRequestRef})` : `Specific request (${scopeRequestRef})`,
@@ -766,8 +774,9 @@ export const GET = async (req: NextRequest) => {
     const headers = HEADERS.certificates(locale);
     ws.columns = headers.map((h) => ({ header: h, key: h }));
 
-    // Filter certs by company, AND if specific_course — also by course
-    const certWhere: Record<string, unknown> = { companyId, deletedAt: null };
+    // Filter certs by company (only for contractors), AND if specific_course — also by course
+    const certWhere: Record<string, unknown> = { deletedAt: null };
+    if (companyId) certWhere.companyId = companyId;
     if (scope === "specific_course" && scopeCourseId) {
       certWhere.courseId = scopeCourseId;
     } else if (requestIds.length > 0) {
@@ -822,7 +831,8 @@ export const GET = async (req: NextRequest) => {
     ws.columns = headers.map((h) => ({ header: h, key: h }));
 
     // If specific_course scope, we still want invoices tied to requests in that course
-    const invWhere: Record<string, unknown> = { companyId, deletedAt: null };
+    const invWhere: Record<string, unknown> = { deletedAt: null };
+    if (companyId) invWhere.companyId = companyId;
     if (requestIds.length > 0) {
       invWhere.requestId = { in: requestIds };
     }
@@ -887,8 +897,10 @@ export const GET = async (req: NextRequest) => {
     const rows: AttachmentRow[] = [];
 
     // 1. Trainee documents
+    const traineeAttachWhere: Record<string, unknown> = { deletedAt: null };
+    if (companyId) traineeAttachWhere.companyId = companyId;
     const traineesForAttachments = await db.trainee.findMany({
-      where: { companyId, deletedAt: null },
+      where: traineeAttachWhere,
       select: {
         fullName: true, nationalId: true, documents: true,
         idAttachmentUrl: true,
@@ -983,7 +995,10 @@ export const GET = async (req: NextRequest) => {
     }
 
     let attRowCount = 0;
+    // Build the base URL for absolute attachment links (so they're clickable in Excel)
+    const baseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`;
     for (const a of rows) {
+      const fullUrl = a.url.startsWith("http") ? a.url : `${baseUrl}${a.url}`;
       const row = ws.addRow([
         a.fileName,
         a.fileType,
@@ -991,10 +1006,14 @@ export const GET = async (req: NextRequest) => {
         a.traineeName,
         a.requestRef,
         "", // uploadedAt as date
-        a.url,
+        fullUrl,
       ]);
       writeDateCell(ws.getCell(row.number, 6), a.uploadedAt ? new Date(a.uploadedAt) : null, true);
       writeIdCell(ws, row, 5, a.requestRef);
+      // Make URL cell a clickable hyperlink
+      const urlCell = ws.getCell(row.number, 7);
+      urlCell.value = { text: fullUrl, hyperlink: fullUrl };
+      urlCell.font = { color: { argb: "FF0563C1" }, underline: true };
       attRowCount++;
     }
     counts.attachments = attRowCount;
