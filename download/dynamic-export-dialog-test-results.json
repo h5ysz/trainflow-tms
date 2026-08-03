@@ -1,0 +1,56 @@
+[
+  {
+    "scope": "last",
+    "locale": "en",
+    "extraFieldVisible": false,
+    "searchableSelectVisible": false,
+    "exportButtonDisabled": false,
+    "exportSucceeded": true,
+    "notes": "PASS: no extra fields"
+  },
+  {
+    "scope": "specific_request",
+    "locale": "en",
+    "extraFieldVisible": true,
+    "searchableSelectVisible": true,
+    "exportButtonDisabled": true,
+    "exportSucceeded": true,
+    "notes": "PASS: select visible, disabled before, enabled after"
+  },
+  {
+    "scope": "specific_course",
+    "locale": "en",
+    "extraFieldVisible": true,
+    "searchableSelectVisible": true,
+    "exportButtonDisabled": true,
+    "exportSucceeded": true,
+    "notes": "PASS"
+  },
+  {
+    "scope": "date_range",
+    "locale": "en",
+    "extraFieldVisible": true,
+    "searchableSelectVisible": false,
+    "exportButtonDisabled": true,
+    "exportSucceeded": true,
+    "notes": "PASS"
+  },
+  {
+    "scope": "all",
+    "locale": "en",
+    "extraFieldVisible": false,
+    "searchableSelectVisible": false,
+    "exportButtonDisabled": false,
+    "exportSucceeded": true,
+    "notes": "PASS"
+  },
+  {
+    "scope": "specific_course",
+    "locale": "ar",
+    "extraFieldVisible": true,
+    "searchableSelectVisible": true,
+    "exportButtonDisabled": false,
+    "exportSucceeded": true,
+    "notes": "AR screenshot captured"
+  }
+]

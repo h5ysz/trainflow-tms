@@ -17,6 +17,7 @@ import {
   Upload, Download, FileSpreadsheet, Archive, Eye, Loader2,
   FileText, FileArchive, FileDown, History,
 } from "lucide-react";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -406,18 +407,31 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
   const [exporting, setExporting] = React.useState(false);
   const [progress, setProgress] = React.useState(0);
 
-  // Course picker state for specific_course scope
-  const [courses, setCourses] = React.useState<Array<{ id: string; title: string }>>([]);
+  // ── Course picker state (for specific_course scope) ──
+  const [courses, setCourses] = React.useState<SearchableSelectOption[]>([]);
   const [coursesLoading, setCoursesLoading] = React.useState(false);
   const [selectedCourseId, setSelectedCourseId] = React.useState("");
+
+  // ── Training Request picker state (for specific_request scope) ──
+  const [requests, setRequests] = React.useState<SearchableSelectOption[]>([]);
+  const [requestsLoading, setRequestsLoading] = React.useState(false);
+  const [selectedRequestId, setSelectedRequestId] = React.useState("");
 
   // Fetch company courses when specific_course scope is selected
   React.useEffect(() => {
     if (scope === "specific_course" && courses.length === 0 && !coursesLoading) {
       setCoursesLoading(true);
-      api.get<{ items: Array<{ id: string; title: string }> }>("/courses?limit=200")
-        .then((res) => {
-          setCourses(res.items ?? []);
+      // /api/courses returns { success, data: Course[] } — api.get unwraps to `data`
+      // which is the array directly (not { items: [...] }).
+      api.get<Array<{ id: string; title: string; titleAr?: string; code?: string; refNumber?: string }>>("/courses?pageSize=200")
+        .then((arr) => {
+          const list = Array.isArray(arr) ? arr : [];
+          setCourses(list.map((c) => ({
+            value: c.id,
+            label: (locale === "ar" && c.titleAr ? c.titleAr : c.title) || c.refNumber || c.id,
+            description: [c.code, c.refNumber].filter(Boolean).join(" · ") || undefined,
+            keywords: `${c.title} ${c.titleAr ?? ""} ${c.code ?? ""} ${c.refNumber ?? ""}`,
+          })));
         })
         .catch(() => {
           // Silent fail — picker will just be empty
@@ -425,6 +439,42 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
         .finally(() => setCoursesLoading(false));
     }
   }, [scope, courses.length, coursesLoading]);
+
+  // Fetch company training requests when specific_request scope is selected
+  React.useEffect(() => {
+    if (scope === "specific_request" && requests.length === 0 && !requestsLoading) {
+      setRequestsLoading(true);
+      // /api/requests returns { success, data: TrainingRequest[] } — api.get unwraps to `data`.
+      api.get<Array<{
+        id: string; refNumber: string; status: string; courseTitle: string | null;
+        traineeCount: number; createdAt: string;
+      }>>("/requests?pageSize=200")
+        .then((arr) => {
+          const list = Array.isArray(arr) ? arr : [];
+          setRequests(list.map((r) => ({
+            value: r.id,
+            label: r.refNumber,
+            description: [
+              r.courseTitle,
+              `${r.traineeCount} ${locale === "ar" ? "متدرب" : "trainees"}`,
+              r.status,
+            ].filter(Boolean).join(" · "),
+            keywords: `${r.refNumber} ${r.courseTitle ?? ""} ${r.status}`,
+          })));
+        })
+        .catch(() => {
+          // Silent fail — picker will just be empty
+        })
+        .finally(() => setRequestsLoading(false));
+    }
+  }, [scope, requests.length, requestsLoading, locale]);
+
+  // Reset selection when scope changes (so stale IDs don't leak across scopes)
+  React.useEffect(() => {
+    setSelectedCourseId("");
+    setSelectedRequestId("");
+    // Don't reset dateFrom/dateTo — they survive scope switching
+  }, [scope]);
 
   const EXPORT_ITEMS = [
     { key: "requests", label: t("requests.itemRequests") },
@@ -454,6 +504,16 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
     });
   }
 
+  // ── Validation: which scopes require an additional selection? ──
+  const needsSelection = scope === "specific_request" || scope === "specific_course";
+  const needsDateRange = scope === "date_range";
+  const selectionMissing = needsSelection
+    ? (scope === "specific_request" ? !selectedRequestId : !selectedCourseId)
+    : false;
+  const dateRangeMissing = needsDateRange && (!dateFrom || !dateTo);
+
+  const canExport = items.size > 0 && !selectionMissing && !dateRangeMissing && !exporting;
+
   async function handleExport() {
     if (items.size === 0) {
       toast({ title: t("misc.error"), description: t("requests.selectAtLeastOne"), variant: "destructive" });
@@ -461,6 +521,14 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
     }
     if (scope === "specific_course" && !selectedCourseId) {
       toast({ title: t("misc.error"), description: (t("requests.selectCoursePrompt") || "Please select a course"), variant: "destructive" });
+      return;
+    }
+    if (scope === "specific_request" && !selectedRequestId) {
+      toast({ title: t("misc.error"), description: (t("requests.selectRequestPrompt") || "Please select a request"), variant: "destructive" });
+      return;
+    }
+    if (scope === "date_range" && (!dateFrom || !dateTo)) {
+      toast({ title: t("misc.error"), description: (t("requests.selectDateRangePrompt") || "Please select both dates"), variant: "destructive" });
       return;
     }
     setExporting(true);
@@ -471,6 +539,9 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
       if (dateTo) params.set("dateTo", dateTo);
       if (scope === "specific_course" && selectedCourseId) {
         params.set("specificId", selectedCourseId);
+      }
+      if (scope === "specific_request" && selectedRequestId) {
+        params.set("specificId", selectedRequestId);
       }
       setProgress(50);
       window.open(`/api/export/company-data?${params.toString()}`, "_blank");
@@ -500,7 +571,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
         </DialogHeader>
 
         <div className="p-5 overflow-y-auto flex-1 min-h-0 space-y-5">
-          {/* Scope */}
+          {/* Scope — dynamic field rendering based on selected scope */}
           <div>
             <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{t("requests.scope")}</div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -514,34 +585,75 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
                 </label>
               ))}
             </div>
-            {scope === "date_range" && (
-              <div className="flex gap-2 mt-2">
-                <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="text-xs" />
-                <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="text-xs" />
+
+            {/* ── Dynamic field area: only renders for scopes that need extra input ── */}
+            {scope === "specific_request" && (
+              <div className="mt-3 space-y-1.5">
+                <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                  {t("requests.selectRequestPrompt") || "Select a request"}
+                </label>
+                <SearchableSelect
+                  value={selectedRequestId}
+                  onChange={setSelectedRequestId}
+                  options={requests}
+                  loading={requestsLoading}
+                  placeholder={t("requests.selectRequestPrompt") || "Select a request…"}
+                  searchPlaceholder={t("requests.searchRequestPlaceholder") || "Search by request # or course…"}
+                  emptyText={t("requests.noRequestsAvailable") || "No requests available"}
+                />
+                {requests.length === 0 && !requestsLoading && (
+                  <div className="text-[10px] text-muted-foreground">
+                    {t("requests.noRequestsAvailable") || "No requests available for this company"}
+                  </div>
+                )}
               </div>
             )}
+
             {scope === "specific_course" && (
-              <div className="mt-2">
-                {coursesLoading ? (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
-                    <Loader2 className="h-3 w-3 animate-spin" /> {t("misc.loading") || "Loading..."}
+              <div className="mt-3 space-y-1.5">
+                <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                  {t("requests.selectCoursePrompt") || "Select a course"}
+                </label>
+                <SearchableSelect
+                  value={selectedCourseId}
+                  onChange={setSelectedCourseId}
+                  options={courses}
+                  loading={coursesLoading}
+                  placeholder={t("requests.selectCoursePrompt") || "Select a course…"}
+                  searchPlaceholder={t("requests.searchCoursePlaceholder") || "Search by course name or code…"}
+                  emptyText={t("requests.noCoursesAvailable") || "No courses available"}
+                />
+                {courses.length === 0 && !coursesLoading && (
+                  <div className="text-[10px] text-muted-foreground">
+                    {t("requests.noCoursesAvailable") || "No courses available for this company"}
                   </div>
-                ) : courses.length === 0 ? (
-                  <div className="text-xs text-muted-foreground py-2">
-                    {t("requests.noCoursesAvailable") || "No courses available"}
-                  </div>
-                ) : (
-                  <select
-                    value={selectedCourseId}
-                    onChange={(e) => setSelectedCourseId(e.target.value)}
-                    className="w-full text-xs rounded-md border border-input bg-background px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="">{t("requests.selectCoursePrompt") || "Select a course..."}</option>
-                    {courses.map((c) => (
-                      <option key={c.id} value={c.id}>{c.title}</option>
-                    ))}
-                  </select>
                 )}
+              </div>
+            )}
+
+            {scope === "date_range" && (
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                    {t("requests.dateFrom") || "From date"}
+                  </label>
+                  <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="text-xs h-9" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                    {t("requests.dateTo") || "To date"}
+                  </label>
+                  <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="text-xs h-9" />
+                </div>
+              </div>
+            )}
+
+            {/* last + all: no extra fields */}
+            {(scope === "last" || scope === "all") && (
+              <div className="mt-3 text-[10px] text-muted-foreground italic">
+                {scope === "last"
+                  ? (t("requests.scopeLastHint") || "The most recent request will be exported automatically.")
+                  : (t("requests.scopeAllHint") || "All company data will be exported.")}
               </div>
             )}
           </div>
@@ -604,7 +716,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
         <DialogFooter className="p-4 border-t bg-muted/30 shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("action.cancel")}</Button>
-          <Button onClick={handleExport} disabled={exporting || items.size === 0}>
+          <Button onClick={handleExport} disabled={!canExport} title={!canExport && selectionMissing ? (t("requests.selectFirstPrompt") || "Select an item first") : undefined}>
             {exporting ? <Loader2 className="h-4 w-4 me-1.5 animate-spin" /> : <FileDown className="h-4 w-4 me-1.5" />}
             {t("requests.exportBtn")}
           </Button>
