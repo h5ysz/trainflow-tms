@@ -1013,8 +1013,15 @@ export const GET = async (req: NextRequest) => {
     }
 
     let attRowCount = 0;
-    // Build the base URL for absolute attachment links (so they're clickable in Excel)
-    const baseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+    // Build the base URL for absolute attachment links (so they're clickable in Excel).
+    // IMPORTANT: req.nextUrl.host returns 0.0.0.0:10000 inside Render's standalone
+    // server (Next binds to 0.0.0.0 internally). We must use the configured public
+    // APP_URL instead, falling back to the request's Host header, then to nextUrl.
+    const publicAppUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.BASE_URL;
+    const hostHeader = req.headers.get("x-forwarded-host") || req.headers.get("host");
+    const protocol = req.headers.get("x-forwarded-proto") || req.nextUrl.protocol.replace(":", "");
+    const baseUrl = publicAppUrl
+      || (hostHeader ? `${protocol}://${hostHeader}` : `${req.nextUrl.protocol}//${req.nextUrl.host}`);
     for (const a of rows) {
       const fullUrl = a.url.startsWith("http") ? a.url : `${baseUrl}${a.url}`;
       const row = ws.addRow([
