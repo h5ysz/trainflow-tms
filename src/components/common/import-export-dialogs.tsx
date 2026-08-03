@@ -406,6 +406,26 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
   const [exporting, setExporting] = React.useState(false);
   const [progress, setProgress] = React.useState(0);
 
+  // Course picker state for specific_course scope
+  const [courses, setCourses] = React.useState<Array<{ id: string; title: string }>>([]);
+  const [coursesLoading, setCoursesLoading] = React.useState(false);
+  const [selectedCourseId, setSelectedCourseId] = React.useState("");
+
+  // Fetch company courses when specific_course scope is selected
+  React.useEffect(() => {
+    if (scope === "specific_course" && courses.length === 0 && !coursesLoading) {
+      setCoursesLoading(true);
+      api.get<{ items: Array<{ id: string; title: string }> }>("/courses?limit=200")
+        .then((res) => {
+          setCourses(res.items ?? []);
+        })
+        .catch(() => {
+          // Silent fail — picker will just be empty
+        })
+        .finally(() => setCoursesLoading(false));
+    }
+  }, [scope, courses.length, coursesLoading]);
+
   const EXPORT_ITEMS = [
     { key: "requests", label: t("requests.itemRequests") },
     { key: "trainees", label: t("requests.itemTrainees") },
@@ -439,12 +459,19 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
       toast({ title: t("misc.error"), description: t("requests.selectAtLeastOne"), variant: "destructive" });
       return;
     }
+    if (scope === "specific_course" && !selectedCourseId) {
+      toast({ title: t("misc.error"), description: (t("requests.selectCoursePrompt") || "Please select a course"), variant: "destructive" });
+      return;
+    }
     setExporting(true);
     setProgress(10);
     try {
       const params = new URLSearchParams({ scope, format, items: Array.from(items).join(","), locale });
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
+      if (scope === "specific_course" && selectedCourseId) {
+        params.set("specificId", selectedCourseId);
+      }
       setProgress(50);
       window.open(`/api/export/company-data?${params.toString()}`, "_blank");
       setProgress(100);
@@ -491,6 +518,30 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
               <div className="flex gap-2 mt-2">
                 <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="text-xs" />
                 <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="text-xs" />
+              </div>
+            )}
+            {scope === "specific_course" && (
+              <div className="mt-2">
+                {coursesLoading ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                    <Loader2 className="h-3 w-3 animate-spin" /> {t("misc.loading") || "Loading..."}
+                  </div>
+                ) : courses.length === 0 ? (
+                  <div className="text-xs text-muted-foreground py-2">
+                    {t("requests.noCoursesAvailable") || "No courses available"}
+                  </div>
+                ) : (
+                  <select
+                    value={selectedCourseId}
+                    onChange={(e) => setSelectedCourseId(e.target.value)}
+                    className="w-full text-xs rounded-md border border-input bg-background px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">{t("requests.selectCoursePrompt") || "Select a course..."}</option>
+                    {courses.map((c) => (
+                      <option key={c.id} value={c.id}>{c.title}</option>
+                    ))}
+                  </select>
+                )}
               </div>
             )}
           </div>
