@@ -1013,17 +1013,49 @@ export const GET = async (req: NextRequest) => {
     }
 
     let attRowCount = 0;
-    // Build the base URL for absolute attachment links (so they're clickable in Excel).
-    // IMPORTANT: req.nextUrl.host returns 0.0.0.0:10000 inside Render's standalone
-    // server (Next binds to 0.0.0.0 internally). We must use the configured public
-    // APP_URL instead, falling back to the request's Host header, then to nextUrl.
-    const publicAppUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.BASE_URL;
-    const hostHeader = req.headers.get("x-forwarded-host") || req.headers.get("host");
-    const protocol = req.headers.get("x-forwarded-proto") || req.nextUrl.protocol.replace(":", "");
-    const baseUrl = publicAppUrl
-      || (hostHeader ? `${protocol}://${hostHeader}` : `${req.nextUrl.protocol}//${req.nextUrl.host}`);
+    // Build the base URL for absolute attachment links.
+    //
+    // PRIORITY (first non-empty, non-localhost, non-0.0.0.0 value wins):
+    //   1. process.env.APP_URL
+    //   2. process.env.NEXT_PUBLIC_APP_URL
+    //   3. process.env.BASE_URL
+    //   4. x-forwarded-host / x-forwarded-proto headers (reverse-proxy aware)
+    //   5. Hardcoded production URL (final fallback — always valid)
+    //
+    // We NEVER fall back to req.nextUrl because Render's standalone server
+    // binds to 0.0.0.0:10000 internally, producing invalid URLs.
+    // We also NEVER use localhost or 0.0.0.0 — they're unreachable by users.
+    const PRODUCTION_URL = "https://trainflow-tms.onrender.com";
+    const candidates = [
+      process.env.APP_URL,
+      process.env.NEXT_PUBLIC_APP_URL,
+      process.env.BASE_URL,
+    ].filter((v) => v && !v.includes("localhost") && !v.includes("0.0.0.0"));
+
+    let baseUrl = candidates[0] || PRODUCTION_URL;
+
+    // If no env var matched, try the reverse-proxy headers (but reject 0.0.0.0)
+    if (!candidates.length) {
+      const fwdHost = req.headers.get("x-forwarded-host");
+      const fwdProto = req.headers.get("x-forwarded-proto") || "https";
+      if (fwdHost && !fwdHost.includes("0.0.0.0") && !fwdHost.includes("localhost")) {
+        baseUrl = `${fwdProto}://${fwdHost}`;
+      }
+    }
+
+    // Strip trailing slash to avoid double-slash in URL
+    baseUrl = baseUrl.replace(/\/+$/, "");
+
     for (const a of rows) {
-      const fullUrl = a.url.startsWith("http") ? a.url : `${baseUrl}${a.url}`;
+      let fullUrl: string;
+      if (a.url.startsWith("http")) {
+        // Already absolute — but fix if it points to localhost/0.0.0.0
+        fullUrl = (a.url.includes("localhost") || a.url.includes("0.0.0.0"))
+          ? `${baseUrl}${a.url.replace(/^https?:\/\/[^/]+/, "")}`
+          : a.url;
+      } else {
+        fullUrl = `${baseUrl}${a.url.startsWith("/") ? "" : "/"}${a.url}`;
+      }
       const row = ws.addRow([
         a.fileName,
         a.fileType,
