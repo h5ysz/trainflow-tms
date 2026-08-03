@@ -1013,37 +1013,47 @@ export const GET = async (req: NextRequest) => {
     }
 
     let attRowCount = 0;
-    // Attachment hyperlinks in exported Excel MUST use the permanent public URL.
+    // Build the base URL for attachment hyperlinks.
     //
-    // We NEVER use:
-    //   - req.nextUrl (returns 0.0.0.0:10000 on Render)
-    //   - x-forwarded-host / host headers (returns temporary runtime domains
-    //     like ws-baab-efccefc-lgrrpcalxa.cn-hongkong-vpc.fcapp.run)
-    //   - localhost
-    //   - 0.0.0.0
+    // The URL must point to wherever the app is actually serving files —
+    // the exported Excel should open attachments from the SAME server that
+    // generated the export. We build the URL from the request's own host
+    // (via reverse-proxy-aware headers), with a final fallback to the
+    // production domain.
     //
-    // The ONLY source of truth is the hardcoded production URL below.
-    // If APP_URL env var is set AND matches the production domain, it's used.
-    // Otherwise we always fall back to the hardcoded production URL.
+    // Priority:
+    //   1. x-forwarded-proto + x-forwarded-host (Render / load balancer)
+    //   2. Host header (direct access)
+    //   3. APP_URL env var (if set and not localhost/0.0.0.0)
+    //   4. Hardcoded production URL (last resort)
     const PRODUCTION_URL = "https://trainflow-tms.onrender.com";
 
-    // Accept APP_URL only if it's the production domain (not localhost, not
-    // 0.0.0.0, not a temporary runtime domain like *.fcapp.run)
-    const isPublicUrl = (v: string | undefined): v is string =>
-      !!v && v.startsWith("https://") && !v.includes("localhost") && !v.includes("0.0.0.0") && !v.includes("fcapp.run");
+    const fwdProto = req.headers.get("x-forwarded-proto") || "https";
+    const fwdHost = req.headers.get("x-forwarded-host");
+    const hostHeader = req.headers.get("host");
+    const envUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL;
 
-    const baseUrl = isPublicUrl(process.env.APP_URL)
-      ? process.env.APP_URL.replace(/\/+$/, "")
-      : isPublicUrl(process.env.NEXT_PUBLIC_APP_URL)
-        ? process.env.NEXT_PUBLIC_APP_URL!.replace(/\/+$/, "")
-        : isPublicUrl(process.env.BASE_URL)
-          ? process.env.BASE_URL!.replace(/\/+$/, "")
-          : PRODUCTION_URL;
+    let baseUrl: string;
+    if (fwdHost && !fwdHost.includes("0.0.0.0")) {
+      // Reverse proxy (Render, nginx, etc.) — trust x-forwarded-host
+      // but reject 0.0.0.0 (Render's internal bind address)
+      baseUrl = `${fwdProto}://${fwdHost}`;
+    } else if (hostHeader && !hostHeader.includes("0.0.0.0")) {
+      // Direct host header (includes localhost in dev — that's fine,
+      // the files ARE on localhost in dev mode)
+      baseUrl = `${req.nextUrl.protocol.replace(":", "")}://${hostHeader}`;
+    } else if (envUrl && !envUrl.includes("0.0.0.0") && !envUrl.includes("fcapp.run")) {
+      // Env var
+      baseUrl = envUrl;
+    } else {
+      // Last resort: production URL
+      baseUrl = PRODUCTION_URL;
+    }
+    baseUrl = baseUrl.replace(/\/+$/, "");
 
     for (const a of rows) {
-      // Always build the URL from the production base + relative path.
-      // If the stored URL is already absolute, strip the host and re-attach
-      // the production host — this catches any stale localhost/0.0.0.0/runtime URLs.
+      // Build the URL from the base + relative path.
+      // Strip any existing host from stored URLs (handles stale absolute URLs).
       const relativePath = a.url.replace(/^https?:\/\/[^/]+/, "");
       const fullUrl = `${baseUrl}${relativePath.startsWith("/") ? "" : "/"}${relativePath}`;
       const row = ws.addRow([
