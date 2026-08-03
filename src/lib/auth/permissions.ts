@@ -120,7 +120,9 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "notifications", "audit-log", "user-approvals", "user-management",
     "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard",
   ],
-  // Coordinator and Trainer share the SAME operational modules
+  // Coordinator: request review + scheduling only. Execution modules
+  // (attendance, QR, pre-test, final-test, exam attempts, evaluation,
+  // certificates, session-detail) belong to the Trainer / Training Admin.
   COORDINATOR: [
     "dashboard",
     "companies",
@@ -131,15 +133,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "courses",
     "requests",
     "sessions",
-    "session-detail",
     "scheduling",
-    "attendance",
-    "qr-code",
-    "pre-test",
-    "final-test",
-    "exam-attempts",
-    "evaluation",
-    "certificates",
     "reports",
     // The report-schedules endpoints are requireRole("SUPER_ADMIN","COORDINATOR").
     "report-schedules",
