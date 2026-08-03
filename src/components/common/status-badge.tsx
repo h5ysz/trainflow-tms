@@ -18,6 +18,10 @@ const STATUS_STYLES: Record<string, string> = {
   UNDER_REVIEW: "bg-info/10 text-info border-info/20",
   APPROVED: "bg-success/10 text-success border-success/20",
   REJECTED: "bg-destructive/10 text-destructive border-destructive/20",
+  // Returned to the contractor for revision — actionable, so warning rather than destructive.
+  REQUIRES_MODIFICATION: "bg-warning/10 text-warning border-warning/20",
+  // Terminal after a failed official retest; a new request is required.
+  CLOSED: "bg-muted text-muted-foreground border-border",
   SCHEDULED: "bg-info/10 text-info border-info/20",
   IN_PROGRESS: "bg-info/10 text-info border-info/20",
   COMPLETED: "bg-success/10 text-success border-success/20",

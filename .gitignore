@@ -56,6 +56,12 @@ server.log
 # workspace snapshots
 workspace-*.tar
 
+# Chat-pasted screenshots — scratch artifacts, never served or built.
+# Only the images: upload/ also holds the real .xlsx attendance/registration
+# forms the Excel importer was built against, and those stay tracked.
+# Anchored so it cannot catch public/uploads/, which IS committed.
+/upload/*.png
+
 # database backups and sqlite sidecar files (db/custom.db itself is committed)
 *.bak-*
 *.db-wal
