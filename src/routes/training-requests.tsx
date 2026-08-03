@@ -391,6 +391,23 @@ export function TrainingRequestsRoute() {
       ),
     },
     {
+      key: "submittedAt",
+      header: t("requests.submittedAt" as never) || "Received",
+      cell: (r) => (
+        <div className="text-xs flex items-center gap-1.5">
+          <Calendar className="h-3 w-3 text-info" />
+          {r.submittedAt ? (
+            <div>
+              <div className="font-medium">{new Date(r.submittedAt).toLocaleDateString()}</div>
+              <div className="text-[10px] text-muted-foreground">{new Date(r.submittedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+            </div>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </div>
+      ),
+    },
+    {
       key: "priority",
       header: t("requests.priority"),
       cell: (r) => <PriorityBadge priority={r.priority} />,
