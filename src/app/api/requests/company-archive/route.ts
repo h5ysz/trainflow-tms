@@ -4,13 +4,20 @@ import { db } from "@/lib/db";
 import { withModuleAction, ok, fail } from "@/lib/auth/api";
 
 export const GET = withModuleAction("requests", "view", async ({ req, user }) => {
-  // Contractors see only their own company's requests
-  if (user.role === "CONTRACTOR" && !user.companyId) {
-    return fail("No company linked to your account", 403);
+  // Contractors see only their own company's requests.
+  // Admins/coordinators can browse — but need a companyId from query param
+  // since they don't have one on their user record.
+  let companyId: string | undefined;
+  if (user.role === "CONTRACTOR") {
+    if (!user.companyId) return fail("No company linked to your account", 403);
+    companyId = user.companyId;
+  } else {
+    // Admin/coordinator: use query param or return all (they have broader access)
+    const url = new URL(req.url);
+    companyId = url.searchParams.get("companyId") || undefined;
   }
 
-  const companyId = user.companyId;
-  if (!companyId) return fail("No company found", 404);
+  if (!companyId) return fail("companyId query parameter is required for non-contractor roles", 422);
 
   const requests = await db.trainingRequest.findMany({
     where: { companyId, deletedAt: null },

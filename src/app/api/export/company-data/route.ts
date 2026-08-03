@@ -105,7 +105,7 @@ export const GET = async (req: NextRequest) => {
       where: { request: { companyId: user.companyId, deletedAt: null } },
       select: {
         refNumber: true, title: true, startDate: true, endDate: true, status: true,
-        attendances: items.includes("attendance") ? {
+        attendance: items.includes("attendance") ? {
           where: { deletedAt: null },
           select: { traineeName: true, status: true, checkInAt: true, checkOutAt: true },
         } : false,
@@ -119,7 +119,7 @@ export const GET = async (req: NextRequest) => {
         } : false,
       },
     });
-    if (items.includes("attendance")) exportData.attendance = sessions.flatMap((s) => s.attendances?.map((a) => ({ sessionRef: s.refNumber, ...a })) || []);
+    if (items.includes("attendance")) exportData.attendance = sessions.flatMap((s) => s.attendance?.map((a) => ({ sessionRef: s.refNumber, ...a })) || []);
     if (items.includes("results")) exportData.results = sessions.flatMap((s) => s.testResults?.map((r) => ({ sessionRef: s.refNumber, ...r })) || []);
     if (items.includes("certificates")) exportData.certificates = sessions.flatMap((s) => s.certificates?.map((c) => ({ sessionRef: s.refNumber, ...c })) || []);
   }
