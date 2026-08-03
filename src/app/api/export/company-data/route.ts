@@ -1192,52 +1192,48 @@ export const GET = async (req: NextRequest) => {
   const excelFilename = `gcclab-export${scopeTag}-${locale}-${stamp}.xlsx`;
 
   if (format === "pdf") {
-    // ── PDF: generate a .pdf document with summary + key data ──
-    const PDFDocument = (await import("pdfkit")).default;
-    const doc = new PDFDocument({ size: "A4", margin: 50 });
-    const chunks: Buffer[] = [];
-    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+    // ── PDF: generate using LibreOffice headless from HTML ──
+    // pdfkit doesn't support Arabic text shaping (contextual forms).
+    // LibreOffice handles Arabic + RTL + fonts natively.
+    // We generate an HTML file with the export data, then convert to PDF.
+    const { execSync } = await import("child_process");
+    const fs = await import("fs/promises");
+    const os = await import("os");
+    const pathMod = await import("path");
 
-    // Title
-    doc.fontSize(20).font("Helvetica-Bold").text("GCCLAB TMS — Export Report", { align: "center" });
-    doc.moveDown();
-    doc.fontSize(10).font("Helvetica").text(`Generated: ${new Date().toLocaleString()}`, { align: "center" });
-    doc.moveDown(2);
+    // Build HTML content
+    const isAr = locale === "ar";
+    const dir = isAr ? "rtl" : "ltr";
+    const textAlign = isAr ? "right" : "left";
 
-    // Summary table
-    doc.fontSize(14).font("Helvetica-Bold").text(locale === "ar" ? "الملخص" : "Summary", { underline: true });
-    doc.moveDown();
-    doc.fontSize(10).font("Helvetica");
-    const summaryLines = [
-      [locale === "ar" ? "اسم الشركة" : "Company Name", companyName],
-      [locale === "ar" ? "نطاق التصدير" : "Export Scope", scopeLabels[scope] ?? scope],
-      [locale === "ar" ? "اللغة" : "Language", locale === "ar" ? "العربية" : "English"],
-      [locale === "ar" ? "عدد الطلبات" : "Training Requests", String(counts.requests)],
-      [locale === "ar" ? "عدد المتدربين" : "Trainees", String(counts.trainees)],
-      [locale === "ar" ? "عدد الدورات" : "Courses", String(counts.courses)],
-      [locale === "ar" ? "عدد الشهادات" : "Certificates", String(counts.certificates)],
-      [locale === "ar" ? "عدد الفواتير" : "Invoices", String(counts.invoices)],
-      [locale === "ar" ? "عدد المرفقات" : "Attachments", String(counts.attachments)],
-    ];
-    for (const [label, value] of summaryLines) {
-      doc.text(`${label}: ${value}`, { indent: 20 });
-    }
-    doc.moveDown(2);
+    const summaryRows = [
+      [isAr ? "اسم الشركة" : "Company Name", companyName],
+      [isAr ? "نطاق التصدير" : "Export Scope", scopeLabels[scope] ?? scope],
+      [isAr ? "اللغة" : "Language", isAr ? "العربية" : "English"],
+      [isAr ? "عدد الطلبات" : "Training Requests", String(counts.requests)],
+      [isAr ? "عدد المتدربين" : "Trainees", String(counts.trainees)],
+      [isAr ? "عدد الدورات" : "Courses", String(counts.courses)],
+      [isAr ? "عدد الشهادات" : "Certificates", String(counts.certificates)],
+      [isAr ? "عدد الفواتير" : "Invoices", String(counts.invoices)],
+      [isAr ? "عدد المرفقات" : "Attachments", String(counts.attachments)],
+    ].map(([l, v]) => `<tr><td style="padding:4px 12px;color:#666;font-weight:600">${l}</td><td style="padding:4px 12px">${v}</td></tr>`).join("");
 
-    // Training Requests
+    let requestsRows = "";
     if (items.includes("requests") && allRequests.length > 0) {
-      doc.fontSize(14).font("Helvetica-Bold").text(locale === "ar" ? "طلبات التدريب" : "Training Requests");
-      doc.moveDown();
-      doc.fontSize(9).font("Helvetica");
-      for (const r of allRequests) {
-        doc.text(`${r.refNumber} | ${r.company?.name ?? ""} | ${r.course?.title ?? ""} | ${tx(REQUEST_STATUS, r.status, locale)} | ${tx(PRIORITY, r.priority, locale)}`);
-      }
-      doc.moveDown(2);
+      const rows = allRequests.map(r =>
+        `<tr><td style="padding:3px 8px;border-bottom:1px solid #eee">${r.refNumber}</td><td style="padding:3px 8px;border-bottom:1px solid #eee">${r.company?.name ?? ""}</td><td style="padding:3px 8px;border-bottom:1px solid #eee">${r.course?.title ?? ""}</td><td style="padding:3px 8px;border-bottom:1px solid #eee">${tx(REQUEST_STATUS, r.status, locale)}</td><td style="padding:3px 8px;border-bottom:1px solid #eee">${tx(PRIORITY, r.priority, locale)}</td></tr>`
+      ).join("");
+      requestsRows = `
+        <h2 style="margin-top:24px">${isAr ? "طلبات التدريب" : "Training Requests"}</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:9pt">
+          <thead><tr><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "رقم الطلب" : "Request #"}</th><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "الشركة" : "Company"}</th><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "الدورة" : "Course"}</th><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "الحالة" : "Status"}</th><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "الأولوية" : "Priority"}</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
     }
 
-    // Trainees
+    let traineeRows = "";
     if (items.includes("trainees")) {
-      const allTraineeRows: string[] = [];
+      const allTraineeData: string[] = [];
       const reqsWithTrainees = await db.trainingRequest.findMany({
         where: reqWhere,
         select: {
@@ -1258,25 +1254,20 @@ export const GET = async (req: NextRequest) => {
       for (const r of reqsWithTrainees) {
         for (const rc of r.requestCourses) {
           for (const trc of rc.trainees) {
-            allTraineeRows.push(`${trc.trainee.fullName} | ${trc.trainee.nationalId} | ${trc.trainee.nationality ?? ""} | ${trc.trainee.jobTitle ?? ""} | ${r.refNumber}`);
+            allTraineeData.push(`<tr><td style="padding:3px 8px;border-bottom:1px solid #eee">${trc.trainee.fullName}</td><td style="padding:3px 8px;border-bottom:1px solid #eee">${trc.trainee.nationalId}</td><td style="padding:3px 8px;border-bottom:1px solid #eee">${trc.trainee.nationality ?? ""}</td><td style="padding:3px 8px;border-bottom:1px solid #eee">${trc.trainee.jobTitle ?? ""}</td><td style="padding:3px 8px;border-bottom:1px solid #eee">${r.refNumber}</td></tr>`);
           }
         }
       }
-      if (allTraineeRows.length > 0) {
-        doc.fontSize(14).font("Helvetica-Bold").text(locale === "ar" ? "المتدربون" : "Trainees");
-        doc.moveDown();
-        doc.fontSize(9).font("Helvetica");
-        for (const row of allTraineeRows) {
-          doc.text(row);
-        }
-        doc.moveDown(2);
+      if (allTraineeData.length > 0) {
+        traineeRows = `
+          <h2 style="margin-top:24px">${isAr ? "المتدربون" : "Trainees"}</h2>
+          <table style="width:100%;border-collapse:collapse;font-size:9pt">
+            <thead><tr><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "الاسم" : "Name"}</th><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "رقم الهوية" : "National ID"}</th><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "الجنسية" : "Nationality"}</th><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "المهنة" : "Job Title"}</th><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "رقم الطلب" : "Request #"}</th></tr></thead>
+            <tbody>${allTraineeData.join("")}</tbody>
+          </table>`;
       }
     }
 
-    // Exported items list
-    doc.fontSize(12).font("Helvetica-Bold").text(locale === "ar" ? "العناصر المُصدّرة" : "Exported Items");
-    doc.moveDown();
-    doc.fontSize(10).font("Helvetica");
     const itemLabels: Record<string, { en: string; ar: string }> = {
       requests: { en: "Training Requests", ar: "طلبات التدريب" },
       trainees: { en: "Trainees", ar: "المتدربون" },
@@ -1287,24 +1278,74 @@ export const GET = async (req: NextRequest) => {
       invoices: { en: "Invoices", ar: "الفواتير" },
       attachments: { en: "Attachments", ar: "المرفقات" },
     };
-    for (const item of items) {
-      if (itemLabels[item]) {
-        doc.text(`• ${itemLabels[item][locale]}`, { indent: 20 });
-      }
-    }
+    const itemsList = items.filter(i => itemLabels[i]).map(i => `<li>${itemLabels[i][locale]}</li>`).join("");
 
-    doc.end();
-    const pdfBuffer = await new Promise<Buffer>((resolve) => {
-      doc.on("end", () => resolve(Buffer.concat(chunks)));
-    });
-    const pdfFilename = `gcclab-export${scopeTag}-${locale}-${stamp}.pdf`;
-    return new Response(pdfBuffer, {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${pdfFilename}"`,
-        "Cache-Control": "no-store",
-      },
-    });
+    const html = `<!DOCTYPE html>
+<html lang="${locale}" dir="${dir}">
+<head>
+<meta charset="UTF-8">
+<style>
+  @font-face { font-family: 'NotoNaskhArabic'; src: url('file://${process.cwd()}/public/fonts/NotoNaskhArabic-Regular.ttf'); }
+  body { font-family: 'NotoNaskhArabic', 'DejaVu Sans', sans-serif; font-size: 10pt; color: #333; margin: 40px; }
+  h1 { font-size: 20pt; color: #1f3a5f; text-align: center; margin-bottom: 5px; }
+  h2 { font-size: 14pt; color: #1f3a5f; border-bottom: 2px solid #1f3a5f; padding-bottom: 4px; }
+  .subtitle { text-align: center; font-size: 9pt; color: #999; margin-bottom: 20px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: #f0f4f8; font-weight: bold; }
+</style>
+</head>
+<body>
+  <h1>GCCLAB TMS — ${isAr ? "تقرير التصدير" : "Export Report"}</h1>
+  <p class="subtitle">${new Date().toLocaleString(isAr ? "ar-SA" : "en-US")}</p>
+
+  <h2>${isAr ? "الملخص" : "Summary"}</h2>
+  <table>
+    <tbody>${summaryRows}</tbody>
+  </table>
+
+  ${requestsRows}
+  ${traineeRows}
+
+  <h2 style="margin-top:24px">${isAr ? "العناصر المُصدّرة" : "Exported Items"}</h2>
+  <ul>${itemsList}</ul>
+</body>
+</html>`;
+
+    // Write HTML to temp file, convert to PDF via LibreOffice
+    const tmpDir = os.tmpdir();
+    const htmlPath = pathMod.join(tmpDir, `gcclab-export-${stamp}.html`);
+    await fs.writeFile(htmlPath, html, "utf-8");
+
+    try {
+      execSync(`libreoffice --headless --norestore --nolockcheck --convert-to pdf --outdir ${tmpDir} ${htmlPath}`, {
+        timeout: 30000,
+        env: { ...process.env, HOME: process.env.HOME || "/tmp" },
+      });
+      const pdfPath = pathMod.join(tmpDir, `gcclab-export-${stamp}.pdf`);
+      const pdfBuffer = await fs.readFile(pdfPath);
+      // Cleanup
+      await fs.unlink(htmlPath).catch(() => {});
+      await fs.unlink(pdfPath).catch(() => {});
+
+      const pdfFilename = `gcclab-export${scopeTag}-${locale}-${stamp}.pdf`;
+      return new Response(pdfBuffer, {
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="${pdfFilename}"`,
+          "Cache-Control": "no-store",
+        },
+      });
+    } catch {
+      // If LibreOffice fails, fall back to simple HTML download
+      const htmlFilename = `gcclab-export${scopeTag}-${locale}-${stamp}.html`;
+      return new Response(html, {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Disposition": `attachment; filename="${htmlFilename}"`,
+          "Cache-Control": "no-store",
+        },
+      });
+    }
   }
 
   if (format === "zip") {
