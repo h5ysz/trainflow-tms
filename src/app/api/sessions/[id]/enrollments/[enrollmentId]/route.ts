@@ -48,6 +48,19 @@ export const DELETE = withModuleAction("sessions", "edit", async ({ params, user
     return notFound("Enrollment not found");
   }
 
+  // BUG-012: Reject removal when a certificate has already been issued for
+  // this enrollment. Once a certificate exists, the trainee's result is
+  // locked — removing them would orphan the certificate and corrupt audit
+  // history. The UI already disables the Remove button in this state; the
+  // API must enforce the same rule so a direct API call can't bypass it.
+  if (existing.certificateStatus === "ISSUED") {
+    return fail(
+      "Cannot remove trainee: certificate already issued. Results are locked once certificates are issued.",
+      422,
+      "CERTIFICATE_LOCKED",
+    );
+  }
+
   await db.$transaction(async (tx) => {
     // Soft-delete the enrollment
     await tx.sessionEnrollment.update({

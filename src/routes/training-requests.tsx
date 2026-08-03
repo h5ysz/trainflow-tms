@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge, PriorityBadge } from "@/components/common/status-badge";
-import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Check, X, RotateCcw, ArrowRight, FileText, Download, Upload } from "lucide-react";
+import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Check, X, RotateCcw, ArrowRight, FileText, Download, Upload, Eye, Pencil } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
@@ -34,6 +34,8 @@ interface CourseOption { id: string; title: string; code: string; refNumber: str
 interface Request {
   id: string;
   refNumber: string;
+  companyId: string;
+  courseId?: string | null;
   companyName?: string | null;
   companyRef?: string | null;
   courseTitle?: string | null;
@@ -66,6 +68,7 @@ const SELF_SERVICE_TRANSITIONS: Record<string, string[]> = {
   DRAFT: ["SUBMITTED", "CANCELLED"],
   SUBMITTED: ["CANCELLED"],
   REJECTED: ["SUBMITTED"],
+  REQUIRES_MODIFICATION: ["SUBMITTED", "CANCELLED"],
 };
 
 // Workflow transition matrix (mirror of backend)
@@ -80,7 +83,12 @@ const NEXT_ACTIONS: Record<string, { status: string; labelKey: string; variant: 
   ],
   UNDER_REVIEW: [
     { status: "APPROVED", labelKey: "workflow.approve", variant: "default", tone: "success" },
+    { status: "REQUIRES_MODIFICATION", labelKey: "workflow.returnRevision", variant: "outline", tone: "warning" },
     { status: "REJECTED", labelKey: "workflow.reject", variant: "ghost", tone: "destructive" },
+    { status: "CANCELLED", labelKey: "workflow.cancel", variant: "ghost", tone: "destructive" },
+  ],
+  REQUIRES_MODIFICATION: [
+    { status: "SUBMITTED", labelKey: "workflow.resubmit", variant: "default", tone: "info" },
     { status: "CANCELLED", labelKey: "workflow.cancel", variant: "ghost", tone: "destructive" },
   ],
   APPROVED: [
@@ -110,7 +118,12 @@ export function TrainingRequestsRoute() {
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<Request | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [revisionTarget, setRevisionTarget] = useState<Request | null>(null);
+  const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
+  const [revisionReason, setRevisionReason] = useState("");
   const [detailsTarget, setDetailsTarget] = useState<Request | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<Request | null>(null);
+  const [editTarget, setEditTarget] = useState<Request | null>(null);
   const [generateTarget, setGenerateTarget] = useState<Request | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState<Record<string, unknown>>({
@@ -160,6 +173,12 @@ export function TrainingRequestsRoute() {
       setRejectDialogOpen(true);
       return;
     }
+    // "Return for Revision" requires a reason — open the revision dialog.
+    if (newStatus === "REQUIRES_MODIFICATION") {
+      setRevisionTarget(req);
+      setRevisionDialogOpen(true);
+      return;
+    }
     // Turning an APPROVED request into sessions is a real scheduling decision, not a
     // status flip — collect the dates and shifts first.
     if (newStatus === "SCHEDULED" && req.status === "APPROVED") {
@@ -186,6 +205,29 @@ export function TrainingRequestsRoute() {
       setRejectDialogOpen(false);
       setRejectTarget(null);
       setRejectReason("");
+      refetch();
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    }
+  };
+
+  // ── Return for Revision: coordinator returns the request to the contractor
+  // for modification. Requires a reason. Notifies the contractor.
+  const handleRevisionSubmit = async () => {
+    if (!revisionTarget) return;
+    if (!revisionReason.trim()) {
+      toast({ title: t("misc.error"), description: t("requests.revisionReasonRequired") || "A reason is required", variant: "destructive" });
+      return;
+    }
+    try {
+      await api.post(`/requests/${revisionTarget.id}/transition`, {
+        status: "REQUIRES_MODIFICATION",
+        revisionReason,
+      });
+      toast({ title: t("misc.success"), description: t("workflow.returnRevision") || "Returned for revision" });
+      setRevisionDialogOpen(false);
+      setRevisionTarget(null);
+      setRevisionReason("");
       refetch();
     } catch (e) {
       toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
@@ -282,24 +324,42 @@ export function TrainingRequestsRoute() {
       className: "text-end",
       cell: (r) => {
         const actions = NEXT_ACTIONS[r.status] ?? [];
-        if (actions.length === 0) {
-          return (
-            <Button variant="ghost" size="sm" className="h-8" onClick={() => setDetailsTarget(r)}>
-              {t("action.details")}
-            </Button>
-          );
-        }
+        const canEditRequest = r.status === "DRAFT" || r.status === "REQUIRES_MODIFICATION";
         return (
-          <div className="flex justify-end gap-1 flex-wrap">
+          <div className="flex justify-end items-center gap-1 flex-wrap">
+            {/* Preview button — available for ALL requests */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setPreviewTarget(r)}
+              title={t("action.preview") || "Preview"}
+            >
+              <Eye className="h-3.5 w-3.5" />
+            </Button>
+            {/* Edit button — only for DRAFT + SUBMITTED */}
+            {canEditRequest && canCreate && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => handleEditRequest(r)}
+                title={t("action.edit") || "Edit"}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {actions.length === 0 && !canEditRequest && (
+              <Button variant="ghost" size="sm" className="h-8" onClick={() => setDetailsTarget(r)}>
+                {t("action.details")}
+              </Button>
+            )}
             {actions.map((a) => (
               <Button
                 key={a.status}
                 variant={a.variant}
                 size="sm"
                 className={`h-8 ${
-                  // For 'default' variant buttons (dark primary background), ALWAYS
-                  // use white text — the tone-based colors (text-info, text-success,
-                  // text-destructive) are too dark to read on the maroon background.
                   a.variant === "default"
                     ? "text-white"
                     : a.tone === "success"
@@ -311,8 +371,6 @@ export function TrainingRequestsRoute() {
                           : ""
                 }`}
                 onClick={() => handleTransition(r, a.status)}
-                // Offer only transitions the caller can actually complete: everything
-                // if they hold requests.edit, otherwise just their own submit/cancel.
                 disabled={!canEdit && !(SELF_SERVICE_TRANSITIONS[r.status] ?? []).includes(a.status)}
               >
                 {a.status === "SUBMITTED" && r.status === "REJECTED" && <RotateCcw className="h-3.5 w-3.5 me-1" />}
@@ -380,6 +438,63 @@ export function TrainingRequestsRoute() {
 
   const setField = (k: string, v: unknown) => setFormData((p) => ({ ...p, [k]: v }));
 
+  // ── Edit existing request: loads the request data into the form + opens
+  // the same dialog as "New Request" but in edit mode. The form is pre-filled
+  // with the request's current values. On save, it PUTs to /api/requests/[id].
+  const handleEditRequest = (req: Request) => {
+    setEditTarget(req);
+    setFormData({
+      priority: req.priority ?? "NORMAL",
+      traineeCount: req.traineeCount ?? 1,
+      preferredLanguage: req.preferredLanguage ?? "en",
+      status: req.status,
+      companyId: req.companyId,
+      courseId: req.courseId,
+      preferredDateFrom: req.preferredDateFrom ? new Date(req.preferredDateFrom).toISOString().slice(0, 10) : "",
+      preferredDateTo: req.preferredDateTo ? new Date(req.preferredDateTo).toISOString().slice(0, 10) : "",
+      preferredLocation: req.preferredLocation ?? "",
+      notes: req.notes ?? "",
+    });
+    setTrainees([]);
+    setAdditionalDocs([]);
+    setDialogOpen(true);
+  };
+
+  const handleEditSave = async () => {
+    if (!editTarget || !formData.courseId) {
+      toast({ title: t("misc.error"), description: t("requests.course") + " — " + t("misc.required"), variant: "destructive" });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const payloadTrainees = trainees
+        .filter((tr) => tr.fullName && tr.nationalId)
+        .map((tr) => ({
+          fullName: tr.fullName,
+          nationalId: tr.nationalId,
+          nationality: tr.nationality || null,
+          jobTitle: tr.jobTitle || null,
+          documents: Array.isArray(tr.documents) ? tr.documents : [],
+        }));
+      await api.put(`/requests/${editTarget.id}`, {
+        ...formData,
+        trainees: payloadTrainees,
+        additionalDocuments: additionalDocs,
+      });
+      toast({ title: t("misc.success"), description: t("misc.updateSuccess") });
+      setDialogOpen(false);
+      setEditTarget(null);
+      setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: "en", status: "DRAFT" });
+      setTrainees([]);
+      setAdditionalDocs([]);
+      refetch();
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <PageHeader
@@ -438,11 +553,11 @@ export function TrainingRequestsRoute() {
             setAdditionalDocs([]);
           }
         }}
-        title={t("requests.new")}
+        title={editTarget ? t("requests.edit") || "Edit Request" : t("requests.new")}
         description={t("requests.subtitle")}
         icon={ClipboardList}
         size="3xl"
-        onSubmit={handleSubmit}
+        onSubmit={editTarget ? handleEditSave : handleSubmit}
         isSubmitting={submitting}
         allowFullscreen
         footerExtra={
@@ -579,6 +694,32 @@ export function TrainingRequestsRoute() {
         )}
       </FormDialog>
 
+      {/* Revision dialog — coordinator returns request for modification */}
+      <FormDialog
+        open={revisionDialogOpen}
+        onOpenChange={(o) => { setRevisionDialogOpen(o); if (!o) { setRevisionTarget(null); setRevisionReason(""); } }}
+        title={t("workflow.returnRevision") || "Return for Revision"}
+        icon={RotateCcw}
+        size="sm"
+        onSubmit={handleRevisionSubmit}
+        isSubmitting={submitting}
+      >
+        <Field label={t("requests.revisionReason") || "Reason for revision"} required>
+          <Textarea
+            rows={4}
+            placeholder={t("requests.revisionReasonPlaceholder") || "Explain what the contractor needs to modify..."}
+            value={revisionReason}
+            onChange={(e) => setRevisionReason(e.target.value)}
+          />
+        </Field>
+        {revisionTarget && (
+          <div className="mt-3 text-xs text-muted-foreground">
+            <span>{t("requests.requestNumber")}: </span>
+            <span className="font-mono font-semibold text-primary">{revisionTarget.refNumber}</span>
+          </div>
+        )}
+      </FormDialog>
+
       {/* Read-only details dialog — reached from rows with no remaining workflow actions */}
       <FormDialog
         open={detailsTarget !== null}
@@ -646,12 +787,94 @@ export function TrainingRequestsRoute() {
           </div>
         )}
       </FormDialog>
+
+      {/* ── Preview Dialog (read-only) — shows all request details ── */}
+      <FormDialog
+        open={previewTarget !== null}
+        onOpenChange={(open) => { if (!open) setPreviewTarget(null); }}
+        title={t("action.preview") || "Preview"}
+        description={previewTarget?.refNumber}
+        icon={Eye}
+        size="xl"
+      >
+        {previewTarget && (
+          <div className="space-y-5">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="font-mono text-sm font-semibold text-primary">{previewTarget.refNumber}</div>
+              <div className="flex items-center gap-2">
+                <PriorityBadge priority={previewTarget.priority} />
+                <StatusBadge status={previewTarget.status} />
+              </div>
+            </div>
+
+            <FormGrid>
+              <DetailRow label={t("requests.company")} value={previewTarget.companyName} />
+              <DetailRow label={t("requests.course")} value={previewTarget.courseTitle} />
+              <DetailRow label={t("requests.traineeCount")} value={String(previewTarget.traineeCount)} />
+              <DetailRow label={t("requests.priority")} value={previewTarget.priority} />
+              <DetailRow label={t("requests.preferredLocation")} value={previewTarget.preferredLocation} />
+              <DetailRow label={t("requests.preferredDateFrom")} value={fmtDate(previewTarget.preferredDateFrom)} />
+              <DetailRow label={t("requests.preferredDateTo")} value={fmtDate(previewTarget.preferredDateTo)} />
+              <DetailRow label={t("requests.preferredLanguage")} value={previewTarget.preferredLanguage} />
+            </FormGrid>
+
+            {previewTarget.notes && <DetailRow label={t("requests.notes")} value={previewTarget.notes} />}
+
+            {previewTarget.rejectionReason && (
+              <div className="rounded-md border border-destructive/20 bg-destructive/5 p-3">
+                <div className="text-xs font-medium text-destructive flex items-center gap-1.5">
+                  <AlertCircle className="h-3.5 w-3.5" /> {t("requests.rejectionReason")}
+                </div>
+                <div className="text-xs mt-1">{previewTarget.rejectionReason}</div>
+              </div>
+            )}
+
+            <div>
+              <div className="text-xs font-semibold mb-2">{t("requests.timeline")}</div>
+              <div className="rounded-md border px-3">
+                {([
+                  ["requests.createdAt", previewTarget.createdAt],
+                  ["requests.submittedAt", previewTarget.submittedAt],
+                  ["requests.reviewedAt", previewTarget.reviewedAt],
+                  ["requests.approvedAt", previewTarget.approvedAt],
+                  ["requests.scheduledAt", previewTarget.scheduledAt],
+                  ["requests.startedAt", previewTarget.startedAt],
+                  ["requests.completedAt", previewTarget.completedAt],
+                  ["requests.rejectedAt", previewTarget.rejectedAt],
+                ] as const).filter(([, v]) => v).map(([label, value]) => (
+                  <div key={label} className="flex justify-between items-center py-1.5 border-b last:border-b-0 text-xs">
+                    <span className="text-muted-foreground">{t(label as never)}</span>
+                    <span className="font-mono">{fmtDateTime(value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {previewTarget.status === "DRAFT" || previewTarget.status === "SUBMITTED" ? (
+              <div className="flex justify-end gap-2 pt-2 border-t">
+                <Button variant="outline" onClick={() => setPreviewTarget(null)}>
+                  {t("action.cancel")}
+                </Button>
+                {canCreate && (
+                  <Button onClick={() => { const r = previewTarget; setPreviewTarget(null); handleEditRequest(r); }}>
+                    <Pencil className="h-4 w-4 me-1.5" />{t("action.edit") || "Edit"}
+                  </Button>
+                )}
+              </div>
+            ) : null}
+          </div>
+        )}
+      </FormDialog>
     </div>
   );
 }
 
 function fmtDate(value?: string | null) {
   return value ? new Date(value).toLocaleDateString() : null;
+}
+
+function fmtDateTime(value?: string | null) {
+  return value ? new Date(value).toLocaleString() : null;
 }
 
 function DetailRow({ label, value }: { label: string; value?: string | number | null }) {

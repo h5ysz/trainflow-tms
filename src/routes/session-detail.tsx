@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
-import { FormDialog, Field } from "@/components/common/form-dialog";
+import { FormDialog, Field, FormGrid } from "@/components/common/form-dialog";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { EmptyState } from "@/components/common/empty-state";
 import { StatusBadge } from "@/components/common/status-badge";
@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   CalendarDays, ArrowLeft, ArrowRight, Users, Play, Pause, RotateCcw, CheckCircle2,
   GraduationCap, QrCode, BadgeCheck, Plus, Trash2, AlertCircle, Loader2, Building2,
+  RefreshCw, ArrowRightLeft, ClipboardCheck, Zap,
 } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
@@ -107,6 +108,31 @@ export function SessionDetailRoute() {
   const [removeTarget, setRemoveTarget] = useState<Enrollment | null>(null);
   const [certResults, setCertResults] = useState<CertResult[] | null>(null);
 
+  // ── Replace Trainee state ──
+  const [replaceTarget, setReplaceTarget] = useState<Enrollment | null>(null);
+  const [replaceTraineeId, setReplaceTraineeId] = useState("");
+  const [replaceReason, setReplaceReason] = useState("");
+
+  // ── Move Trainee state ──
+  const [moveTarget, setMoveTarget] = useState<Enrollment | null>(null);
+  const [selectedEnrollmentIds, setSelectedEnrollmentIds] = useState<Set<string>>(new Set());
+  const [targetSessionId, setTargetSessionId] = useState("");
+  const [availableSessions, setAvailableSessions] = useState<{ id: string; refNumber: string; title: string }[]>([]);
+
+  // ── Retest state ──
+  const [retestTarget, setRetestTarget] = useState<Enrollment | null>(null);
+  const [retestSessions, setRetestSessions] = useState<{ id: string; refNumber: string; title: string }[]>([]);
+  const [retestForm, setRetestForm] = useState({
+    retestSessionId: "",
+    retestTrainerId: "",
+    retestDate: "",
+    retestShift: "MORNING",
+    retestLocation: "",
+    retestVenue: "",
+    reason: "",
+    moveTrainee: false,
+  });
+
   const Back = dir === "rtl" ? ArrowRight : ArrowLeft;
 
   const load = useCallback(async () => {
@@ -139,13 +165,13 @@ export function SessionDetailRoute() {
   }, [load]);
 
   useEffect(() => {
-    if (!enrollOpen) return;
+    if (!enrollOpen && !replaceTarget) return;
     if (trainees.length === 0) {
       api.getList<TraineeOption>("/trainees", { pageSize: 100 })
         .then((r) => setTrainees(r.rows.map((x) => ({ id: x.id, fullName: x.fullName, refNumber: x.refNumber }))))
         .catch(() => {});
     }
-  }, [enrollOpen, trainees.length]);
+  }, [enrollOpen, replaceTarget, trainees.length]);
 
   useEffect(() => {
     if (trainers.length === 0) {
@@ -154,6 +180,19 @@ export function SessionDetailRoute() {
         .catch(() => {});
     }
   }, [trainers.length]);
+
+  // Load available sessions (same course) when the Move OR Retest dialog opens.
+  useEffect(() => {
+    if (!moveTarget && selectedEnrollmentIds.size === 0 && !retestTarget) return;
+    if (availableSessions.length > 0) return;
+    api.getList<{ id: string; refNumber: string; title: string }>("/sessions", { pageSize: 100 })
+      .then((r) => setAvailableSessions(
+        r.rows
+          .filter((s) => s.id !== sessionId)
+          .map((s) => ({ id: s.id, refNumber: s.refNumber, title: s.title }))
+      ))
+      .catch(() => {});
+  }, [moveTarget, selectedEnrollmentIds, retestTarget, availableSessions.length, sessionId]);
 
   // A detail route with no subject: send the user back to the list.
   if (!sessionId) {
@@ -221,6 +260,117 @@ export function SessionDetailRoute() {
       await load();
     });
 
+  // ── Replace Trainee: swap one enrolled trainee for another in a single
+  // atomic operation. Calls the dedicated /replace-trainee endpoint.
+  const replaceTrainee = () =>
+    run("replace", async () => {
+      if (!replaceTarget || !replaceTraineeId) return;
+      await api.post(`/sessions/${sessionId}/replace-trainee`, {
+        oldTraineeId: replaceTarget.traineeId,
+        newTraineeId: replaceTraineeId,
+        reason: replaceReason || undefined,
+      });
+      toast({ title: t("misc.success"), description: t("session.replaceSuccess") || t("misc.updateSuccess") });
+      setReplaceTarget(null);
+      setReplaceTraineeId("");
+      setReplaceReason("");
+      await load();
+    });
+
+  // ── Move Trainee(s): transfer one or more enrollments to another session.
+  // Uses the existing /move-trainees endpoint which already handles capacity
+  // checks, audit logging, and count recomputation.
+  const moveTrainees = () =>
+    run("move", async () => {
+      if (!targetSessionId) return;
+      const traineeIds = moveTarget
+        ? [moveTarget.traineeId]
+        : enrollments.filter((e) => selectedEnrollmentIds.has(e.id)).map((e) => e.traineeId);
+      if (traineeIds.length === 0) return;
+      await api.post(`/sessions/${sessionId}/move-trainees`, {
+        targetSessionId,
+        traineeIds,
+      });
+      toast({
+        title: t("misc.success"),
+        description: t("session.moveSuccess", { count: traineeIds.length }) || t("misc.updateSuccess"),
+      });
+      setMoveTarget(null);
+      setSelectedEnrollmentIds(new Set());
+      setTargetSessionId("");
+      await load();
+    });
+
+  // ── Trainer Immediate Opportunity: gives the trainee ONE immediate
+  // additional chance in the SAME session. No scheduling, no notification,
+  // no official retest. Just marks the enrollment's trainerOpportunityUsed
+  // field + records pass/fail.
+  //
+  // Business rules:
+  //   - Only the ASSIGNED trainer (or coordinator/admin) can use this.
+  //   - Only before session status = COMPLETED.
+  //   - Only once per enrollment.
+  //   - Does NOT create a RetestRequest record.
+  //   - Does NOT notify the contractor.
+  const giveTrainerOpportunity = (row: Enrollment) =>
+    run("opportunity", async () => {
+      // Ask the trainer whether the trainee passed or failed the opportunity.
+      // We use a simple confirm() for now — a proper dialog could be added later.
+      const passed = window.confirm(
+        t("session.trainerOpportunityConfirm") ||
+        "Did the trainee PASS the immediate opportunity? Click OK for PASS, Cancel for FAIL."
+      );
+      await api.post(`/api/sessions/${sessionId}/enrollments/${row.id}/trainer-opportunity`, {
+        passed,
+      });
+      toast({
+        title: t("misc.success"),
+        description: passed
+          ? (t("session.trainerOpportunityPassed") || "Trainee passed the opportunity — certificate workflow continues.")
+          : (t("session.trainerOpportunityFailed") || "Trainee failed the opportunity — awaiting official retest."),
+      });
+      await load();
+    });
+
+  // ── Retest: create + schedule a retest for a failed trainee.
+  // This is a two-step process:
+  //   1. POST /api/retests — creates the retest request (status=PENDING_RETEST)
+  //   2. POST /api/retests/[id] with action=schedule — schedules it
+  // Both steps happen in a single UI action for the user's convenience.
+  const scheduleRetest = () =>
+    run("retest", async () => {
+      if (!retestTarget) return;
+      // Step 1: create the retest request
+      const created = await api.post<{ id: string; refNumber: string }>("/api/retests", {
+        enrollmentId: retestTarget.id,
+        sessionId,
+        reason: retestForm.reason || undefined,
+      });
+      // Step 2: schedule it
+      await api.post(`/api/retests/${created.id}`, {
+        action: "schedule",
+        retestSessionId: retestForm.retestSessionId || undefined,
+        retestTrainerId: retestForm.retestTrainerId || undefined,
+        retestDate: retestForm.retestDate || undefined,
+        retestShift: retestForm.retestShift || undefined,
+        retestLocation: retestForm.retestLocation || undefined,
+        retestVenue: retestForm.retestVenue || undefined,
+        reason: retestForm.reason || undefined,
+        moveTrainee: retestForm.moveTrainee,
+      });
+      toast({
+        title: t("misc.success"),
+        description: t("session.retestScheduled") || `Retest ${created.refNumber} scheduled`,
+      });
+      setRetestTarget(null);
+      setRetestForm({
+        retestSessionId: "", retestTrainerId: "", retestDate: "",
+        retestShift: "MORNING", retestLocation: "", retestVenue: "",
+        reason: "", moveTrainee: false,
+      });
+      await load();
+    });
+
   const activateQr = () =>
     run("qr", async () => {
       await api.post(`/sessions/${sessionId}/qr-activate`, {});
@@ -277,9 +427,64 @@ export function SessionDetailRoute() {
       className: "text-end",
       cell: (row) =>
         canEdit ? (
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setRemoveTarget(row)}>
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+          <div className="inline-flex items-center gap-0.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => { setReplaceTarget(row); setReplaceTraineeId(""); setReplaceReason(""); }}
+              title={t("session.replaceTrainee") || "Replace Trainee"}
+              disabled={row.certificateStatus === "ISSUED"}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => { setMoveTarget(row); setSelectedEnrollmentIds(new Set()); setTargetSessionId(""); }}
+              title={t("session.moveTrainee") || "Move to Another Session"}
+            >
+              <ArrowRightLeft className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => void giveTrainerOpportunity(row)}
+              title={t("session.trainerOpportunity") || "Trainer Immediate Opportunity"}
+              disabled={row.certificateStatus === "ISSUED" || row.finalTestStatus !== "FAILED" || busy === "opportunity"}
+            >
+              {busy === "opportunity" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => {
+                setRetestTarget(row);
+                setRetestForm({
+                  retestSessionId: "", retestTrainerId: "", retestDate: "",
+                  retestShift: "MORNING", retestLocation: "", retestVenue: "",
+                  reason: "", moveTrainee: false,
+                });
+              }}
+              title={t("session.retest") || "Schedule Official Retest"}
+              disabled={row.certificateStatus === "ISSUED" || row.finalTestStatus !== "FAILED"}
+            >
+              <ClipboardCheck className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-destructive"
+              onClick={() => setRemoveTarget(row)}
+              title={t("action.delete") || "Remove"}
+              disabled={row.certificateStatus === "ISSUED"}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         ) : null,
     },
   ];
@@ -494,6 +699,181 @@ export function SessionDetailRoute() {
         loading={busy === "remove"}
         onConfirm={() => void removeEnrollment()}
       />
+
+      {/* ── Replace Trainee Dialog ── */}
+      <FormDialog
+        open={replaceTarget !== null}
+        onOpenChange={(o) => { if (!o) { setReplaceTarget(null); setReplaceTraineeId(""); setReplaceReason(""); } }}
+        title={t("session.replaceTrainee") || "Replace Trainee"}
+        description={`${t("action.replace") || "Replace"}: ${replaceTarget?.trainee?.fullName ?? "—"}`}
+        icon={RefreshCw}
+        size="md"
+        onSubmit={replaceTrainee}
+        isSubmitting={busy === "replace"}
+      >
+        <div className="space-y-4">
+          <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+            <div className="font-medium text-foreground mb-1">{replaceTarget?.trainee?.fullName ?? "—"}</div>
+            <div>{t("session.replaceHint") || "Select a new trainee to replace the above. The old enrollment will be cancelled."}</div>
+          </div>
+          <Field label={t("session.newTrainee") || "New Trainee"} required>
+            <Select value={replaceTraineeId} onValueChange={setReplaceTraineeId}>
+              <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+              <SelectContent>
+                {trainees
+                  .filter((tr) => tr.id !== replaceTarget?.traineeId)
+                  .map((tr) => (
+                    <SelectItem key={tr.id} value={tr.id}>
+                      {tr.fullName} {tr.refNumber ? `(${tr.refNumber})` : ""}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label={t("session.reason") || "Reason (optional)"}>
+            <Input
+              value={replaceReason}
+              onChange={(e) => setReplaceReason(e.target.value)}
+              placeholder={t("session.reasonPlaceholder") || "e.g. Trainee could not attend"}
+            />
+          </Field>
+        </div>
+      </FormDialog>
+
+      {/* ── Move Trainee Dialog ── */}
+      <FormDialog
+        open={moveTarget !== null || selectedEnrollmentIds.size > 0}
+        onOpenChange={(o) => { if (!o) { setMoveTarget(null); setSelectedEnrollmentIds(new Set()); setTargetSessionId(""); } }}
+        title={t("session.moveTrainee") || "Move Trainee to Another Session"}
+        description={
+          moveTarget
+            ? `${t("action.move") || "Move"}: ${moveTarget.trainee?.fullName ?? "—"}`
+            : `${t("action.move") || "Move"} ${selectedEnrollmentIds.size} trainee(s)`
+        }
+        icon={ArrowRightLeft}
+        size="md"
+        onSubmit={moveTrainees}
+        isSubmitting={busy === "move"}
+      >
+        <div className="space-y-4">
+          <div className="rounded-md border bg-amber-50 dark:bg-amber-950/20 p-3 text-xs text-amber-700 dark:text-amber-400">
+            {t("session.moveHint") || "Trainees can only be moved to sessions of the same course. Capacity will be checked."}
+          </div>
+          <Field label={t("session.targetSession") || "Target Session"} required>
+            <Select value={targetSessionId} onValueChange={setTargetSessionId}>
+              <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+              <SelectContent>
+                {availableSessions.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.refNumber} — {s.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
+      </FormDialog>
+
+      {/* ── Retest Dialog ── */}
+      <FormDialog
+        open={retestTarget !== null}
+        onOpenChange={(o) => { if (!o) { setRetestTarget(null); setRetestForm({ retestSessionId: "", retestTrainerId: "", retestDate: "", retestShift: "MORNING", retestLocation: "", retestVenue: "", reason: "", moveTrainee: false }); } }}
+        title={t("session.retest") || "Schedule Retest"}
+        description={`${t("session.retestFor") || "Retest for"}: ${retestTarget?.trainee?.fullName ?? "—"}`}
+        icon={ClipboardCheck}
+        size="lg"
+        onSubmit={scheduleRetest}
+        isSubmitting={busy === "retest"}
+      >
+        <div className="space-y-4">
+          <div className="rounded-md border bg-amber-50 dark:bg-amber-950/20 p-3 text-xs text-amber-700 dark:text-amber-400">
+            {t("session.retestHint") || "This trainee failed the final assessment. Schedule a retest — you can keep them in this session, move them to another session, change the trainer, date, time, or room."}
+          </div>
+          <FormGrid>
+            <Field label={t("session.retestSession") || "Retest Session (leave empty = same session)"}>
+              <Select
+                value={retestForm.retestSessionId}
+                onValueChange={(v) => setRetestForm((f) => ({ ...f, retestSessionId: v }))}
+              >
+                <SelectTrigger><SelectValue placeholder={t("session.sameSession") || "Same session"} /></SelectTrigger>
+                <SelectContent>
+                  {availableSessions.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.refNumber} — {s.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label={t("sessions.trainer") || "Trainer"}>
+              <Select
+                value={retestForm.retestTrainerId}
+                onValueChange={(v) => setRetestForm((f) => ({ ...f, retestTrainerId: v }))}
+                disabled={user?.role === "TRAINER"}
+              >
+                <SelectTrigger><SelectValue placeholder={t("session.sameTrainer") || "Same trainer"} /></SelectTrigger>
+                <SelectContent>
+                  {trainers.map((tr) => <SelectItem key={tr.id} value={tr.id}>{tr.fullName}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {user?.role === "TRAINER" && (
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  {t("session.trainerChangeCoordinatorOnly") || "Only coordinators can change the trainer."}
+                </p>
+              )}
+            </Field>
+            <Field label={t("session.retestDate") || "Retest Date"}>
+              <Input
+                type="datetime-local"
+                value={retestForm.retestDate}
+                onChange={(e) => setRetestForm((f) => ({ ...f, retestDate: e.target.value }))}
+              />
+            </Field>
+            <Field label={t("sessions.shift") || "Shift"}>
+              <Select
+                value={retestForm.retestShift}
+                onValueChange={(v) => setRetestForm((f) => ({ ...f, retestShift: v }))}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MORNING">{t("sessions.shift.MORNING") || "Morning"}</SelectItem>
+                  <SelectItem value="EVENING">{t("sessions.shift.EVENING") || "Evening"}</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label={t("sessions.location") || "Location"}>
+              <Input
+                value={retestForm.retestLocation}
+                onChange={(e) => setRetestForm((f) => ({ ...f, retestLocation: e.target.value }))}
+                placeholder={t("sessions.location") || "Location"}
+              />
+            </Field>
+            <Field label={t("sessions.venue") || "Venue / Room"}>
+              <Input
+                value={retestForm.retestVenue}
+                onChange={(e) => setRetestForm((f) => ({ ...f, retestVenue: e.target.value }))}
+                placeholder={t("sessions.venue") || "Hall A"}
+              />
+            </Field>
+          </FormGrid>
+          <Field label={t("session.reason") || "Reason (optional)"}>
+            <Input
+              value={retestForm.reason}
+              onChange={(e) => setRetestForm((f) => ({ ...f, reason: e.target.value }))}
+              placeholder={t("session.retestReasonPlaceholder") || "e.g. Trainee requested retest"}
+            />
+          </Field>
+          {retestForm.retestSessionId && (
+            <label className="flex items-center gap-2 text-xs cursor-pointer">
+              <input
+                type="checkbox"
+                checked={retestForm.moveTrainee}
+                onChange={(e) => setRetestForm((f) => ({ ...f, moveTrainee: e.target.checked }))}
+                className="rounded"
+              />
+              {t("session.moveTraineeToRetestSession") || "Move trainee to the retest session"}
+            </label>
+          )}
+        </div>
+      </FormDialog>
     </div>
   );
 }

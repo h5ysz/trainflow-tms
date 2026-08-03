@@ -8,6 +8,7 @@
 // they use the global `db` — useful for one-off recompute calls.
 
 import { db, type Prisma } from "@/lib/db";
+import { randomUUID } from "node:crypto";
 
 type Tx = Prisma.TransactionClient;
 
@@ -40,9 +41,11 @@ export async function recomputeSessionCounts(sessionId: string, tx: Tx = db): Pr
     }
     await tx.sessionCompany.createMany({
       data: Array.from(companyCounts.entries()).map(([companyId, traineeCount]) => ({
+        id: randomUUID(),
         sessionId,
         companyId,
         traineeCount,
+        updatedAt: new Date(),
       })),
     });
   }

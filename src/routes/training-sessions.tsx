@@ -90,6 +90,25 @@ export function TrainingSessionsRoute() {
     fetchOnEdit: true,
     toForm: (r) => ({
       ...r,
+      // Convert null/undefined to safe defaults to prevent controlled→
+      // uncontrolled input warnings. Number fields must never be null.
+      durationHours: (r as { durationHours?: number | null }).durationHours ?? 6,
+      capacity: (r as { capacity?: number | null }).capacity ?? 20,
+      expectedTrainees: (r as { expectedTrainees?: number | null }).expectedTrainees ?? 0,
+      durationDays: (r as { durationDays?: number | null }).durationDays ?? "",
+      // String fields that may be null in the DB
+      trainerId: (r as { trainerId?: string | null }).trainerId ?? "",
+      location: (r as { location?: string | null }).location ?? "",
+      city: (r as { city?: string | null }).city ?? "",
+      region: (r as { region?: string | null }).region ?? "",
+      venue: (r as { venue?: string | null }).venue ?? "",
+      shift: (r as { shift?: string | null }).shift ?? "MORNING",
+      instituteName: (r as { instituteName?: string | null }).instituteName ?? "",
+      locationMapUrl: (r as { locationMapUrl?: string | null }).locationMapUrl ?? "",
+      notes: (r as { notes?: string | null }).notes ?? "",
+      language: (r as { language?: string | null }).language ?? "en",
+      classification: (r as { classification?: string | null }).classification ?? "COURSE",
+      // Date fields
       startDate: toDateTimeInput((r as { startDate?: unknown }).startDate),
       endDate: toDateTimeInput((r as { endDate?: unknown }).endDate),
     }),
@@ -294,10 +313,10 @@ export function TrainingSessionsRoute() {
               </Select>
             </Field>
             <Field label={t("sessions.durationHours")}>
-              <Input type="number" min={1} value={formData.durationHours as number} onChange={(e) => setField("durationHours", parseInt(e.target.value, 10) || 6)} />
+              <Input type="number" min={1} value={(formData.durationHours as number) ?? ""} onChange={(e) => setField("durationHours", parseInt(e.target.value, 10) || 6)} />
             </Field>
             <Field label={t("sessions.capacity")}>
-              <Input type="number" min={1} value={formData.capacity as number} onChange={(e) => setField("capacity", parseInt(e.target.value, 10) || 20)} />
+              <Input type="number" min={1} value={(formData.capacity as number) ?? ""} onChange={(e) => setField("capacity", parseInt(e.target.value, 10) || 20)} />
             </Field>
             <Field label={t("sessions.startDate")} required>
               <Input type="datetime-local" value={(formData.startDate as string) ?? ""} onChange={(e) => setField("startDate", e.target.value)} />
@@ -315,7 +334,7 @@ export function TrainingSessionsRoute() {
               </Select>
             </Field>
             <Field label={t("sessions.expectedTrainees")}>
-              <Input type="number" min={0} value={formData.expectedTrainees as number} onChange={(e) => setField("expectedTrainees", parseInt(e.target.value, 10) || 0)} />
+              <Input type="number" min={0} value={(formData.expectedTrainees as number) ?? ""} onChange={(e) => setField("expectedTrainees", parseInt(e.target.value, 10) || 0)} />
             </Field>
             <Field label={t("sessions.instituteName")}>
               <Input placeholder="GCC Lab" value={(formData.instituteName as string) ?? ""} onChange={(e) => setField("instituteName", e.target.value)} />

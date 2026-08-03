@@ -13,13 +13,15 @@ const ALLOWED_SORT_FIELDS = ["refNumber", "createdAt", "updatedAt", "status", "p
 const VALID_TRANSITIONS: Record<TrainingRequestStatus, TrainingRequestStatus[]> = {
   DRAFT: ["SUBMITTED", "CANCELLED"],
   SUBMITTED: ["UNDER_REVIEW", "CANCELLED"],
-  UNDER_REVIEW: ["APPROVED", "REJECTED", "CANCELLED"],
+  UNDER_REVIEW: ["APPROVED", "REJECTED", "REQUIRES_MODIFICATION", "CANCELLED"],
+  REQUIRES_MODIFICATION: ["SUBMITTED", "CANCELLED"],
   APPROVED: ["SCHEDULED", "CANCELLED"],
   SCHEDULED: ["IN_PROGRESS", "CANCELLED"],
   IN_PROGRESS: ["COMPLETED", "CANCELLED"],
   COMPLETED: [],
   CANCELLED: [],
   REJECTED: ["SUBMITTED"], // allow re-submission
+  CLOSED: [], // terminal — the official retest failed; a new request is required
 };
 
 export function canTransition(from: TrainingRequestStatus, to: TrainingRequestStatus): boolean {

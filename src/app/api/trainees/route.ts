@@ -4,6 +4,7 @@ import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
+import { randomUUID } from "node:crypto";
 
 const ALLOWED_SORT_FIELDS = ["fullName", "nationalId", "createdAt", "updatedAt", "status", "nationality", "jobTitle"];
 
@@ -95,6 +96,7 @@ export const POST = withModuleAction("trainees", "create", async ({ req, user })
 
   const trainee = await db.trainee.create({
     data: {
+      id: randomUUID(),
       refNumber,
       fullName,
       nationalId,
@@ -107,6 +109,7 @@ export const POST = withModuleAction("trainees", "create", async ({ req, user })
       notes: notes ?? null,
       createdBy: user.id,
       updatedBy: user.id,
+      updatedAt: new Date(),
     },
     include: { company: { select: { name: true, refNumber: true } } },
   });

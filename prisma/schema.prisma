@@ -43,6 +43,11 @@ enum TrainingRequestStatus {
   COMPLETED
   CANCELLED
   REJECTED
+  // Returned to the contractor for revision; resubmitting moves it back to SUBMITTED.
+  REQUIRES_MODIFICATION
+  // Terminal: the single permitted official retest failed, so the request is closed
+  // and the contractor must raise a new one.
+  CLOSED
 }
 
 enum SessionStatus {
@@ -689,6 +694,15 @@ model SessionEnrollment {
   // ── Re-Exam support ──
   isReExam     Boolean @default(false)
 
+  // ── Trainer Opportunity tracking ──
+  // Per business rules: the trainer can give ONE immediate opportunity
+  // (same session, no official retest, no notification). These fields
+  // track whether the opportunity has been used and its result.
+  trainerOpportunityUsed   Boolean   @default(false)
+  trainerOpportunityPassed Boolean?
+  trainerOpportunityAt     DateTime?
+  trainerOpportunityBy     String?
+
   // ── Enrollment source tracking ──
   enrollmentSource String @default("MANUAL")
   addedByTrainer  Boolean @default(false)
@@ -1257,6 +1271,16 @@ model SessionPayment {
   invoiceDueDate  DateTime?
   // Status derived from paidAmount / totalAmount: UNPAID | PARTIALLY_PAID | PAID
   notes           String?
+  // ── Payment verification workflow ──
+  // PENDING → PARTIALLY_VERIFIED → VERIFIED | REJECTED
+  verificationStatus String    @default("PENDING")
+  verifiedBy         String?
+  verifiedAt         DateTime?
+  verificationNotes  String?
+  // Coordinator grants certificate printing permission after full payment.
+  printingReleased   Boolean   @default(false)
+  printingReleasedBy String?
+  printingReleasedAt DateTime?
   // Audit
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -1264,10 +1288,93 @@ model SessionPayment {
   updatedBy       String?
   deletedAt       DateTime?
 
+  receipts        PaymentReceipt[]
+
   @@unique([sessionId, companyId])
   @@index([sessionId])
   @@index([companyId])
   @@index([invoiceRef])
+}
+
+// ── Payment Receipts ──────────────────────────────────────────────────────
+// Uploaded by contractors as proof of bank transfer. Reviewed by coordinators
+// who verify the amount and update the SessionPayment's paidAmount.
+model PaymentReceipt {
+  id               String    @id @default(uuid())
+  sessionPaymentId String
+  filename         String
+  originalName     String
+  url              String
+  amount           Float
+  currency         String    @default("SAR")
+  // PENDING → VERIFIED | REJECTED
+  status           String    @default("PENDING")
+  uploadedById     String?
+  uploadedAt       DateTime  @default(now())
+  verifiedById     String?
+  verifiedAt       DateTime?
+  rejectionReason  String?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  sessionPayment   SessionPayment @relation(fields: [sessionPaymentId], references: [id], onDelete: Cascade)
+
+  @@index([sessionPaymentId])
+  @@index([status])
+}
+
+// ── Retest Management ────────────────────────────────────────────────────
+// Tracks the full lifecycle of a retest when a trainee fails the final
+// assessment. Linked to the original enrollment (NOT a new request) so the
+// trainee's history stays in one place.
+model RetestRequest {
+  id                 String    @id @default(uuid())
+  refNumber          String    @unique
+  enrollmentId       String
+  sessionId          String
+  courseId           String
+  traineeName        String
+  traineeIdNational  String?
+  companyId          String?
+  // Distinguishes between a Trainer Immediate Opportunity (same session,
+  // no notification, no official retest) and an Official Retest (full
+  // workflow with contractor notifications + scheduling).
+  retestType         String    @default("OFFICIAL") // "TRAINER_OPPORTUNITY" | "OFFICIAL"
+  // The session where the retest will take place. Can be the same session
+  // (retest in-place) or a different one (moved to another session).
+  retestSessionId    String?
+  retestTrainerId    String?
+  retestDate         DateTime?
+  retestShift        String?
+  retestLocation     String?
+  retestVenue        String?
+  // PENDING_RETEST → SCHEDULED → RESCHEDULED → COMPLETED | CANCELLED
+  status             String    @default("PENDING_RETEST")
+  // The exam attempt that triggered this retest (the failed one).
+  failedAttemptId    String?
+  // The exam attempt created for this retest (the new one).
+  retestAttemptId    String?
+  // Result of the retest: null = not yet taken, true = passed, false = failed
+  passed             Boolean?
+  reason             String?
+  scheduledBy        String?
+  scheduledAt        DateTime?
+  cancelledBy        String?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  // Audit
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  createdBy          String?
+  updatedBy          String?
+  deletedAt          DateTime?
+
+  @@index([enrollmentId])
+  @@index([sessionId])
+  @@index([status])
+  @@index([companyId])
+  @@index([retestType])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { ArrowRight, ArrowLeft, AlertCircle, Loader2, CheckCircle2, Languages } from "lucide-react";
@@ -183,11 +184,11 @@ export function RegisterForm() {
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">{locale === "en" ? "Password" : "كلمة المرور"} *</Label>
-              <Input type="password" value={formData.password ?? ""} onChange={(e) => setField("password", e.target.value)} className="h-11" placeholder="••••••••" />
+              <PasswordInput value={formData.password ?? ""} onChange={(e) => setField("password", e.target.value)} className="h-11" placeholder="••••••••" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">{locale === "en" ? "Confirm Password" : "تأكيد كلمة المرور"} *</Label>
-              <Input type="password" value={formData.confirmPassword ?? ""} onChange={(e) => setField("confirmPassword", e.target.value)} className="h-11" placeholder="••••••••" />
+              <PasswordInput value={formData.confirmPassword ?? ""} onChange={(e) => setField("confirmPassword", e.target.value)} className="h-11" placeholder="••••••••" />
             </div>
           </div>
 

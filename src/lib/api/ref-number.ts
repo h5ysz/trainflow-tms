@@ -30,7 +30,8 @@ export type RefEntityType =
   | "INVOICE"
   | "QUOTATION"
   | "PAYMENT"
-  | "RECEIPT";
+  | "RECEIPT"
+  | "RETEST";
 
 const PREFIX: Record<RefEntityType, string> = {
   TRAINING_REQUEST: "TR",
@@ -46,6 +47,7 @@ const PREFIX: Record<RefEntityType, string> = {
   QUOTATION: "QUO",
   PAYMENT: "PAY",
   RECEIPT: "RCP",
+  RETEST: "RT",
 };
 
 const YEARLY: Set<RefEntityType> = new Set([
