@@ -111,6 +111,31 @@ export const POST = withModuleAction("requests", "view", async ({ req, params, u
     }
   }
 
+  // ── Notify coordinators when a contractor submits / resubmits a request ──
+  // Coordinators need to know there's a new request waiting for their review.
+  if (to === "SUBMITTED" && (existing.status === "DRAFT" || existing.status === "REJECTED")) {
+    const coordinators = await db.user.findMany({
+      where: { role: "COORDINATOR", isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+    if (coordinators.length > 0) {
+      const isResubmit = existing.status === "REJECTED";
+      await db.notification.createMany({
+        data: coordinators.map((c) => ({
+          id: randomUUID(),
+          userId: c.id,
+          title: isResubmit ? "Request Resubmitted for Review" : "New Training Request Submitted",
+          titleAr: isResubmit ? "تمت إعادة إرسال طلب للمراجعة" : "طلب تدريب جديد",
+          message: `Training request ${existing.refNumber} has been ${isResubmit ? "resubmitted" : "submitted"} and is awaiting your review.`,
+          messageAr: `تم ${isResubmit ? "إعادة إرسال" : "إرسال"} طلب التدريب ${existing.refNumber} وهو بانتظار المراجعة.`,
+          type: "INFO",
+          category: "TRAINING",
+          updatedAt: now,
+        })),
+      });
+    }
+  }
+
   await recordStatusChange({
     user,
     entity: "REQUEST",

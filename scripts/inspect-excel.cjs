@@ -1,37 +1,31 @@
 const ExcelJS = require('exceljs');
-const fs = require('fs');
-(async () => {
-  const files = [
-    '/home/z/my-project/upload/Registration sheet ES -2025.xlsx',
-    '/home/z/my-project/upload/HRBL_0004_FO_001  (السلامه الكهربيه)نموذج طلب دورة تدريبية.xlsx',
-  ];
-  for (const f of files) {
-    if (!fs.existsSync(f)) continue;
-    console.log('\n=== ' + f.split('/').pop() + ' ===');
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.readFile(f);
-    const ws = wb.worksheets[0];
-    console.log(`rowCount: ${ws.rowCount}, columnCount: ${ws.columnCount}`);
-    console.log('First 10 rows:');
-    for (let r = 1; r <= Math.min(10, ws.rowCount); r++) {
-      const row = ws.getRow(r);
-      const cells = [];
-      for (let c = 1; c <= Math.min(15, row.cellCount); c++) {
-        const v = row.getCell(c).value;
-        let s = '';
-        if (v === null || v === undefined) s = '';
-        else if (typeof v === 'object') {
-          if (v.text) s = String(v.text);
-          else if (v.result !== undefined) s = String(v.result);
-          else if (v.richText) s = v.richText.map(r => r.text).join('');
-          else s = JSON.stringify(v);
-        } else s = String(v);
-        if (s.length > 30) s = s.slice(0, 30) + '…';
-        cells.push(`[${c}]${s}`);
-      }
-      console.log(`  R${r}: ${cells.join(' | ')}`);
+
+async function inspect(path, label) {
+  console.log(`\n=== ${label} ===`);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(path);
+  console.log(`Sheets: ${wb.worksheets.length}`);
+  for (const ws of wb.worksheets) {
+    console.log(`\n  Sheet: "${ws.name}" (${ws.rowCount} rows, ${ws.columnCount} cols)`);
+    // Print header row
+    const header = ws.getRow(1).values;
+    console.log(`  Headers: ${header.filter(Boolean).join(' | ')}`);
+    // Print first data row
+    if (ws.rowCount > 1) {
+      const row2 = ws.getRow(2).values;
+      console.log(`  Row 1:  ${row2.filter(Boolean).join(' | ')}`);
     }
-    // Also show merged cells
-    console.log('Merged cells:', Object.keys(ws._merges || {}).slice(0, 10).join(', '));
+    // Check column widths
+    const widths = ws.columns.map(c => Math.round(c.width || 0)).join(', ');
+    console.log(`  Col widths: ${widths}`);
+    // Check header style
+    const hCell = ws.getCell('A1');
+    console.log(`  Header font: bold=${hCell.font?.bold}, color=${hCell.font?.color?.argb}`);
+    console.log(`  Header fill: ${hCell.fill?.fgColor?.argb}`);
   }
+}
+
+(async () => {
+  await inspect('/tmp/export-en.xlsx', 'ENGLISH Export');
+  await inspect('/tmp/export-ar.xlsx', 'ARABIC Export (all items)');
 })();
