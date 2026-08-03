@@ -1,18 +1,21 @@
-// /api/export/company-data — professional administrative Excel export
+// /api/export/company-data — professional administrative export
 //
 // Query params:
 //   scope: last | specific_request | specific_course | date_range | all
 //   items: comma-separated subset of:
 //          requests, trainees, attendance, results, evaluations,
 //          certificates, invoices, attachments
-//   format: excel (fully supported) | pdf | zip (stub — falls back to excel)
+//   format: excel | pdf | zip
 //   locale: en | ar  — controls column headers, sheet names AND enum value
 //                       translation. When ar, sheet view is right-to-left.
 //   specificId?: string — request id (specific_request) or course id (specific_course)
 //   dateFrom?: string  (ISO date)
 //   dateTo?:   string  (ISO date)
 //
-// Output: a single .xlsx workbook. Sheet 1 is always "Summary" (in the chosen
+// Output:
+//   excel → .xlsx workbook (multi-sheet, styled)
+//   pdf   → .pdf document (summary + key tables)
+//   zip   → .zip archive (Excel + attachment files)
 // locale). Every selected item gets its own sheet — empty sheets are NOT
 // created. Enum values from the DB (statuses, priorities, test types…) are
 // translated to the chosen locale. Numeric IDs are written as text so leading
@@ -354,6 +357,7 @@ export const GET = async (req: NextRequest) => {
   const specificId = url.searchParams.get("specificId") || undefined;
   const dateFrom = url.searchParams.get("dateFrom") || undefined;
   const dateTo = url.searchParams.get("dateTo") || undefined;
+  const format = (url.searchParams.get("format") || "excel") as "excel" | "pdf" | "zip";
 
   if (items.length === 0) {
     return fail("No items selected", 422, "VALIDATION_ERROR");
@@ -880,6 +884,15 @@ export const GET = async (req: NextRequest) => {
   // ═══════════════════════════════════════════════════════════════════════════
   // SHEET — Attachments (metadata only — no embedded files)
   // ═══════════════════════════════════════════════════════════════════════════
+  // Declare rows + AttachmentRow type outside the if block so the ZIP
+  // export section can also access them.
+  type AttachmentRow = {
+    fileName: string; fileType: string; category: string;
+    traineeName: string; requestRef: string;
+    uploadedAt: string; url: string;
+  };
+  const rows: AttachmentRow[] = [];
+
   if (items.includes("attachments")) {
     const ws = wb.addWorksheet(SHEET_NAMES.attachments(locale));
     const headers = HEADERS.attachments(locale);
@@ -889,12 +902,7 @@ export const GET = async (req: NextRequest) => {
     //  1. Trainee.documents (JSON array)
     //  2. Trainee.idAttachmentUrl (legacy single field)
     //  3. TrainingRequest.documents (JSON array)
-    type AttachmentRow = {
-      fileName: string; fileType: string; category: string;
-      traineeName: string; requestRef: string;
-      uploadedAt: string; url: string;
-    };
-    const rows: AttachmentRow[] = [];
+    // (AttachmentRow type + rows array declared above the if block)
 
     // Helper: extract a human-readable filename from the stored JSON.
     // The upload handler stores both `filename` (random hex) and `originalName`
@@ -1173,18 +1181,178 @@ export const GET = async (req: NextRequest) => {
   summaryWs.views = summaryWs.views; // ensure applied
   wb.views = wb.views; // ensure workbook views applied
 
-  // ── Generate buffer ──
-  const buffer = await wb.xlsx.writeBuffer();
+  // ── Generate response based on format ──
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
   const scopeTag = scope === "specific_course" && scopeCourseTitle
     ? `-${scopeCourseTitle.replace(/\s+/g, "_").slice(0, 30)}`
     : `-${scope}`;
-  const filename = `gcclab-export${scopeTag}-${locale}-${stamp}.xlsx`;
 
-  return new Response(buffer, {
+  // ── EXCEL: generate .xlsx buffer ──
+  const excelBuffer = await wb.xlsx.writeBuffer();
+  const excelFilename = `gcclab-export${scopeTag}-${locale}-${stamp}.xlsx`;
+
+  if (format === "pdf") {
+    // ── PDF: generate a .pdf document with summary + key data ──
+    const PDFDocument = (await import("pdfkit")).default;
+    const doc = new PDFDocument({ size: "A4", margin: 50 });
+    const chunks: Buffer[] = [];
+    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+
+    // Title
+    doc.fontSize(20).font("Helvetica-Bold").text("GCCLAB TMS — Export Report", { align: "center" });
+    doc.moveDown();
+    doc.fontSize(10).font("Helvetica").text(`Generated: ${new Date().toLocaleString()}`, { align: "center" });
+    doc.moveDown(2);
+
+    // Summary table
+    doc.fontSize(14).font("Helvetica-Bold").text(locale === "ar" ? "الملخص" : "Summary", { underline: true });
+    doc.moveDown();
+    doc.fontSize(10).font("Helvetica");
+    const summaryLines = [
+      [locale === "ar" ? "اسم الشركة" : "Company Name", companyName],
+      [locale === "ar" ? "نطاق التصدير" : "Export Scope", scopeLabels[scope] ?? scope],
+      [locale === "ar" ? "اللغة" : "Language", locale === "ar" ? "العربية" : "English"],
+      [locale === "ar" ? "عدد الطلبات" : "Training Requests", String(counts.requests)],
+      [locale === "ar" ? "عدد المتدربين" : "Trainees", String(counts.trainees)],
+      [locale === "ar" ? "عدد الدورات" : "Courses", String(counts.courses)],
+      [locale === "ar" ? "عدد الشهادات" : "Certificates", String(counts.certificates)],
+      [locale === "ar" ? "عدد الفواتير" : "Invoices", String(counts.invoices)],
+      [locale === "ar" ? "عدد المرفقات" : "Attachments", String(counts.attachments)],
+    ];
+    for (const [label, value] of summaryLines) {
+      doc.text(`${label}: ${value}`, { indent: 20 });
+    }
+    doc.moveDown(2);
+
+    // Training Requests
+    if (items.includes("requests") && allRequests.length > 0) {
+      doc.fontSize(14).font("Helvetica-Bold").text(locale === "ar" ? "طلبات التدريب" : "Training Requests");
+      doc.moveDown();
+      doc.fontSize(9).font("Helvetica");
+      for (const r of allRequests) {
+        doc.text(`${r.refNumber} | ${r.company?.name ?? ""} | ${r.course?.title ?? ""} | ${tx(REQUEST_STATUS, r.status, locale)} | ${tx(PRIORITY, r.priority, locale)}`);
+      }
+      doc.moveDown(2);
+    }
+
+    // Trainees
+    if (items.includes("trainees")) {
+      const allTraineeRows: string[] = [];
+      const reqsWithTrainees = await db.trainingRequest.findMany({
+        where: reqWhere,
+        select: {
+          refNumber: true,
+          requestCourses: {
+            where: { deletedAt: null },
+            select: {
+              trainees: {
+                where: { deletedAt: null },
+                include: {
+                  trainee: { select: { fullName: true, nationalId: true, nationality: true, jobTitle: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+      for (const r of reqsWithTrainees) {
+        for (const rc of r.requestCourses) {
+          for (const trc of rc.trainees) {
+            allTraineeRows.push(`${trc.trainee.fullName} | ${trc.trainee.nationalId} | ${trc.trainee.nationality ?? ""} | ${trc.trainee.jobTitle ?? ""} | ${r.refNumber}`);
+          }
+        }
+      }
+      if (allTraineeRows.length > 0) {
+        doc.fontSize(14).font("Helvetica-Bold").text(locale === "ar" ? "المتدربون" : "Trainees");
+        doc.moveDown();
+        doc.fontSize(9).font("Helvetica");
+        for (const row of allTraineeRows) {
+          doc.text(row);
+        }
+        doc.moveDown(2);
+      }
+    }
+
+    // Exported items list
+    doc.fontSize(12).font("Helvetica-Bold").text(locale === "ar" ? "العناصر المُصدّرة" : "Exported Items");
+    doc.moveDown();
+    doc.fontSize(10).font("Helvetica");
+    const itemLabels: Record<string, { en: string; ar: string }> = {
+      requests: { en: "Training Requests", ar: "طلبات التدريب" },
+      trainees: { en: "Trainees", ar: "المتدربون" },
+      attendance: { en: "Attendance", ar: "الحضور" },
+      results: { en: "Assessment Results", ar: "نتائج التقييم" },
+      evaluations: { en: "Evaluations", ar: "التقييمات" },
+      certificates: { en: "Certificates", ar: "الشهادات" },
+      invoices: { en: "Invoices", ar: "الفواتير" },
+      attachments: { en: "Attachments", ar: "المرفقات" },
+    };
+    for (const item of items) {
+      if (itemLabels[item]) {
+        doc.text(`• ${itemLabels[item][locale]}`, { indent: 20 });
+      }
+    }
+
+    doc.end();
+    const pdfBuffer = await new Promise<Buffer>((resolve) => {
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+    });
+    const pdfFilename = `gcclab-export${scopeTag}-${locale}-${stamp}.pdf`;
+    return new Response(pdfBuffer, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${pdfFilename}"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
+  if (format === "zip") {
+    // ── ZIP: archive the Excel + any attachment files ──
+    const JSZip = (await import("jszip")).default;
+    const zip = new JSZip();
+
+    // Add the Excel file
+    zip.file(excelFilename, excelBuffer);
+
+    // Add attachment files if requested
+    if (items.includes("attachments") && rows.length > 0) {
+      const attachmentsFolder = zip.folder("attachments");
+      if (attachmentsFolder) {
+        for (const a of rows) {
+          const relativePath = a.url.replace(/^https?:\/\/[^/]+/, "");
+          const fileName = a.fileName || relativePath.split("/").pop() || "attachment";
+          // Try to read the file from public/uploads
+          const fs = await import("fs/promises");
+          const path = await import("path");
+          const filePath = path.join(process.cwd(), "public", relativePath);
+          try {
+            const fileData = await fs.readFile(filePath);
+            attachmentsFolder.file(fileName, fileData);
+          } catch {
+            // File not on disk — add a text file with the URL
+            attachmentsFolder.file(`${fileName}.url.txt`, `URL: ${a.url}\nTrainee: ${a.traineeName}\nRequest: ${a.requestRef}`);
+          }
+        }
+      }
+    }
+
+    const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
+    const zipFilename = `gcclab-export${scopeTag}-${locale}-${stamp}.zip`;
+    return new Response(zipBuffer, {
+      headers: {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="${zipFilename}"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
+  // ── Default: Excel ──
+  return new Response(excelBuffer, {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Disposition": `attachment; filename="${excelFilename}"`,
       "Cache-Control": "no-store",
     },
   });
