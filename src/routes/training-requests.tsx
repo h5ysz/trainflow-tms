@@ -16,7 +16,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge, PriorityBadge } from "@/components/common/status-badge";
-import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Check, X, RotateCcw, ArrowRight, FileText, Download, Upload, Eye, Pencil, Printer } from "lucide-react";
+import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Check, X, RotateCcw, ArrowRight, FileText, Download, Upload, Eye, Pencil, Printer, MoreVertical, FileSpreadsheet, FileText as FileTextIcon } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription, DrawerClose } from "@/components/ui/drawer";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { Loader2 } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
@@ -209,6 +213,49 @@ export function TrainingRequestsRoute() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [editTarget, setEditTarget] = useState<Request | null>(null);
   const [generateTarget, setGenerateTarget] = useState<Request | null>(null);
+
+  // ── Coordinator-only: row selection + bulk actions + drawer ──
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [drawerTarget, setDrawerTarget] = useState<Request | null>(null);
+  const [drawerDetail, setDrawerDetail] = useState<RequestDetail | null>(null);
+  const [drawerLoading, setDrawerLoading] = useState(false);
+
+  // isCoordinator is defined after canEdit/canCreate below
+  // (see const isCoordinator = canEdit; after the hook calls)
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function toggleSelectAll() {
+    if (data && selectedIds.size === data.length) {
+      setSelectedIds(new Set());
+    } else if (data) {
+      setSelectedIds(new Set(data.map((r) => r.id)));
+    }
+  }
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  // Open the right-side drawer for coordinator view
+  const openDrawer = async (req: Request) => {
+    setDrawerTarget(req);
+    setDrawerDetail(null);
+    setDrawerLoading(true);
+    try {
+      const detail = await api.get<RequestDetail>(`/requests/${req.id}`);
+      setDrawerDetail(detail);
+    } catch {
+      // Fall back to row data
+    } finally {
+      setDrawerLoading(false);
+    }
+  };
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState<Record<string, unknown>>({
     priority: "NORMAL",
@@ -237,6 +284,7 @@ export function TrainingRequestsRoute() {
 
   const canCreate = user ? canPerformAction(user.permissions, "requests", "create") : false;
   const canEdit = user ? canPerformAction(user.permissions, "requests", "edit") : false;
+  const isCoordinator = canEdit; // roles with requests.edit (coordinator/admin/trainer)
 
   useEffect(() => {
     if (dialogOpen) {
@@ -343,11 +391,30 @@ export function TrainingRequestsRoute() {
   };
 
   const columns: Column<Request>[] = [
+    // ── Coordinator-only: checkbox column ──
+    ...(isCoordinator ? [{
+      key: "select",
+      header: "",
+      headerClassName: "w-10",
+      className: "w-10",
+      cell: (r: Request) => (
+        <Checkbox
+          checked={selectedIds.has(r.id)}
+          onCheckedChange={() => toggleSelect(r.id)}
+          aria-label={`Select ${r.refNumber}`}
+        />
+      ),
+    }] : []),
     {
       key: "id",
       header: t("requests.requestNumber"),
       cell: (r) => (
-        <div className="font-mono text-xs font-semibold text-primary">{r.refNumber}</div>
+        <button
+          className="font-mono text-xs font-semibold text-primary hover:underline"
+          onClick={() => isCoordinator ? openDrawer(r) : openPreview(r)}
+        >
+          {r.refNumber}
+        </button>
       ),
     },
     {
@@ -453,57 +520,131 @@ export function TrainingRequestsRoute() {
         );
         return (
           <div className="flex justify-end items-center gap-1 flex-wrap">
-            {/* Preview button — available for ALL requests + ALL roles (incl. read-only) */}
+            {/* View button — coordinator uses drawer, contractor uses preview dialog */}
             <Button
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={() => openPreview(r)}
-              title={t("action.preview") || "Preview"}
+              onClick={() => isCoordinator ? openDrawer(r) : openPreview(r)}
+              title={t("action.preview") || "View"}
             >
               <Eye className="h-3.5 w-3.5" />
             </Button>
-            {/* Edit button — only for DRAFT + REQUIRES_MODIFICATION + REJECTED, only for users with requests.create */}
-            {canEditRequest && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => handleEditRequest(r)}
-                title={t("action.edit") || "Edit"}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
+
+            {isCoordinator ? (
+              <>
+                {/* ── Coordinator simplified actions ── */}
+                {/* SUBMITTED: Start Review */}
+                {r.status === "SUBMITTED" && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="h-8 text-white"
+                    onClick={() => handleTransition(r, "UNDER_REVIEW")}
+                  >
+                    {t("workflow.review" as never) || "Start Review"}
+                  </Button>
+                )}
+                {/* UNDER_REVIEW: Approve + More menu */}
+                {r.status === "UNDER_REVIEW" && (
+                  <>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="h-8 text-white"
+                      onClick={() => handleTransition(r, "APPROVED")}
+                    >
+                      <Check className="h-3.5 w-3.5 me-1" />{t("workflow.approve" as never) || "Approve"}
+                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <MoreVertical className="h-3.5 w-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => { setRevisionTarget(r); setRevisionDialogOpen(true); }}>
+                          <RotateCcw className="h-3.5 w-3.5 me-2" />
+                          {t("workflow.returnRevision" as never) || "Return for Modification"}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => { setRejectTarget(r); setRejectDialogOpen(true); }}>
+                          <X className="h-3.5 w-3.5 me-2" />
+                          {t("workflow.reject" as never) || "Reject"}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => handleTransition(r, "CANCELLED")}>
+                          <X className="h-3.5 w-3.5 me-2" />
+                          {t("workflow.cancel" as never) || "Cancel"}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </>
+                )}
+                {/* Other statuses with workflow actions (APPROVED, SCHEDULED, etc.) */}
+                {r.status !== "SUBMITTED" && r.status !== "UNDER_REVIEW" && actions.length > 0 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <MoreVertical className="h-3.5 w-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {actions.map((a) => (
+                        <DropdownMenuItem key={a.status} onClick={() => handleTransition(r, a.status)}>
+                          {a.status === "APPROVED" && <Check className="h-3.5 w-3.5 me-2" />}
+                          {a.status === "REJECTED" && <X className="h-3.5 w-3.5 me-2" />}
+                          {t(a.labelKey as never)}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </>
+            ) : (
+              <>
+                {/* ── Contractor / other roles: original actions ── */}
+                {canEditRequest && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => handleEditRequest(r)}
+                    title={t("action.edit") || "Edit"}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                {actions.length === 0 && !canEditRequest && (
+                  <Button variant="ghost" size="sm" className="h-8" onClick={() => setDetailsTarget(r)}>
+                    {t("action.details")}
+                  </Button>
+                )}
+                {actions.map((a) => (
+                  <Button
+                    key={a.status}
+                    variant={a.variant}
+                    size="sm"
+                    className={`h-8 ${
+                      a.variant === "default"
+                        ? "text-white"
+                        : a.tone === "success"
+                          ? "text-success"
+                          : a.tone === "destructive"
+                            ? "text-destructive"
+                            : a.tone === "info"
+                              ? "text-info"
+                              : ""
+                    }`}
+                    onClick={() => handleTransition(r, a.status)}
+                  >
+                    {a.status === "SUBMITTED" && r.status === "REJECTED" && <RotateCcw className="h-3.5 w-3.5 me-1" />}
+                    {a.status === "APPROVED" && <Check className="h-3.5 w-3.5 me-1" />}
+                    {a.status === "REJECTED" && <X className="h-3.5 w-3.5 me-1" />}
+                    {t(a.labelKey as never)}
+                  </Button>
+                ))}
+              </>
             )}
-            {actions.length === 0 && !canEditRequest && (
-              <Button variant="ghost" size="sm" className="h-8" onClick={() => setDetailsTarget(r)}>
-                {t("action.details")}
-              </Button>
-            )}
-            {actions.map((a) => (
-              <Button
-                key={a.status}
-                variant={a.variant}
-                size="sm"
-                className={`h-8 ${
-                  a.variant === "default"
-                    ? "text-white"
-                    : a.tone === "success"
-                      ? "text-success"
-                      : a.tone === "destructive"
-                        ? "text-destructive"
-                        : a.tone === "info"
-                          ? "text-info"
-                          : ""
-                }`}
-                onClick={() => handleTransition(r, a.status)}
-              >
-                {a.status === "SUBMITTED" && r.status === "REJECTED" && <RotateCcw className="h-3.5 w-3.5 me-1" />}
-                {a.status === "APPROVED" && <Check className="h-3.5 w-3.5 me-1" />}
-                {a.status === "REJECTED" && <X className="h-3.5 w-3.5 me-1" />}
-                {t(a.labelKey as never)}
-              </Button>
-            ))}
           </div>
         );
       },
@@ -712,6 +853,31 @@ export function TrainingRequestsRoute() {
           <AlertCircle className="h-4 w-4" /> {error}
         </div>
       )}
+
+      {/* ── Coordinator-only: Bulk actions toolbar (shown when rows are selected) ── */}
+      {isCoordinator && selectedIds.size > 0 && (
+        <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-4 py-2.5">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="font-medium">{selectedIds.size}</span>
+            <span className="text-muted-foreground">{selectedIds.size === 1 ? "request selected" : "requests selected"}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              <Printer className="h-3.5 w-3.5 me-1.5" />{t("action.print") || "Print"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setExportDialogOpen(true)}>
+              <FileSpreadsheet className="h-3.5 w-3.5 me-1.5" />{t("requests.export") || "Export Excel"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              <FileTextIcon className="h-3.5 w-3.5 me-1.5" />PDF
+            </Button>
+            <Button variant="ghost" size="sm" onClick={clearSelection}>
+              <X className="h-3.5 w-3.5 me-1.5" />{t("requests.clear") || "Clear"}
+            </Button>
+          </div>
+        </div>
+      )}
+
       <DataTable
         columns={columns}
         data={data}
@@ -1151,6 +1317,188 @@ export function TrainingRequestsRoute() {
           </div>
         )}
       </FormDialog>
+
+      {/* ── Coordinator-only: Right-side Drawer for request details ── */}
+      <Drawer open={drawerTarget !== null} onOpenChange={(open) => { if (!open) { setDrawerTarget(null); setDrawerDetail(null); } }} direction="right">
+        <DrawerContent className="max-w-md h-full">
+          <DrawerHeader className="border-b">
+            <DrawerTitle className="flex items-center gap-2">
+              <ClipboardList className="h-4 w-4 text-primary" />
+              <span className="font-mono text-sm font-semibold text-primary">{drawerTarget?.refNumber}</span>
+            </DrawerTitle>
+            <DrawerDescription className="flex items-center gap-2">
+              {drawerTarget && <PriorityBadge priority={drawerTarget.priority} />}
+              {drawerTarget && <StatusBadge status={drawerTarget.status} />}
+            </DrawerDescription>
+          </DrawerHeader>
+
+          {drawerTarget && (
+            <div className="overflow-y-auto flex-1 p-4 space-y-4">
+              {/* Company + Course */}
+              <FormGrid>
+                <DetailRow label={t("requests.company")} value={drawerDetail?.company?.name ?? drawerTarget.companyName} />
+                <DetailRow label={t("requests.course")} value={drawerDetail?.course?.title ?? drawerTarget.courseTitle} />
+                <DetailRow label={t("requests.traineeCount")} value={String(drawerTarget.traineeCount)} />
+                <DetailRow label={t("requests.priority")} value={drawerTarget.priority} />
+                <DetailRow label={t("requests.preferredLocation")} value={drawerTarget.preferredLocation} />
+                <DetailRow label={t("requests.preferredDateFrom")} value={fmtDate(drawerTarget.preferredDateFrom)} />
+                <DetailRow label={t("requests.preferredDateTo")} value={fmtDate(drawerTarget.preferredDateTo)} />
+                <DetailRow label={t("requests.preferredLanguage")} value={drawerTarget.preferredLanguage} />
+              </FormGrid>
+
+              {drawerTarget.notes && <DetailRow label={t("requests.notes")} value={drawerTarget.notes} />}
+
+              {/* Trainees table */}
+              <div>
+                <div className="text-xs font-semibold mb-2 flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5" />
+                  {t("requests.trainees") || "Trainees"}
+                  {drawerDetail?.requestCourses && (
+                    <span className="text-[10px] text-muted-foreground">
+                      ({drawerDetail.requestCourses.reduce((sum, rc) => sum + (rc.trainees?.length ?? 0), 0)})
+                    </span>
+                  )}
+                </div>
+                {drawerLoading ? (
+                  <div className="flex items-center justify-center gap-2 py-4 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
+                  </div>
+                ) : drawerDetail?.requestCourses && drawerDetail.requestCourses.length > 0 ? (
+                  <div className="rounded-md border overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="text-start font-medium p-2">#</th>
+                          <th className="text-start font-medium p-2">{t("requests.traineeName") || "Full Name"}</th>
+                          <th className="text-start font-medium p-2">{t("requests.nationalId") || "National ID"}</th>
+                          <th className="text-start font-medium p-2">{t("requests.nationality") || "Nationality"}</th>
+                          <th className="text-start font-medium p-2">{t("requests.jobTitle") || "Job Title"}</th>
+                          <th className="text-start font-medium p-2">{t("requests.attachments") || "Attachments"}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {drawerDetail.requestCourses.flatMap((rc, rcIdx) =>
+                          (rc.trainees ?? []).map((tr, idx) => {
+                            const tn = tr.trainee;
+                            let docCount = 0;
+                            try {
+                              const docs = tn.documents ? JSON.parse(tn.documents) : [];
+                              docCount = Array.isArray(docs) ? docs.length : 0;
+                            } catch { /* ignore */ }
+                            return (
+                              <tr key={`${rcIdx}-${idx}`} className="border-t">
+                                <td className="p-2 text-muted-foreground">{idx + 1}</td>
+                                <td className="p-2 font-medium">{tn.fullName}</td>
+                                <td className="p-2 font-mono">{tn.nationalId}</td>
+                                <td className="p-2">{tn.nationality ?? "—"}</td>
+                                <td className="p-2">{tn.jobTitle ?? "—"}</td>
+                                <td className="p-2">
+                                  {docCount > 0 ? (
+                                    <span className="inline-flex items-center gap-1 text-info">
+                                      <FileText className="h-3 w-3" /> {docCount}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground">—</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground py-3 text-center">
+                    {t("requests.noTrainees" as never) || "No trainees attached"}
+                  </div>
+                )}
+              </div>
+
+              {/* Request-level attachments */}
+              {drawerDetail?.documents && (() => {
+                let reqDocs: Array<{ url?: string; filename?: string; type?: string }> = [];
+                try { reqDocs = JSON.parse(drawerDetail.documents); } catch { /* ignore */ }
+                if (!Array.isArray(reqDocs) || reqDocs.length === 0) return null;
+                return (
+                  <div>
+                    <div className="text-xs font-semibold mb-2 flex items-center gap-1.5">
+                      <FileText className="h-3.5 w-3.5" />
+                      {t("requests.attachments") || "Attachments"}
+                      <span className="text-[10px] text-muted-foreground">({reqDocs.length})</span>
+                    </div>
+                    <div className="rounded-md border divide-y">
+                      {reqDocs.map((d, i) => (
+                        <div key={i} className="flex items-center justify-between p-2 text-xs">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            <span className="truncate">{d.filename ?? d.url ?? `Attachment ${i + 1}`}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Rejection reason */}
+              {drawerTarget.rejectionReason && (
+                <div className="rounded-md border border-destructive/20 bg-destructive/5 p-3">
+                  <div className="text-xs font-medium text-destructive flex items-center gap-1.5">
+                    <AlertCircle className="h-3.5 w-3.5" /> {t("requests.rejectionReason")}
+                  </div>
+                  <div className="text-xs mt-1">{drawerTarget.rejectionReason}</div>
+                </div>
+              )}
+
+              {/* Timeline */}
+              <div>
+                <div className="text-xs font-semibold mb-2">{t("requests.timeline")}</div>
+                <div className="rounded-md border px-3">
+                  {([
+                    ["requests.createdAt", drawerTarget.createdAt],
+                    ["requests.submittedAt", drawerTarget.submittedAt],
+                    ["requests.reviewedAt", drawerTarget.reviewedAt],
+                    ["requests.approvedAt", drawerTarget.approvedAt],
+                    ["requests.scheduledAt", drawerTarget.scheduledAt],
+                    ["requests.startedAt", drawerTarget.startedAt],
+                    ["requests.completedAt", drawerTarget.completedAt],
+                    ["requests.rejectedAt", drawerTarget.rejectedAt],
+                  ] as const).filter(([, v]) => v).map(([label, value]) => (
+                    <div key={label} className="flex justify-between items-center py-1.5 border-b last:border-b-0 text-xs">
+                      <span className="text-muted-foreground">{t(label as never)}</span>
+                      <span className="font-mono">{fmtDateTime(value)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Coordinator actions inside the drawer */}
+              {(() => {
+                const actions = getActionsForRole(drawerTarget.status, user?.role, canEdit);
+                if (actions.length === 0) return null;
+                return (
+                  <div className="flex flex-wrap gap-2 pt-2 border-t">
+                    {actions.map((a) => (
+                      <Button
+                        key={a.status}
+                        variant={a.variant}
+                        size="sm"
+                        className={a.variant === "default" ? "text-white" : ""}
+                        onClick={() => { handleTransition(drawerTarget, a.status); setDrawerTarget(null); }}
+                      >
+                        {a.status === "APPROVED" && <Check className="h-3.5 w-3.5 me-1" />}
+                        {a.status === "REJECTED" && <X className="h-3.5 w-3.5 me-1" />}
+                        {t(a.labelKey as never)}
+                      </Button>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 }
