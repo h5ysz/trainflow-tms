@@ -103,12 +103,13 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
 
   // Workflow enforcement — self-service allowlist for non-edit roles.
   // Mirrors SELF_SERVICE_TRANSITIONS in /api/requests/[id]/transition.
+  // IMPORTANT: After submission, contractor CANNOT cancel — only coordinator can.
   if (!hasEdit && newStatus && newStatus !== existing.status) {
     const SELF_SERVICE_TRANSITIONS: Record<string, string[]> = {
       DRAFT: ["SUBMITTED", "CANCELLED"],
-      SUBMITTED: ["CANCELLED"],
+      // SUBMITTED: no self-service actions — request is in coordinator's hands
       REJECTED: ["SUBMITTED"],
-      REQUIRES_MODIFICATION: ["SUBMITTED", "CANCELLED"],
+      REQUIRES_MODIFICATION: ["SUBMITTED"],
     };
     const allowed = SELF_SERVICE_TRANSITIONS[existing.status] ?? [];
     if (!allowed.includes(newStatus)) {

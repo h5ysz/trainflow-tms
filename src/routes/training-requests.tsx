@@ -164,11 +164,20 @@ const NEXT_ACTIONS: Record<string, { status: string; labelKey: string; variant: 
 // /api/requests/[id]/transition and /api/requests/[id] PUT handler.
 //
 // Keyed by CURRENT status → array of ALLOWED target statuses.
+//
+// IMPORTANT BUSINESS RULE:
+//   After the contractor submits a request (SUBMITTED), they CANNOT cancel it.
+//   Cancellation is only allowed while the request is still a DRAFT (before
+//   submission). Once submitted, the request enters the coordinator's workflow
+//   and only the coordinator can cancel it (via requests.edit).
 const SELF_SERVICE_TRANSITIONS_BY_STATUS: Record<string, Set<string>> = {
   DRAFT: new Set(["SUBMITTED", "CANCELLED"]),
-  SUBMITTED: new Set(["CANCELLED"]),
+  // SUBMITTED: no self-service actions — request is now in coordinator's hands
+  // REJECTED: contractor may resubmit (but not cancel — the request is closed)
   REJECTED: new Set(["SUBMITTED"]),
-  REQUIRES_MODIFICATION: new Set(["SUBMITTED", "CANCELLED"]),
+  // REQUIRES_MODIFICATION: contractor may resubmit (but not cancel — the
+  //   coordinator still owns the review; cancelling would lose the review context)
+  REQUIRES_MODIFICATION: new Set(["SUBMITTED"]),
 };
 
 function getActionsForRole(

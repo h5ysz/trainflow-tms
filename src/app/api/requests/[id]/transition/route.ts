@@ -17,10 +17,18 @@ import { randomUUID } from "node:crypto";
 import type { TrainingRequestStatus } from "@prisma/client";
 
 // Transitions a requester may make on their own request, keyed by current status.
+//
+// IMPORTANT BUSINESS RULE:
+//   After the contractor submits a request (SUBMITTED), they CANNOT cancel it.
+//   Cancellation is only allowed while the request is still a DRAFT (before
+//   submission). Once submitted, the request enters the coordinator's workflow
+//   and only the coordinator can cancel it (via requests.edit).
 const SELF_SERVICE_TRANSITIONS: Record<string, TrainingRequestStatus[]> = {
   DRAFT: ["SUBMITTED", "CANCELLED"],
-  SUBMITTED: ["CANCELLED"],
+  // SUBMITTED: no self-service actions — request is now in coordinator's hands
   REJECTED: ["SUBMITTED"],
+  // REQUIRES_MODIFICATION: contractor may resubmit (but not cancel)
+  REQUIRES_MODIFICATION: ["SUBMITTED"],
 };
 
 export const POST = withModuleAction("requests", "view", async ({ req, params, user }) => {
