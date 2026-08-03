@@ -130,10 +130,17 @@ const NEXT_ACTIONS: Record<string, { status: string; labelKey: string; variant: 
 //
 // AUDITOR / VIEWER (read-only):
 //   - No action buttons at all
-const SELF_SERVICE_TARGETS = new Set([
-  "SUBMITTED", // submit / resubmit
-  "CANCELLED", // cancel own request
-]);
+// Self-service transitions a contractor (or any role without `requests.edit`)
+// may perform on their own request. Mirrors SELF_SERVICE_TRANSITIONS in
+// /api/requests/[id]/transition and /api/requests/[id] PUT handler.
+//
+// Keyed by CURRENT status → array of ALLOWED target statuses.
+const SELF_SERVICE_TRANSITIONS_BY_STATUS: Record<string, Set<string>> = {
+  DRAFT: new Set(["SUBMITTED", "CANCELLED"]),
+  SUBMITTED: new Set(["CANCELLED"]),
+  REJECTED: new Set(["SUBMITTED"]),
+  REQUIRES_MODIFICATION: new Set(["SUBMITTED", "CANCELLED"]),
+};
 
 function getActionsForRole(
   status: string,
@@ -147,8 +154,13 @@ function getActionsForRole(
   // Roles with `requests.edit` see the full workflow
   if (hasEdit) return all;
   // Contractors (and any other role without `requests.edit`) see only
-  // self-service actions (submit / resubmit / cancel own request).
-  return all.filter((a) => SELF_SERVICE_TARGETS.has(a.status));
+  // self-service actions that are valid from the CURRENT status.
+  // E.g. a contractor can Cancel from DRAFT/SUBMITTED/REQUIRES_MODIFICATION
+  // but NOT from UNDER_REVIEW/APPROVED/SCHEDULED/IN_PROGRESS — those are
+  // reviewer-controlled statuses where the contractor's request is locked.
+  const allowed = SELF_SERVICE_TRANSITIONS_BY_STATUS[status];
+  if (!allowed) return []; // No self-service actions from this status
+  return all.filter((a) => allowed.has(a.status));
 }
 
 export function TrainingRequestsRoute() {

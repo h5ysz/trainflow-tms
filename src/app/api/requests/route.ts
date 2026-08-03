@@ -268,6 +268,30 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
     metadata: { initialStatus, traineeCount: effectiveTraineeCount, additionalDocs: Array.isArray(additionalDocuments) ? additionalDocuments.length : 0 },
   });
 
+  // ── Notify coordinators when a new request is submitted (not draft) ──
+  if (initialStatus === "SUBMITTED") {
+    const coordinators = await db.user.findMany({
+      where: { role: "COORDINATOR", isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+    if (coordinators.length > 0) {
+      const notifNow = new Date();
+      await db.notification.createMany({
+        data: coordinators.map((c) => ({
+          id: crypto.randomUUID(),
+          userId: c.id,
+          title: "New Training Request Submitted",
+          titleAr: "طلب تدريب جديد",
+          message: `Training request ${request.refNumber} has been submitted and is awaiting your review.`,
+          messageAr: `تم إرسال طلب التدريب ${request.refNumber} وهو بانتظار المراجعة.`,
+          type: "INFO",
+          category: "TRAINING",
+          updatedAt: notifNow,
+        })),
+      });
+    }
+  }
+
   return created(request);
 });
 

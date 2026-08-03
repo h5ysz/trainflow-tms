@@ -190,6 +190,11 @@ function prismaErrorToApiError(e: unknown): ApiError | null {
 
 // Converts any thrown error into the standard envelope. Used by every wrapper below
 // so no handler can leak a raw framework 500.
+//
+// In development (NODE_ENV !== "production"), the actual error message + stack
+// trace are included in the response body so the developer can see the root cause
+// in the browser network tab / toast instead of a generic "Internal server error".
+// In production, only the generic message is returned (don't leak internals).
 export function errorToResponse(e: unknown): Response {
   if (e instanceof ApiError) {
     return fail(e.message, e.status, e.code);
@@ -198,7 +203,23 @@ export function errorToResponse(e: unknown): Response {
   if (prismaError) {
     return fail(prismaError.message, prismaError.status, prismaError.code);
   }
+  // Log the full error to the server console for debugging
   console.error("[API Error]", e);
+
+  // In development, include the actual error message + stack in the response
+  // so the developer can see exactly what went wrong without checking server logs.
+  const isDev = process.env.NODE_ENV !== "production";
+  if (isDev) {
+    const err = e as Error;
+    const message = err?.message || String(e);
+    const stack = err?.stack?.split("\n").slice(0, 10).join("\n") || "";
+    return fail(
+      `Internal server error: ${message}`,
+      500,
+      "INTERNAL_ERROR",
+      { stack: isDev ? stack : undefined, name: err?.name ?? "Error" },
+    );
+  }
   return fail("Internal server error", 500);
 }
 

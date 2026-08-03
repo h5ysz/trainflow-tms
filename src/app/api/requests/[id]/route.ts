@@ -216,6 +216,31 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
     });
   }
 
+  // ── Notify coordinators when a contractor submits / resubmits via PUT ──
+  if (newStatus === "SUBMITTED" && existing.status !== "SUBMITTED") {
+    const coordinators = await db.user.findMany({
+      where: { role: "COORDINATOR", isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+    if (coordinators.length > 0) {
+      const isResubmit = existing.status === "REJECTED";
+      const notifNow = new Date();
+      await db.notification.createMany({
+        data: coordinators.map((c) => ({
+          id: crypto.randomUUID(),
+          userId: c.id,
+          title: isResubmit ? "Request Resubmitted for Review" : "New Training Request Submitted",
+          titleAr: isResubmit ? "تمت إعادة إرسال طلب للمراجعة" : "طلب تدريب جديد",
+          message: `Training request ${existing.refNumber} has been ${isResubmit ? "resubmitted" : "submitted"} and is awaiting your review.`,
+          messageAr: `تم ${isResubmit ? "إعادة إرسال" : "إرسال"} طلب التدريب ${existing.refNumber} وهو بانتظار المراجعة.`,
+          type: "INFO",
+          category: "TRAINING",
+          updatedAt: notifNow,
+        })),
+      });
+    }
+  }
+
   return ok(updated);
 });
 
