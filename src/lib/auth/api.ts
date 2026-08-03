@@ -217,6 +217,9 @@ export async function audit(opts: {
   descriptionAr?: string;
   req?: Request;
   metadata?: Record<string, unknown>;
+  oldValue?: Record<string, unknown> | string | null;
+  newValue?: Record<string, unknown> | string | null;
+  reason?: string | null;
 }) {
   return recordAudit({
     userId: opts.user.id,
@@ -228,6 +231,9 @@ export async function audit(opts: {
     descriptionAr: opts.descriptionAr,
     req: opts.req,
     metadata: opts.metadata,
+    oldValue: opts.oldValue,
+    newValue: opts.newValue,
+    reason: opts.reason,
   });
 }
 

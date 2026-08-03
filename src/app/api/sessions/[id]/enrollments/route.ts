@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
+import { randomUUID } from "node:crypto";
 
 const ALLOWED_SORT_FIELDS = ["enrollmentDate", "createdAt", "enrollmentStatus", "traineeName"];
 
@@ -136,6 +137,7 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
             updatedBy: user.id,
           },
           create: {
+            id: randomUUID(),
             sessionId,
             traineeId: trainee.id,
             companyId: trainee.companyId, // trainee's ORIGINAL company — preserved
@@ -145,6 +147,7 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
             notes: notes ?? null,
             createdBy: user.id,
             updatedBy: user.id,
+            updatedAt: new Date(),
           },
         })
       )
@@ -157,10 +160,12 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
         where: { sessionId_companyId: { sessionId, companyId } },
         update: { traineeCount: { increment: count } },
         create: {
+          id: randomUUID(),
           sessionId,
           companyId,
           traineeCount: count,
           createdBy: user.id,
+          updatedAt: new Date(),
         },
       });
     }

@@ -19,6 +19,12 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     // React rules
     "react-hooks/exhaustive-deps": "off",
     "react-hooks/purity": "off",
+    // Same React Compiler lint family as the two above. The call sites in this
+    // codebase are deliberate: resetting transient dialog state on close
+    // (form-dialog.tsx), and a mounted-flag set before paint that fixes a table
+    // rendering empty on first open (trainee-entry-section.tsx, see the comment
+    // above the effect).
+    "react-hooks/set-state-in-effect": "off",
     "react/no-unescaped-entities": "off",
     "react/display-name": "off",
     "react/prop-types": "off",
@@ -42,6 +48,15 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "no-undef": "off",
     "no-unreachable": "off",
     "no-useless-escape": "off",
+  },
+}, {
+  // Dev-only scratch scripts: Playwright layout probes, password/DB checks,
+  // one-off seeders. They are CommonJS, are never bundled, imported by the app,
+  // or run on the deploy path (render.yaml only invokes seed.ts and
+  // postbuild.mjs), so the ESM-import rule does not apply to them.
+  files: ["scripts/**/*.cjs", "scripts/**/*.js"],
+  rules: {
+    "@typescript-eslint/no-require-imports": "off",
   },
 }, {
   ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills"]

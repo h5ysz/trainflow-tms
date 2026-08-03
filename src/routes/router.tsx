@@ -37,6 +37,15 @@ import { ExecutiveDashboardRoute } from "./executive-dashboard";
 import { RenewalDashboardRoute } from "./renewal-dashboard";
 import type { RouteKey } from "@/lib/auth/permissions";
 
+import { FinancialDashboardRoute } from "./financial-dashboard";
+import { InvoicesRoute } from "./invoices";
+import { PaymentsRoute } from "./payments";
+import { BankAccountsRoute } from "./bank-accounts";
+import { FinancialSettingsRoute } from "./financial-settings";
+import { FinancialReportsRoute } from "./financial-reports";
+import { TraineeDetailRoute } from "./trainee-detail";
+import { AiDashboardRoute } from "./ai-dashboard";
+
 const ROUTES: Record<RouteKey, React.ComponentType> = {
   dashboard: DashboardRoute,
   companies: CompaniesRoute,
@@ -69,6 +78,16 @@ const ROUTES: Record<RouteKey, React.ComponentType> = {
   "compliance-matrix": ComplianceMatrixRoute,
   "executive-dashboard": ExecutiveDashboardRoute,
   "renewal-dashboard": RenewalDashboardRoute,
+  "trainee-detail": TraineeDetailRoute,
+  "ai-dashboard": AiDashboardRoute,
+  "finance": FinancialDashboardRoute,
+  "invoices": InvoicesRoute,
+  "quotations": () => <div className="p-8"><h2 className="text-lg font-semibold">Quotations</h2><p className="text-sm text-muted-foreground">Create and manage price quotations for contractors.</p></div>,
+  "payments": PaymentsRoute,
+  "receipts": () => <div className="p-8"><h2 className="text-lg font-semibold">Receipts</h2><p className="text-sm text-muted-foreground">Receipts are auto-generated when payments are approved.</p></div>,
+  "financial-reports": FinancialReportsRoute,
+  "bank-accounts": BankAccountsRoute,
+  "financial-settings": FinancialSettingsRoute,
   settings: SettingsRoute,
 };
 

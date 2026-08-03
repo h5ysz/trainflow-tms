@@ -65,7 +65,7 @@ export function Sidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto tf-scroll px-3 py-4">
+      <nav className="flex-1 overflow-y-auto tf-scroll px-3 py-4 pe-2">
         {grouped.map(({ group, label, items: groupItems }) => (
           <div key={group} className="mb-5">
             {label && (
@@ -82,7 +82,7 @@ export function Sidebar() {
                     <button
                       onClick={() => navigate(item.key)}
                       className={cn(
-                        "relative flex items-center gap-3 w-full rounded-lg px-3 py-2 text-[13px] transition-all",
+                        "relative flex items-center gap-3 w-full rounded-lg px-3 py-2 pe-2 text-[13px] transition-all",
                         active
                           ? "tf-nav-active"
                           : "text-sidebar-foreground/65 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground font-medium"

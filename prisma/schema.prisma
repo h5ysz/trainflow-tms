@@ -43,6 +43,11 @@ enum TrainingRequestStatus {
   COMPLETED
   CANCELLED
   REJECTED
+  // Returned to the contractor for revision; resubmitting moves it back to SUBMITTED.
+  REQUIRES_MODIFICATION
+  // Terminal: the single permitted official retest failed, so the request is closed
+  // and the contractor must raise a new one.
+  CLOSED
 }
 
 enum SessionStatus {
@@ -276,10 +281,15 @@ model Company {
   certificates       Certificate[]
   sessionEnrollments SessionEnrollment[]
   sessionCompanies   SessionCompany[]
+  sessionPayments    SessionPayment[]
   examAttempts       ExamAttempt[]
   testResults        TestResult[]
   courseEvaluations  CourseEvaluation[]
   workerPassports    WorkerPassport[]
+  quotations         Quotation[]
+  invoices           Invoice[]
+  payments           Payment[]
+  receipts           Receipt[]
 
   @@index([status])
   @@index([tenantId])
@@ -301,6 +311,14 @@ model Trainee {
   companyId   String
   status      String    @default("ACTIVE") // ACTIVE | INACTIVE
   notes       String?
+  idAttachmentUrl String?
+  dateOfBirth DateTime?
+  idExpiry    DateTime?
+  // ── Multi-document support (Iqama, ID, Passport, Certificate, Medical, Other) ──
+  // JSON-encoded array of { url, filename, type, uploadedAt, uploadedById }.
+  // Kept as a single String column on SQLite to avoid a separate join table
+  // while still supporting arbitrary document types per trainee.
+  documents   String?
   // Audit
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -458,6 +476,10 @@ model Course {
   // AI-assisted exam support
   aiExamEnabled  Boolean   @default(false)
   aiExamConfig   String? // JSON: difficulty distribution, num questions, etc.
+  // Certificate Release Security: requires profession verification (Iqama profession change)
+  // before certificates can be released to the contractor.
+  requiresProfessionVerification Boolean @default(false)
+  retakeAttempts Int @default(1)
   // Audit
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -565,6 +587,10 @@ model TrainingRequest {
   completedAt       DateTime?
   cancelledAt       DateTime?
   rejectedAt        DateTime?
+  // JSON-encoded array of additional request-level documents
+  // (medical certificate, vaccination, work permit, company letter, etc.).
+  // Each entry: { url, filename, type, uploadedAt, uploadedById }.
+  documents         String?
   // Audit
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
@@ -576,6 +602,8 @@ model TrainingRequest {
   course         Course?                 @relation(fields: [courseId], references: [id])
   sessions       TrainingSession[]
   requestCourses TrainingRequestCourse[]
+  quotations     Quotation[]
+  invoices       Invoice[]
 
   @@index([status])
   @@index([companyId])
@@ -662,6 +690,23 @@ model SessionEnrollment {
   enrollmentDate   DateTime  @default(now())
   completedDate    DateTime?
   notes            String?
+
+  // ── Re-Exam support ──
+  isReExam     Boolean @default(false)
+
+  // ── Trainer Opportunity tracking ──
+  // Per business rules: the trainer can give ONE immediate opportunity
+  // (same session, no official retest, no notification). These fields
+  // track whether the opportunity has been used and its result.
+  trainerOpportunityUsed   Boolean   @default(false)
+  trainerOpportunityPassed Boolean?
+  trainerOpportunityAt     DateTime?
+  trainerOpportunityBy     String?
+
+  // ── Enrollment source tracking ──
+  enrollmentSource String @default("MANUAL")
+  addedByTrainer  Boolean @default(false)
+  pendingReview   Boolean @default(false)
 
   // ── Attendance status ──
   attendanceStatus String @default("NOT_STARTED")
@@ -784,6 +829,8 @@ model TrainingSession {
   lifecycleEvents  SessionLifecycleEvent[]
   enrollments      SessionEnrollment[]
   sessionCompanies SessionCompany[]
+  sessionPayments  SessionPayment[]
+  invoices         Invoice[]
 
   @@index([status])
   @@index([trainerId])
@@ -1012,6 +1059,19 @@ model Certificate {
   issuedAt          DateTime        @default(now())
   validUntil        DateTime
   status            String          @default("VALID") // VALID | EXPIRED | REVOKED | RENEWED
+  // ── Certificate Release Workflow ──
+  // releaseStatus tracks the security workflow separately from validity status.
+  // DRAFT → READY_FOR_RELEASE → RELEASED → DOWNLOADED
+  releaseStatus       String          @default("DRAFT") // DRAFT | READY_FOR_RELEASE | RELEASED | DOWNLOADED
+  releasedAt          DateTime?
+  releasedBy          String?
+  downloadedAt        DateTime?
+  // ── Profession Verification (Iqama profession change) ──
+  professionVerified   Boolean     @default(false)
+  professionVerifiedAt DateTime?
+  professionVerifiedBy String?
+  professionVerificationNotes String?
+  professionVerificationAttachmentUrl String?
   // Sprint 6: renewal chain
   renewedFromId     String?
   renewedFrom       Certificate?    @relation("CertRenewalChain", fields: [renewedFromId], references: [id], onDelete: SetNull)
@@ -1039,6 +1099,7 @@ model Certificate {
   @@index([sessionId])
   @@index([companyId])
   @@index([status])
+  @@index([releaseStatus])
   @@index([verificationToken])
   @@index([attendanceId])
   @@index([renewedFromId])
@@ -1180,6 +1241,140 @@ model Notification {
 
   @@index([userId, isRead])
   @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SESSION PAYMENT — lightweight invoice tracking for certificate release
+// =====================================================================
+// Tracks the total amount owed by a company for a training session and the
+// amount paid so far. The certificate release workflow checks that the
+// session payment is fully paid (paidAmount >= totalAmount) before
+// allowing certificates to be released to the contractor.
+//
+// One record per (sessionId, companyId) — a session may have multiple
+// companies enrolled, each with their own payment obligation.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SessionPayment {
+  id              String   @id @default(uuid())
+  sessionId       String
+  session         TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // Financial amounts (in the currency specified below)
+  totalAmount     Float    @default(0)
+  paidAmount      Float    @default(0)
+  currency        String   @default("SAR")
+  // Invoice reference (optional — for linking to external invoice numbers)
+  invoiceRef      String?
+  invoiceIssuedAt DateTime?
+  invoiceDueDate  DateTime?
+  // Status derived from paidAmount / totalAmount: UNPAID | PARTIALLY_PAID | PAID
+  notes           String?
+  // ── Payment verification workflow ──
+  // PENDING → PARTIALLY_VERIFIED → VERIFIED | REJECTED
+  verificationStatus String    @default("PENDING")
+  verifiedBy         String?
+  verifiedAt         DateTime?
+  verificationNotes  String?
+  // Coordinator grants certificate printing permission after full payment.
+  printingReleased   Boolean   @default(false)
+  printingReleasedBy String?
+  printingReleasedAt DateTime?
+  // Audit
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+
+  receipts        PaymentReceipt[]
+
+  @@unique([sessionId, companyId])
+  @@index([sessionId])
+  @@index([companyId])
+  @@index([invoiceRef])
+}
+
+// ── Payment Receipts ──────────────────────────────────────────────────────
+// Uploaded by contractors as proof of bank transfer. Reviewed by coordinators
+// who verify the amount and update the SessionPayment's paidAmount.
+model PaymentReceipt {
+  id               String    @id @default(uuid())
+  sessionPaymentId String
+  filename         String
+  originalName     String
+  url              String
+  amount           Float
+  currency         String    @default("SAR")
+  // PENDING → VERIFIED | REJECTED
+  status           String    @default("PENDING")
+  uploadedById     String?
+  uploadedAt       DateTime  @default(now())
+  verifiedById     String?
+  verifiedAt       DateTime?
+  rejectionReason  String?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  sessionPayment   SessionPayment @relation(fields: [sessionPaymentId], references: [id], onDelete: Cascade)
+
+  @@index([sessionPaymentId])
+  @@index([status])
+}
+
+// ── Retest Management ────────────────────────────────────────────────────
+// Tracks the full lifecycle of a retest when a trainee fails the final
+// assessment. Linked to the original enrollment (NOT a new request) so the
+// trainee's history stays in one place.
+model RetestRequest {
+  id                 String    @id @default(uuid())
+  refNumber          String    @unique
+  enrollmentId       String
+  sessionId          String
+  courseId           String
+  traineeName        String
+  traineeIdNational  String?
+  companyId          String?
+  // Distinguishes between a Trainer Immediate Opportunity (same session,
+  // no notification, no official retest) and an Official Retest (full
+  // workflow with contractor notifications + scheduling).
+  retestType         String    @default("OFFICIAL") // "TRAINER_OPPORTUNITY" | "OFFICIAL"
+  // The session where the retest will take place. Can be the same session
+  // (retest in-place) or a different one (moved to another session).
+  retestSessionId    String?
+  retestTrainerId    String?
+  retestDate         DateTime?
+  retestShift        String?
+  retestLocation     String?
+  retestVenue        String?
+  // PENDING_RETEST → SCHEDULED → RESCHEDULED → COMPLETED | CANCELLED
+  status             String    @default("PENDING_RETEST")
+  // The exam attempt that triggered this retest (the failed one).
+  failedAttemptId    String?
+  // The exam attempt created for this retest (the new one).
+  retestAttemptId    String?
+  // Result of the retest: null = not yet taken, true = passed, false = failed
+  passed             Boolean?
+  reason             String?
+  scheduledBy        String?
+  scheduledAt        DateTime?
+  cancelledBy        String?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  // Audit
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  createdBy          String?
+  updatedBy          String?
+  deletedAt          DateTime?
+
+  @@index([enrollmentId])
+  @@index([sessionId])
+  @@index([status])
+  @@index([companyId])
+  @@index([retestType])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1346,4 +1541,203 @@ model ReportExecutionFile {
 
   @@index([executionId])
   @@index([expiresAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FINANCIAL MODULE — Invoice, Payment, Quotation, Receipt, BankAccount, Settings
+// =====================================================================
+// Full financial workflow: Quotation → Invoice → Payment → Receipt
+// All amounts stored as Float. Snapshot field on Invoice captures frozen
+// company/bank/settings info at issue time.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model FinancialSettings {
+  id              String   @id @default("default")
+  companyName     String   @default("GCC ELECTRICAL TESTING LABORATORY")
+  crNumber        String?
+  vatNumber       String?
+  financeEmail    String?
+  companyLogoUrl  String?
+  address         String?
+  phone           String?
+  currency        String   @default("SAR")
+  invoiceSeq      Int      @default(1)
+  quotationSeq    Int      @default(1)
+  receiptSeq      Int      @default(1)
+  vatRate         Float    @default(15)
+  defaultDueDays  Int      @default(30)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  updatedBy       String?
+}
+
+model BankAccount {
+  id              String   @id @default(uuid())
+  bankName        String
+  beneficiary     String
+  accountNumber   String
+  iban            String?
+  swift           String?
+  qrImageUrl      String?
+  isActive        Boolean  @default(true)
+  isDefault       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+  invoices        Invoice[]
+  @@index([isActive])
+}
+
+model Quotation {
+  id              String   @id @default(uuid())
+  refNumber       String   @unique
+  requestId       String?
+  request         TrainingRequest? @relation(fields: [requestId], references: [id])
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id])
+  lineItems       String
+  subtotal        Float
+  discountAmount  Float    @default(0)
+  discountPercent Float?
+  vatAmount       Float
+  grandTotal      Float
+  currency        String   @default("SAR")
+  vatRate         Float
+  status          String   @default("DRAFT")
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+  invoices        Invoice[]
+  @@index([companyId])
+  @@index([requestId])
+  @@index([status])
+}
+
+model Invoice {
+  id              String   @id @default(uuid())
+  refNumber       String   @unique
+  quotationId     String?
+  quotation       Quotation? @relation(fields: [quotationId], references: [id])
+  requestId       String?
+  request         TrainingRequest? @relation(fields: [requestId], references: [id])
+  sessionId       String?
+  session         TrainingSession? @relation(fields: [sessionId], references: [id])
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id])
+  lineItems       String
+  subtotal        Float
+  discountAmount  Float    @default(0)
+  discountPercent Float?
+  vatAmount       Float
+  grandTotal      Float
+  paidAmount      Float    @default(0)
+  outstandingBalance Float
+  currency        String   @default("SAR")
+  vatRate         Float
+  status          String   @default("DRAFT")
+  issueDate       DateTime @default(now())
+  dueDate         DateTime?
+  paidDate        DateTime?
+  bankAccountId   String?
+  bankAccount     BankAccount? @relation(fields: [bankAccountId], references: [id])
+  coordinatorNotes String?
+  paymentNotes    String?
+  snapshot        String
+  pdfUrl          String?
+  pdfGeneratedAt  DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+  payments        Payment[]
+  receipts        Receipt[]
+  paymentInvoices PaymentInvoice[]
+  @@index([companyId])
+  @@index([requestId])
+  @@index([sessionId])
+  @@index([status])
+  @@index([issueDate])
+  @@index([dueDate])
+}
+
+model Payment {
+  id              String   @id @default(uuid())
+  refNumber       String   @unique
+  invoiceId       String?
+  invoice         Invoice? @relation(fields: [invoiceId], references: [id])
+  paymentInvoices PaymentInvoice[]
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id])
+  amount          Float
+  vatAmount       Float    @default(0)
+  currency        String   @default("SAR")
+  method          String
+  status          String   @default("PENDING")
+  paymentDate     DateTime @default(now())
+  referenceNumber String?
+  bankAccountId   String?
+  paidBy          String?
+  gatewayTransactionId String?
+  gatewayName     String?
+  gatewayResponse String?
+  gatewayCallbackUrl String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+  receipts        Receipt[]
+  @@index([invoiceId])
+  @@index([companyId])
+  @@index([status])
+}
+
+model PaymentInvoice {
+  id          String  @id @default(uuid())
+  paymentId   String
+  payment     Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount      Float
+  @@index([paymentId])
+  @@index([invoiceId])
+}
+
+model Receipt {
+  id              String   @id @default(uuid())
+  refNumber       String   @unique
+  paymentId       String?
+  payment         Payment? @relation(fields: [paymentId], references: [id])
+  invoiceId       String?
+  invoice         Invoice? @relation(fields: [invoiceId], references: [id])
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id])
+  amount          Float
+  vatAmount       Float    @default(0)
+  currency        String   @default("SAR")
+  receiptDate     DateTime @default(now())
+  paymentMethod   String?
+  paidBy          String?
+  bankName        String?
+  referenceNumber String?
+  status          String   @default("ISSUED")
+  pdfUrl          String?
+  pdfGeneratedAt  DateTime?
+  snapshot        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  deletedAt       DateTime?
+  @@index([paymentId])
+  @@index([invoiceId])
+  @@index([companyId])
+  @@index([receiptDate])
 }

@@ -5,6 +5,7 @@ import { useAppStore } from "@/lib/store/app-store";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 import { CommandPalette } from "./command-palette";
+import { CopilotPanel } from "@/components/common/copilot-panel";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@/components/ui/visually-hidden";
 import { useEffect } from "react";
@@ -44,13 +45,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex flex-1 flex-col min-w-0">
         <Topbar />
         <main className="flex-1 overflow-y-auto tf-scroll">
-          <div className="mx-auto max-w-[1600px] p-4 sm:p-6 lg:p-8">
+          <div className="w-full p-4 sm:p-6 lg:px-4 lg:py-6">
             {children}
           </div>
         </main>
       </div>
 
       <CommandPalette />
+      <CopilotPanel />
     </div>
   );
 }

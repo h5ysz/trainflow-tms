@@ -36,6 +36,8 @@ const ROLE_ICONS: Record<UserRole, typeof ShieldCheck> = {
   TRAINER: GraduationCap,
   VIEWER: Eye,
   CONTRACTOR: Building2,
+  COMPANY_ADMIN: Building2,
+  AUDITOR: ShieldCheck,
 };
 
 interface Notification {
@@ -76,10 +78,9 @@ export function Topbar() {
   };
 
   useEffect(() => {
-    // Async data load: the state writes happen in the promise callbacks, after the
-    // effect body has returned.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadNotifications();
+    // Defer to avoid synchronous setState-in-effect warning
+    const handle = setTimeout(() => { void loadNotifications(); }, 0);
+    return () => clearTimeout(handle);
   }, []);
 
   if (!user) return null;

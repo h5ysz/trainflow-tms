@@ -32,6 +32,7 @@ interface Course {
   hasPreTest: boolean;
   hasFinalTest: boolean;
   hasEvaluation: boolean;
+  requiresProfessionVerification: boolean;
 }
 
 const STATUSES = ["ACTIVE", "INACTIVE", "DRAFT"];
@@ -46,6 +47,7 @@ const NEW_COURSE = {
   hasPreTest: true,
   hasFinalTest: true,
   hasEvaluation: true,
+  requiresProfessionVerification: false,
 };
 
 export function CoursesRoute() {
@@ -236,6 +238,16 @@ export function CoursesRoute() {
             <label className="flex items-center gap-2 text-sm"><Switch checked={formData.hasPreTest as boolean} onCheckedChange={(v) => setField("hasPreTest", v)} /> {t("courses.hasPreTest")}</label>
             <label className="flex items-center gap-2 text-sm"><Switch checked={formData.hasFinalTest as boolean} onCheckedChange={(v) => setField("hasFinalTest", v)} /> {t("courses.hasFinalTest")}</label>
             <label className="flex items-center gap-2 text-sm"><Switch checked={formData.hasEvaluation as boolean} onCheckedChange={(v) => setField("hasEvaluation", v)} /> {t("courses.hasEvaluation")}</label>
+          </div>
+
+          <div className="border-t pt-4">
+            <label className="flex items-start gap-2 text-sm">
+              <Switch checked={formData.requiresProfessionVerification as boolean} onCheckedChange={(v) => setField("requiresProfessionVerification", v)} />
+              <div>
+                <div>{t("certRelease.course.requiresProfessionVerification")}</div>
+                <div className="text-xs text-muted-foreground">{t("certRelease.course.requiresProfessionVerificationDesc")}</div>
+              </div>
+            </label>
           </div>
         </div>
       </FormDialog>

@@ -22,6 +22,8 @@ const ROLE_ICONS: Record<UserRole, typeof ShieldCheck> = {
   TRAINER: GraduationCap,
   VIEWER: Eye,
   CONTRACTOR: Building2,
+  COMPANY_ADMIN: Building2,
+  AUDITOR: ShieldCheck,
 };
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {

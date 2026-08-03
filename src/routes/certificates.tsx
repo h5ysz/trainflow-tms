@@ -11,7 +11,7 @@ import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/common/status-badge";
-import { BadgeCheck, Download, QrCode, Calendar, Building2, AlertCircle, Ban, Loader2 } from "lucide-react";
+import { BadgeCheck, Download, QrCode, Calendar, Building2, AlertCircle, Ban, Loader2, Lock, Unlock } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api, downloadFile } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
@@ -33,6 +33,10 @@ interface Certificate {
   issuedAt: string;
   validUntil: string;
   status: string;
+  releaseStatus?: string;
+  releasedAt?: string | null;
+  downloadedAt?: string | null;
+  professionVerified?: boolean;
   verificationToken?: string | null;
   verificationCount?: number;
 }
@@ -58,9 +62,19 @@ export function CertificatesRoute() {
     buildVerifyUrl(typeof window === "undefined" ? "" : window.location.origin, token);
 
   const handleDownload = async (row: Certificate) => {
+    // Contractors can only download if certificate is released
+    if (user?.role === "CONTRACTOR" && row.releaseStatus !== "RELEASED" && row.releaseStatus !== "DOWNLOADED") {
+      toast({ title: t("misc.error"), description: t("certRelease.warning.notReleased"), variant: "destructive" });
+      return;
+    }
     setDownloading(row.id);
     try {
       await downloadFile(`/certificates/${row.id}/generate-pdf`, `certificate-${row.refNumber}.pdf`);
+      // Mark as downloaded if contractor
+      if (user?.role === "CONTRACTOR") {
+        await api.post(`/certificates/${row.id}/mark-downloaded`, {}).catch(() => {});
+        refetch();
+      }
     } catch (e) {
       toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
     } finally {
@@ -131,7 +145,23 @@ export function CertificatesRoute() {
         <div className="text-xs text-muted-foreground flex items-center gap-1.5"><Calendar className="h-3 w-3" />{new Date(r.validUntil).toLocaleDateString()}</div>
       ),
     },
-    { key: "status", header: t("certificates.status"), cell: (r) => <StatusBadge status={r.status} /> },
+    { key: "status", header: t("certificates.status"), cell: (r) => (
+      <div className="flex items-center gap-1.5">
+        <StatusBadge status={r.status} />
+        {r.releaseStatus && r.releaseStatus !== "RELEASED" && r.releaseStatus !== "DOWNLOADED" && user?.role === "CONTRACTOR" && (
+          <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 font-medium" title={t("certRelease.warning.notReleased")}>
+            <Lock className="h-3 w-3" />
+            {t("certRelease.locked.icon")}
+          </span>
+        )}
+        {r.releaseStatus === "RELEASED" && (
+          <span className="inline-flex items-center gap-0.5 text-[10px] text-green-600 font-medium">
+            <Unlock className="h-3 w-3" />
+            {t("certRelease.released.icon")}
+          </span>
+        )}
+      </div>
+    )},
     {
       key: "actions",
       header: t("action.actions"),
@@ -143,7 +173,7 @@ export function CertificatesRoute() {
             variant="ghost"
             size="sm"
             className="h-8 gap-1.5"
-            disabled={downloading === r.id}
+            disabled={downloading === r.id || (user?.role === "CONTRACTOR" && r.releaseStatus !== "RELEASED" && r.releaseStatus !== "DOWNLOADED")}
             onClick={() => void handleDownload(r)}
           >
             {downloading === r.id

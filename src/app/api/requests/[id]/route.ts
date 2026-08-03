@@ -24,6 +24,8 @@ export const GET = withModuleAction("requests", "view", async ({ params, user })
                 select: {
                   id: true, refNumber: true, fullName: true, nationalId: true,
                   nationality: true, jobTitle: true, mobile: true, email: true,
+                  idAttachmentUrl: true,
+                  documents: true,
                   company: { select: { id: true, name: true } },
                 },
               },

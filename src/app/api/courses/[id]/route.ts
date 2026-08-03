@@ -30,6 +30,7 @@ export const PUT = withModuleAction("courses", "edit", async ({ req, params, use
     language, validityMonths, passScore, maxTrainees,
     hasPreTest, hasFinalTest, hasEvaluation, status,
     aiExamEnabled, aiExamConfig,
+    requiresProfessionVerification,
   } = body;
 
   const updated = await db.course.update({
@@ -51,6 +52,7 @@ export const PUT = withModuleAction("courses", "edit", async ({ req, params, use
       ...(status !== undefined && { status }),
       ...(aiExamEnabled !== undefined && { aiExamEnabled }),
       ...(aiExamConfig !== undefined && { aiExamConfig }),
+      ...(requiresProfessionVerification !== undefined && { requiresProfessionVerification }),
       updatedBy: user.id,
     },
   });

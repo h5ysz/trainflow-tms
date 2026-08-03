@@ -1,0 +1,58 @@
+name: Scheduler
+
+# Drives the two tick endpoints that would otherwise never fire in production.
+# render.yaml declares SCHEDULER_SECRET but defines no job to call them, and
+# Render Cron Jobs are a paid service type while the deploy is on the free plan
+# (render.yaml: plan: free) — so the schedule lives here instead.
+#
+# Requires, or every run silently no-ops:
+#   - repo secret   SCHEDULER_SECRET  (must match the value set in Render)
+#   - repo variable APP_URL           (e.g. https://trainflow-tms.onrender.com)
+#
+# The free Render instance sleeps when idle, so the first request after a quiet
+# period can take ~30s to cold-start or time out. --max-time covers the wake-up;
+# a run that still fails is picked up by the next tick, since both endpoints are
+# idempotent (they select due rows and mark them processed).
+
+on:
+  schedule:
+    # Every 15 minutes. The report scheduler is documented as wanting 5-10 min
+    # (src/app/api/report-scheduler/tick/route.ts:2); 15 keeps well clear of
+    # GitHub's shared-runner throttling on scheduled workflows.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard — required config present
+        env:
+          SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          if [ -z "$SCHEDULER_SECRET" ] || [ -z "$APP_URL" ]; then
+            echo "::error::SCHEDULER_SECRET (secret) and APP_URL (variable) must both be set on this repository."
+            exit 1
+          fi
+
+      # Both endpoints return 503 when SCHEDULER_SECRET is unset server-side and
+      # 401 on a token mismatch, so -f surfaces a misconfiguration as a red run
+      # rather than a silent no-op.
+      - name: Report scheduler tick
+        env:
+          SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          curl -fsS -X POST "$APP_URL/api/report-scheduler/tick" \
+            -H "Authorization: Bearer $SCHEDULER_SECRET" \
+            --max-time 120 --retry 2 --retry-delay 15 --retry-connrefused
+
+      - name: Certificate expiry tick
+        env:
+          SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          curl -fsS -X POST "$APP_URL/api/certificates/expiry-tick" \
+            -H "Authorization: Bearer $SCHEDULER_SECRET" \
+            --max-time 120 --retry 2 --retry-delay 15 --retry-connrefused

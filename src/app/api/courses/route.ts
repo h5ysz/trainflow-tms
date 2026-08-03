@@ -58,6 +58,7 @@ export const POST = withModuleAction("courses", "create", async ({ req, user }) 
     language, validityMonths, passScore, maxTrainees,
     hasPreTest, hasFinalTest, hasEvaluation, status,
     aiExamEnabled, aiExamConfig,
+    requiresProfessionVerification,
   } = body;
 
   if (!code || !title) return fail("Course code and title are required", 422, "VALIDATION_ERROR");
@@ -86,6 +87,7 @@ export const POST = withModuleAction("courses", "create", async ({ req, user }) 
       status: status ?? "ACTIVE",
       aiExamEnabled: aiExamEnabled ?? false,
       aiExamConfig: aiExamConfig ?? null,
+      requiresProfessionVerification: requiresProfessionVerification ?? false,
       createdBy: user.id,
       updatedBy: user.id,
     },

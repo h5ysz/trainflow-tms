@@ -151,3 +151,81 @@ Stage Summary:
 - settings-page.tsx is also more robust now (proper top-of-file imports, standard hook pattern).
 - The router has a defensive null-check so future missing routes display a friendly message instead of crashing React.
 - User can now click on "User Approvals" / "User Management" / "Roles & Permissions" in the sidebar (System group) without crashing the app.
+
+---
+Task ID: certificate-release-security-enhancement
+Agent: Super Z (main)
+Task: Implement Certificate Release Security Enhancement — strengthen the certificate release workflow so contractors cannot obtain certificates before completing all financial and operational requirements. Includes: full payment requirement, coordinator approval workflow, profession verification, release checklist, certificate status workflow (DRAFT → READY_FOR_RELEASE → RELEASED → DOWNLOADED), contractor restrictions, audit logging, UI improvements (payment progress bar, locked certificate icon, missing requirements display).
+
+Work Log:
+- Explored current schema: Certificate, Course, Session models. No Invoice model exists in this baseline — designed a lightweight SessionPayment model to track payment per session+company.
+- Schema changes (minimal, backward-compatible):
+  - Certificate model: added releaseStatus, releasedAt, releasedBy, downloadedAt, professionVerified, professionVerifiedAt, professionVerifiedBy, professionVerificationNotes, professionVerificationAttachmentUrl
+  - Course model: added requiresProfessionVerification (Boolean, default false)
+  - New SessionPayment model: id, sessionId, companyId, totalAmount, paidAmount, currency, invoiceRef, invoiceIssuedAt, invoiceDueDate, notes + audit fields. Unique constraint on (sessionId, companyId).
+  - Added relations to Company + TrainingSession models
+  - Added index on Certificate.releaseStatus
+  - Ran prisma db push — schema in sync, no data loss
+- Created release checklist service (src/lib/certificates/release-checklist.ts):
+  - computeReleaseChecklist(certificateId) — checks all 5 requirements: invoice paid, attendance completed, exam passed, profession verified (if required), coordinator approval
+  - computeSessionReleaseChecklists(sessionId, companyId?) — batch checklists for a session
+  - autoUpdateReleaseStatus(certificateId) — auto-transitions DRAFT ↔ READY_FOR_RELEASE based on checklist
+  - truncateForAudit(arr) — caps arrays at 50 for audit log storage
+- Created 6 new API endpoints:
+  - GET /api/certificates/[id]/release-checklist — get checklist for a single certificate
+  - GET /api/sessions/[id]/release-checklist — get checklists for all certs in a session (contractor-scoped)
+  - POST /api/certificates/[id]/profession-verify — coordinator verifies/un-verifies profession
+  - POST /api/certificates/[id]/mark-downloaded — mark certificate as downloaded (contractor)
+  - POST /api/sessions/[id]/release-certificates — coordinator releases certificates (batch)
+  - GET/POST /api/sessions/[id]/payments — list/create session payment records
+- Updated existing endpoints:
+  - POST /api/certificates/[id]/generate-pdf — contractors blocked unless releaseStatus=RELEASED or DOWNLOADED
+  - GET/api/certificates/verify (public QR) — now includes releaseStatus in response
+  - POST/PUT /api/courses (+ /api/courses/[id]) — accept requiresProfessionVerification field
+- Created UI component (src/components/common/cert-release-panel.tsx, 500+ lines):
+  - Payment management section (coordinator only): create/list payment records with progress bar
+  - Certificate checklist section: per-certificate status (invoice/attendance/exam/profession), locked icon for contractors, release button for coordinators
+  - Profession verify dialog: notes + attachment URL fields
+  - Download button: contractors can only download after release, auto-marks as DOWNLOADED
+  - Bilingual (EN + AR), responsive, color-coded status badges
+- Wired CertReleasePanel into session-detail.tsx as a new "Release" tab
+- Updated certificates list (certificates.tsx):
+  - Added releaseStatus, releasedAt, downloadedAt, professionVerified fields to Certificate interface
+  - Added locked icon (amber) for unreleased certs (contractor view)
+  - Added released icon (green) for released certs
+  - Download button disabled for contractors when cert not released
+  - Download handler checks release status + auto-marks as downloaded
+- Updated courses.tsx form:
+  - Added requiresProfessionVerification toggle with description
+  - Added to form state + NEW_COURSE default
+- Added 90+ bilingual i18n keys (EN + AR) for all release workflow labels
+- Every release + profession verification action is audit-logged with:
+  - Coordinator name, date/time, contractor, course, session, invoice number, invoice amount, payment status, profession verification status
+  - Action labeled as "Certificate Release Approved"
+  - metadata.aiGenerated = false (human-initiated)
+- Fixed 3 pre-existing ESLint warnings (unused eslint-disable directives in topbar.tsx, carousel.tsx, use-mobile.ts, notifications.tsx, report-schedules.tsx, session-detail.tsx)
+- Restored .env file (JWT_SECRET + SUPER_ADMIN credentials were missing after sandbox reset)
+- Re-seeded database with updated schema
+- Verified: TypeScript 0 errors, ESLint 0 warnings, Production build passes (all 6 new routes compiled), 83/83 tests pass
+
+Stage Summary:
+- New files (8):
+  - src/lib/certificates/release-checklist.ts
+  - src/app/api/certificates/[id]/release-checklist/route.ts
+  - src/app/api/certificates/[id]/profession-verify/route.ts
+  - src/app/api/certificates/[id]/mark-downloaded/route.ts
+  - src/app/api/sessions/[id]/release-checklist/route.ts
+  - src/app/api/sessions/[id]/release-certificates/route.ts
+  - src/app/api/sessions/[id]/payments/route.ts
+  - src/components/common/cert-release-panel.tsx
+- Modified files (7):
+  - prisma/schema.prisma — added release fields to Certificate, requiresProfessionVerification to Course, new SessionPayment model
+  - src/app/api/certificates/[id]/generate-pdf/route.ts — contractor release check
+  - src/lib/certificates/verify.ts — include releaseStatus in public view
+  - src/app/api/courses/route.ts + [id]/route.ts — accept requiresProfessionVerification
+  - src/routes/session-detail.tsx — added Release tab with CertReleasePanel
+  - src/routes/certificates.tsx — locked/released icons + download restriction
+  - src/routes/courses.tsx — requiresProfessionVerification toggle in form
+  - src/lib/i18n/translations.ts — 90+ new EN + AR keys
+- Workflow implemented: Create Course → Register Trainees → Conduct Training → Attendance Complete → Exam Complete → Invoice Fully Paid → Profession Verified (if required) → Coordinator Reviews Checklist → Coordinator Presses Release Certificates → Contractor Can Print/Download Certificates
+- All existing functionality preserved: attendance, invoices, payments, certificate generation, QR verification, existing APIs, existing permissions — only extended, not broken.

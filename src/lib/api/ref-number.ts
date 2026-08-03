@@ -13,6 +13,7 @@
 
 import { db } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 
 type DbClient = typeof db | Prisma.TransactionClient;
 
@@ -25,7 +26,12 @@ export type RefEntityType =
   | "COURSE"
   | "SESSION"
   | "TRAINEE"
-  | "WORKER_PASSPORT";
+  | "WORKER_PASSPORT"
+  | "INVOICE"
+  | "QUOTATION"
+  | "PAYMENT"
+  | "RECEIPT"
+  | "RETEST";
 
 const PREFIX: Record<RefEntityType, string> = {
   TRAINING_REQUEST: "TR",
@@ -37,10 +43,19 @@ const PREFIX: Record<RefEntityType, string> = {
   SESSION: "SES",
   TRAINEE: "TRA",
   WORKER_PASSPORT: "WP",
+  INVOICE: "INV",
+  QUOTATION: "QUO",
+  PAYMENT: "PAY",
+  RECEIPT: "RCP",
+  RETEST: "RT",
 };
 
 const YEARLY: Set<RefEntityType> = new Set([
   "TRAINING_REQUEST",
+  "INVOICE",
+  "QUOTATION",
+  "PAYMENT",
+  "RECEIPT",
   "CERTIFICATE",
   "EXAM",
   "WORKER_PASSPORT",
@@ -68,12 +83,13 @@ export async function nextRefNumber(entityType: RefEntityType, client: DbClient 
   // allows one writer at a time, so writing via the global `db` connection
   // while an interactive transaction holds the write lock deadlocks until the
   // transaction (and query) timeouts fire.
+  const now = new Date();
   const counter = await client.refNumberCounter.upsert({
     where: {
       entityType_year: { entityType, year: yearKey },
     },
-    update: { sequence: { increment: 1 } },
-    create: { entityType, year: yearKey, sequence: 1 },
+    update: { sequence: { increment: 1 }, updatedAt: now },
+    create: { id: randomUUID(), entityType, year: yearKey, sequence: 1, updatedAt: now },
   });
 
   const prefix = PREFIX[entityType];

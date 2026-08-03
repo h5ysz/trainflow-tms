@@ -8,6 +8,7 @@ import { parseBody } from "@/lib/api/validate";
 import { loginSchema } from "@/lib/api/schemas";
 import { setSessionCookie, ok, fail, resolveEffectivePermissions } from "@/lib/auth/api";
 import { recordAudit } from "@/lib/auth/audit";
+import { randomUUID } from "node:crypto";
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_DURATION_MIN = 15;
@@ -22,6 +23,7 @@ async function logLoginAttempt(opts: {
   try {
     await db.loginHistory.create({
       data: {
+        id: randomUUID(),
         userId: opts.userId ?? null,
         email: opts.email,
         success: opts.success,
