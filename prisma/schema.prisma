@@ -1741,3 +1741,22 @@ model Receipt {
   @@index([companyId])
   @@index([receiptDate])
 }
+
+// ── ImportExportLog ────────────────────────────────────────────────────────
+// Personal operation history for the Import/Export dialogs. NOT an audit
+// log — just a quick "recent operations" list for the user's convenience.
+model ImportExportLog {
+  id          String   @id @default(uuid())
+  userId      String
+  type        String   // "IMPORT" | "EXPORT"
+  source      String   // "DEVICE" | "ARCHIVE" | "EXPORT"
+  requestRef  String?
+  courseName  String?
+  itemCount   Int      @default(0)
+  status      String   @default("SUCCESS") // "SUCCESS" | "FAILED"
+  errorMessage String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
