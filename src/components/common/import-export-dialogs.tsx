@@ -706,14 +706,6 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
           )}
         </div>
 
-        {/* Recent Operations */}
-        <div className="border-t px-5 py-2 shrink-0">
-          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1 flex items-center gap-1">
-            <History className="h-3 w-3" /> {t("requests.recentOperations")}
-          </div>
-          <RecentOperations logs={logs} loading={logsLoading} />
-        </div>
-
         <DialogFooter className="p-4 border-t bg-muted/30 shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("action.cancel")}</Button>
           <Button onClick={handleExport} disabled={!canExport} title={!canExport && selectionMissing ? (t("requests.selectFirstPrompt") || "Select an item first") : undefined}>
