@@ -735,7 +735,7 @@ export function TrainingRequestsRoute() {
   // ── Edit existing request: loads the request data into the form + opens
   // the same dialog as "New Request" but in edit mode. The form is pre-filled
   // with the request's current values. On save, it PUTs to /api/requests/[id].
-  const handleEditRequest = (req: Request) => {
+  const handleEditRequest = async (req: Request) => {
     setEditTarget(req);
     setFormData({
       priority: req.priority ?? "NORMAL",
@@ -752,6 +752,64 @@ export function TrainingRequestsRoute() {
     setTrainees([]);
     setAdditionalDocs([]);
     setDialogOpen(true);
+
+    // ── Fetch the FULL request detail (trainees, documents, course) from the API ──
+    // The list-row data only has basic fields — it does NOT include trainees.
+    // Without this fetch, the edit dialog opens with an EMPTY trainee table.
+    try {
+      const detail = await api.get<RequestDetail>(`/requests/${req.id}`);
+
+      // ── Populate trainees from requestCourses.trainees ──
+      if (detail.requestCourses && detail.requestCourses.length > 0) {
+        const loadedTrainees: TraineeEntry[] = detail.requestCourses.flatMap((rc) =>
+          (rc.trainees ?? []).map((tr) => {
+            const tn = tr.trainee;
+            // Parse trainee.documents JSON for the TraineeEntry
+            let docs: TraineeEntry["documents"] = [];
+            try {
+              const parsed = tn.documents ? JSON.parse(tn.documents) : [];
+              if (Array.isArray(parsed)) docs = parsed;
+            } catch { /* ignore */ }
+            return {
+              id: crypto.randomUUID(),
+              fullName: tn.fullName || "",
+              nationalId: tn.nationalId || "",
+              nationality: tn.nationality || "",
+              jobTitle: tn.jobTitle || "",
+              idAttachmentUrl: tn.idAttachmentUrl ?? null,
+              idAttachmentName: null,
+              documents: docs,
+              valid: true,
+              errors: [],
+            };
+          })
+        );
+        setTrainees(loadedTrainees);
+      }
+
+      // ── Populate additional documents from request.documents ──
+      if (detail.documents) {
+        try {
+          const reqDocs = JSON.parse(detail.documents);
+          if (Array.isArray(reqDocs) && reqDocs.length > 0) {
+            const loadedDocs: AdditionalDocument[] = reqDocs.map((d: { url?: string; filename?: string; type?: string; uploadedAt?: string; size?: number }) => ({
+              url: d.url || "",
+              filename: d.filename || "",
+              type: d.type || "other",
+              size: d.size,
+              uploadedAt: d.uploadedAt || new Date().toISOString(),
+            }));
+            setAdditionalDocs(loadedDocs);
+          }
+        } catch { /* ignore */ }
+      }
+
+      // ── Update formData with any richer data from the detail (course title, etc.) ──
+      if (detail.courseId) setFormData((p) => ({ ...p, courseId: detail.courseId }));
+    } catch {
+      // If the fetch fails, the dialog still opens with the basic row data
+      // (trainees will be empty, but at least the form fields are populated)
+    }
   };
 
   const handleEditSave = async () => {
@@ -930,7 +988,7 @@ export function TrainingRequestsRoute() {
         <div className="space-y-5">
           {/* Status selector: Draft or Submit immediately */}
           <Field label={t("requests.status")}>
-            <Select value={(formData.status as string) ?? "DRAFT"} onValueChange={(v) => setField("status", v)}>
+            <Select value={(formData.status as string) === "REQUIRES_MODIFICATION" ? "DRAFT" : (formData.status as string) ?? "DRAFT"} onValueChange={(v) => setField("status", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="DRAFT">{t("status.DRAFT")}</SelectItem>
@@ -951,7 +1009,7 @@ export function TrainingRequestsRoute() {
               </Field>
             )}
             <Field label={t("requests.course")} required>
-              <Select onValueChange={(v) => setField("courseId", v)}>
+              <Select value={(formData.courseId as string) || undefined} onValueChange={(v) => setField("courseId", v)}>
                 <SelectTrigger><SelectValue placeholder={t("requests.course")} /></SelectTrigger>
                 <SelectContent>
                   {courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.title} ({c.code})</SelectItem>)}
