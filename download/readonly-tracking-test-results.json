@@ -1,0 +1,26 @@
+[
+  {
+    "test": "Contractor on DRAFT",
+    "expected": "Edit + Submit + Cancel",
+    "actual": "[Preview], [Edit], Submit, Cancel",
+    "pass": true
+  },
+  {
+    "test": "Contractor on SUBMITTED",
+    "expected": "NO Edit (read-only) + Preview + Cancel",
+    "actual": "[Preview], Cancel",
+    "pass": true
+  },
+  {
+    "test": "Preview on SUBMITTED",
+    "expected": "Trainees + Print visible, NO Edit",
+    "actual": "trainees=true, print=true, edit=false",
+    "pass": true
+  },
+  {
+    "test": "Contractor on REQUIRES_MODIFICATION",
+    "expected": "Edit + Resubmit + Cancel (editable again)",
+    "actual": "[Preview], [Edit], Resubmit, Cancel",
+    "pass": true
+  }
+]

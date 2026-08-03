@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge, PriorityBadge } from "@/components/common/status-badge";
-import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Check, X, RotateCcw, ArrowRight, FileText, Download, Upload, Eye, Pencil } from "lucide-react";
+import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Check, X, RotateCcw, ArrowRight, FileText, Download, Upload, Eye, Pencil, Printer } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
@@ -59,6 +59,35 @@ interface Request {
   rejectedAt?: string | null;
   rejectionReason?: string | null;
   createdAt: string;
+}
+
+// ── Detailed request (returned by GET /api/requests/[id]) ──
+// Includes the full course object + requestCourses.trainees + sessions.
+interface RequestTrainee {
+  id: string;
+  refNumber?: string;
+  fullName: string;
+  nationalId: string;
+  nationality?: string | null;
+  jobTitle?: string | null;
+  mobile?: string | null;
+  email?: string | null;
+  idAttachmentUrl?: string | null;
+  documents?: string | null; // JSON-encoded array of { url, filename, type, uploadedAt }
+}
+interface RequestCourseDetail {
+  id: string;
+  courseId: string;
+  traineeCount: number;
+  course: { id: string; title: string; code?: string; refNumber?: string; titleAr?: string | null };
+  trainees: Array<{ trainee: RequestTrainee }>;
+}
+interface RequestDetail extends Request {
+  company?: { id: string; name: string; refNumber?: string; nameAr?: string | null };
+  course?: { id: string; title: string; code?: string; refNumber?: string; titleAr?: string | null; durationHours?: number };
+  requestCourses?: RequestCourseDetail[];
+  sessions?: Array<{ id: string; refNumber: string; title: string; startDate: string; endDate: string; status: string }>;
+  documents?: string | null; // request-level documents (JSON array)
 }
 
 const PRIORITIES = ["LOW", "NORMAL", "HIGH", "URGENT"];
@@ -176,6 +205,8 @@ export function TrainingRequestsRoute() {
   const [revisionReason, setRevisionReason] = useState("");
   const [detailsTarget, setDetailsTarget] = useState<Request | null>(null);
   const [previewTarget, setPreviewTarget] = useState<Request | null>(null);
+  const [previewDetail, setPreviewDetail] = useState<RequestDetail | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [editTarget, setEditTarget] = useState<Request | null>(null);
   const [generateTarget, setGenerateTarget] = useState<Request | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -379,7 +410,30 @@ export function TrainingRequestsRoute() {
         // resubmit / cancel). Coordinators/Trainers/Super Admins see the full
         // workflow. Auditors/Viewers see nothing.
         const actions = getActionsForRole(r.status, user?.role, canEdit);
-        const canEditRequest = (r.status === "DRAFT" || r.status === "REQUIRES_MODIFICATION" || r.status === "REJECTED") && canCreate;
+        // ── Read-Only Tracking View policy ──────────────────────────────────
+        // After the contractor submits a request, they enter a READ-ONLY tracking
+        // state. They can still see the request + preview details + print/export,
+        // but they CANNOT edit anything until the coordinator returns the request
+        // for revision (REQUIRES_MODIFICATION).
+        //
+        // Editable statuses for contractors (with requests.create):
+        //   - DRAFT                     → contractor is still preparing the request
+        //   - REQUIRES_MODIFICATION     → coordinator returned it for revision
+        //
+        // Read-only tracking statuses (NO edit button for contractors):
+        //   - SUBMITTED, UNDER_REVIEW, APPROVED, SCHEDULED, IN_PROGRESS,
+        //     COMPLETED, CANCELLED, REJECTED
+        //
+        // REJECTED is intentionally read-only: the contractor must raise a NEW
+        // request (the rejected one is closed). If the business rule changes to
+        // allow resubmission from REJECTED, add REJECTED to this list.
+        const contractorEditableStatuses = ["DRAFT", "REQUIRES_MODIFICATION"];
+        const canEditRequest = canCreate && (
+          // Contractors (and any role without requests.edit): only DRAFT + REQUIRES_MODIFICATION
+          !canEdit ? contractorEditableStatuses.includes(r.status)
+          // Coordinators/admins (with requests.edit): can edit DRAFT + REQUIRES_MODIFICATION + REJECTED
+          : ["DRAFT", "REQUIRES_MODIFICATION", "REJECTED"].includes(r.status)
+        );
         return (
           <div className="flex justify-end items-center gap-1 flex-wrap">
             {/* Preview button — available for ALL requests + ALL roles (incl. read-only) */}
@@ -387,7 +441,7 @@ export function TrainingRequestsRoute() {
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={() => setPreviewTarget(r)}
+              onClick={() => openPreview(r)}
               title={t("action.preview") || "Preview"}
             >
               <Eye className="h-3.5 w-3.5" />
@@ -491,6 +545,34 @@ export function TrainingRequestsRoute() {
   };
 
   const setField = (k: string, v: unknown) => setFormData((p) => ({ ...p, [k]: v }));
+
+  // ── Read-Only Tracking View policy (component-level) ──
+  // Used by the Preview dialog's Edit button to decide whether to show Edit.
+  // Mirrors the per-row canEditRequest logic in the actions cell.
+  const isPreviewEditable = previewTarget ? (
+    canCreate && (
+      !canEdit
+        ? ["DRAFT", "REQUIRES_MODIFICATION"].includes(previewTarget.status)
+        : ["DRAFT", "REQUIRES_MODIFICATION", "REJECTED"].includes(previewTarget.status)
+    )
+  ) : false;
+
+  // ── Open the read-only preview dialog — fetches the FULL request detail
+  // (course, trainees, attachments, timeline) from GET /api/requests/[id]
+  // so the contractor can see everything they submitted, in read-only format.
+  const openPreview = async (req: Request) => {
+    setPreviewTarget(req);
+    setPreviewDetail(null);
+    setPreviewLoading(true);
+    try {
+      const detail = await api.get<RequestDetail>(`/requests/${req.id}`);
+      setPreviewDetail(detail);
+    } catch {
+      // Fall back to the list-row data (no trainees/attachments shown)
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
 
   // ── Edit existing request: loads the request data into the form + opens
   // the same dialog as "New Request" but in edit mode. The form is pre-filled
@@ -881,7 +963,7 @@ export function TrainingRequestsRoute() {
       {/* ── Preview Dialog (read-only) — shows all request details ── */}
       <FormDialog
         open={previewTarget !== null}
-        onOpenChange={(open) => { if (!open) setPreviewTarget(null); }}
+        onOpenChange={(open) => { if (!open) { setPreviewTarget(null); setPreviewDetail(null); } }}
         title={t("action.preview") || "Preview"}
         description={previewTarget?.refNumber}
         icon={Eye}
@@ -898,8 +980,8 @@ export function TrainingRequestsRoute() {
             </div>
 
             <FormGrid>
-              <DetailRow label={t("requests.company")} value={previewTarget.companyName} />
-              <DetailRow label={t("requests.course")} value={previewTarget.courseTitle} />
+              <DetailRow label={t("requests.company")} value={previewDetail?.company?.name ?? previewTarget.companyName} />
+              <DetailRow label={t("requests.course")} value={previewDetail?.course?.title ?? previewTarget.courseTitle} />
               <DetailRow label={t("requests.traineeCount")} value={String(previewTarget.traineeCount)} />
               <DetailRow label={t("requests.priority")} value={previewTarget.priority} />
               <DetailRow label={t("requests.preferredLocation")} value={previewTarget.preferredLocation} />
@@ -909,6 +991,99 @@ export function TrainingRequestsRoute() {
             </FormGrid>
 
             {previewTarget.notes && <DetailRow label={t("requests.notes")} value={previewTarget.notes} />}
+
+            {/* ── Trainees (read-only) — fetched from GET /api/requests/[id] ── */}
+            <div>
+              <div className="text-xs font-semibold mb-2 flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5" />
+                {t("requests.trainees") || "Trainees"}
+                {previewDetail?.requestCourses && (
+                  <span className="text-[10px] text-muted-foreground">
+                    ({previewDetail.requestCourses.reduce((sum, rc) => sum + (rc.trainees?.length ?? 0), 0)})
+                  </span>
+                )}
+              </div>
+              {previewLoading ? (
+                <div className="text-xs text-muted-foreground py-3 text-center">Loading trainees…</div>
+              ) : previewDetail?.requestCourses && previewDetail.requestCourses.length > 0 ? (
+                <div className="rounded-md border overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="text-start font-medium p-2">#</th>
+                        <th className="text-start font-medium p-2">{t("requests.traineeName") || "Full Name"}</th>
+                        <th className="text-start font-medium p-2">{t("requests.nationalId") || "National ID"}</th>
+                        <th className="text-start font-medium p-2">{t("requests.nationality") || "Nationality"}</th>
+                        <th className="text-start font-medium p-2">{t("requests.jobTitle") || "Job Title"}</th>
+                        <th className="text-start font-medium p-2">{t("requests.attachments") || "Attachments"}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewDetail.requestCourses.flatMap((rc, rcIdx) =>
+                        (rc.trainees ?? []).map((t, idx) => {
+                          const tr = t.trainee;
+                          // Parse trainee.documents JSON to count attachments
+                          let docCount = 0;
+                          try {
+                            const docs = tr.documents ? JSON.parse(tr.documents) : [];
+                            docCount = Array.isArray(docs) ? docs.length : 0;
+                          } catch { /* ignore */ }
+                          return (
+                            <tr key={`${rcIdx}-${idx}`} className="border-t">
+                              <td className="p-2 text-muted-foreground">{idx + 1}</td>
+                              <td className="p-2 font-medium">{tr.fullName}</td>
+                              <td className="p-2 font-mono">{tr.nationalId}</td>
+                              <td className="p-2">{tr.nationality ?? "—"}</td>
+                              <td className="p-2">{tr.jobTitle ?? "—"}</td>
+                              <td className="p-2">
+                                {docCount > 0 ? (
+                                  <span className="inline-flex items-center gap-1 text-info">
+                                    <FileText className="h-3 w-3" /> {docCount}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground py-3 text-center">
+                  {t("requests.noTrainees" as never) || "No trainees attached"}
+                </div>
+              )}
+            </div>
+
+            {/* ── Request-level attachments (read-only) ── */}
+            {previewDetail?.documents && (() => {
+              let reqDocs: Array<{ url?: string; filename?: string; type?: string }> = [];
+              try { reqDocs = JSON.parse(previewDetail.documents); } catch { /* ignore */ }
+              if (!Array.isArray(reqDocs) || reqDocs.length === 0) return null;
+              return (
+                <div>
+                  <div className="text-xs font-semibold mb-2 flex items-center gap-1.5">
+                    <FileText className="h-3.5 w-3.5" />
+                    {t("requests.attachments") || "Attachments"}
+                    <span className="text-[10px] text-muted-foreground">({reqDocs.length})</span>
+                  </div>
+                  <div className="rounded-md border divide-y">
+                    {reqDocs.map((d, i) => (
+                      <div key={i} className="flex items-center justify-between p-2 text-xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                          <span className="truncate">{d.filename ?? d.url ?? `Attachment ${i + 1}`}</span>
+                          {d.type && <span className="text-[10px] text-muted-foreground">({d.type})</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {previewTarget.rejectionReason && (
               <div className="rounded-md border border-destructive/20 bg-destructive/5 p-3">
@@ -940,18 +1115,22 @@ export function TrainingRequestsRoute() {
               </div>
             </div>
 
-            {previewTarget.status === "DRAFT" || previewTarget.status === "SUBMITTED" ? (
-              <div className="flex justify-end gap-2 pt-2 border-t">
-                <Button variant="outline" onClick={() => setPreviewTarget(null)}>
-                  {t("action.cancel")}
+            {/* ── Read-only tracking view: Print + Export always available, Edit only when editable ── */}
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <Button variant="outline" onClick={() => setPreviewTarget(null)}>
+                {t("action.cancel")}
+              </Button>
+              {/* Print button — always available for any non-deleted request, regardless of status */}
+              <Button variant="outline" onClick={() => window.print()}>
+                <Printer className="h-4 w-4 me-1.5" />{t("action.print") || "Print"}
+              </Button>
+              {/* Edit button — only for editable statuses (DRAFT + REQUIRES_MODIFICATION for contractors) */}
+              {isPreviewEditable && (
+                <Button onClick={() => { const r = previewTarget; setPreviewTarget(null); handleEditRequest(r); }}>
+                  <Pencil className="h-4 w-4 me-1.5" />{t("action.edit") || "Edit"}
                 </Button>
-                {canCreate && (
-                  <Button onClick={() => { const r = previewTarget; setPreviewTarget(null); handleEditRequest(r); }}>
-                    <Pencil className="h-4 w-4 me-1.5" />{t("action.edit") || "Edit"}
-                  </Button>
-                )}
-              </div>
-            ) : null}
+              )}
+            </div>
           </div>
         )}
       </FormDialog>
