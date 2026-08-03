@@ -1013,49 +1013,39 @@ export const GET = async (req: NextRequest) => {
     }
 
     let attRowCount = 0;
-    // Build the base URL for absolute attachment links.
+    // Attachment hyperlinks in exported Excel MUST use the permanent public URL.
     //
-    // PRIORITY (first non-empty, non-localhost, non-0.0.0.0 value wins):
-    //   1. process.env.APP_URL
-    //   2. process.env.NEXT_PUBLIC_APP_URL
-    //   3. process.env.BASE_URL
-    //   4. x-forwarded-host / x-forwarded-proto headers (reverse-proxy aware)
-    //   5. Hardcoded production URL (final fallback — always valid)
+    // We NEVER use:
+    //   - req.nextUrl (returns 0.0.0.0:10000 on Render)
+    //   - x-forwarded-host / host headers (returns temporary runtime domains
+    //     like ws-baab-efccefc-lgrrpcalxa.cn-hongkong-vpc.fcapp.run)
+    //   - localhost
+    //   - 0.0.0.0
     //
-    // We NEVER fall back to req.nextUrl because Render's standalone server
-    // binds to 0.0.0.0:10000 internally, producing invalid URLs.
-    // We also NEVER use localhost or 0.0.0.0 — they're unreachable by users.
+    // The ONLY source of truth is the hardcoded production URL below.
+    // If APP_URL env var is set AND matches the production domain, it's used.
+    // Otherwise we always fall back to the hardcoded production URL.
     const PRODUCTION_URL = "https://trainflow-tms.onrender.com";
-    const candidates = [
-      process.env.APP_URL,
-      process.env.NEXT_PUBLIC_APP_URL,
-      process.env.BASE_URL,
-    ].filter((v) => v && !v.includes("localhost") && !v.includes("0.0.0.0"));
 
-    let baseUrl = candidates[0] || PRODUCTION_URL;
+    // Accept APP_URL only if it's the production domain (not localhost, not
+    // 0.0.0.0, not a temporary runtime domain like *.fcapp.run)
+    const isPublicUrl = (v: string | undefined): v is string =>
+      !!v && v.startsWith("https://") && !v.includes("localhost") && !v.includes("0.0.0.0") && !v.includes("fcapp.run");
 
-    // If no env var matched, try the reverse-proxy headers (but reject 0.0.0.0)
-    if (!candidates.length) {
-      const fwdHost = req.headers.get("x-forwarded-host");
-      const fwdProto = req.headers.get("x-forwarded-proto") || "https";
-      if (fwdHost && !fwdHost.includes("0.0.0.0") && !fwdHost.includes("localhost")) {
-        baseUrl = `${fwdProto}://${fwdHost}`;
-      }
-    }
-
-    // Strip trailing slash to avoid double-slash in URL
-    baseUrl = baseUrl.replace(/\/+$/, "");
+    const baseUrl = isPublicUrl(process.env.APP_URL)
+      ? process.env.APP_URL.replace(/\/+$/, "")
+      : isPublicUrl(process.env.NEXT_PUBLIC_APP_URL)
+        ? process.env.NEXT_PUBLIC_APP_URL!.replace(/\/+$/, "")
+        : isPublicUrl(process.env.BASE_URL)
+          ? process.env.BASE_URL!.replace(/\/+$/, "")
+          : PRODUCTION_URL;
 
     for (const a of rows) {
-      let fullUrl: string;
-      if (a.url.startsWith("http")) {
-        // Already absolute — but fix if it points to localhost/0.0.0.0
-        fullUrl = (a.url.includes("localhost") || a.url.includes("0.0.0.0"))
-          ? `${baseUrl}${a.url.replace(/^https?:\/\/[^/]+/, "")}`
-          : a.url;
-      } else {
-        fullUrl = `${baseUrl}${a.url.startsWith("/") ? "" : "/"}${a.url}`;
-      }
+      // Always build the URL from the production base + relative path.
+      // If the stored URL is already absolute, strip the host and re-attach
+      // the production host — this catches any stale localhost/0.0.0.0/runtime URLs.
+      const relativePath = a.url.replace(/^https?:\/\/[^/]+/, "");
+      const fullUrl = `${baseUrl}${relativePath.startsWith("/") ? "" : "/"}${relativePath}`;
       const row = ws.addRow([
         a.fileName,
         a.fileType,
