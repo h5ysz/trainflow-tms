@@ -665,7 +665,7 @@ export function TrainingRequestsRoute() {
             { sourceRequestId: requestId, items: archiveItems },
           );
           if (result.trainees?.length > 0) {
-            const newTrainees = result.trainees.map((t: Record<string, unknown>) => ({
+            const newTrainees = result.trainees.map((t: TraineeEntry) => ({
               id: crypto.randomUUID(),
               fullName: String(t.fullName || ""),
               nationalId: String(t.nationalId || ""),
