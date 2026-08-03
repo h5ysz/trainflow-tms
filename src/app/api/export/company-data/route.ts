@@ -896,6 +896,24 @@ export const GET = async (req: NextRequest) => {
     };
     const rows: AttachmentRow[] = [];
 
+    // Helper: extract a human-readable filename from the stored JSON.
+    // The upload handler stores both `filename` (random hex) and `originalName`
+    // (the real file name). Prefer originalName; fall back to filename; if
+    // neither is available, extract from the URL path.
+    function getDisplayName(doc: { filename?: string; originalName?: string; url?: string }): string {
+      if (doc.originalName && doc.originalName.length > 0) return doc.originalName;
+      if (doc.filename && doc.filename.length > 0 && !/^[a-f0-9]{32}\./.test(doc.filename)) return doc.filename;
+      // If filename is a random hex hash, try to extract from URL
+      const urlParts = doc.url?.split("/") ?? [];
+      const lastPart = urlParts[urlParts.length - 1] ?? "attachment";
+      // If even the URL part is a hex hash, show a generic name with extension
+      if (/^[a-f0-9]{32}\./.test(lastPart)) {
+        const ext = lastPart.split(".").pop() ?? "file";
+        return `Attachment.${ext}`;
+      }
+      return lastPart;
+    }
+
     // 1. Trainee documents
     const traineeAttachWhere: Record<string, unknown> = { deletedAt: null };
     if (companyId) traineeAttachWhere.companyId = companyId;
@@ -927,8 +945,8 @@ export const GET = async (req: NextRequest) => {
     for (const t of traineesForAttachments) {
       const reqRef = traineeRequestMap.get(t.nationalId) ?? "";
       if (t.idAttachmentUrl) {
-        const fileName = t.idAttachmentUrl.split("/").pop() ?? t.idAttachmentUrl;
-        const ext = fileName.split(".").pop()?.toUpperCase() ?? "FILE";
+        const fileName = getDisplayName({ url: t.idAttachmentUrl });
+        const ext = (t.idAttachmentUrl.split(".").pop() ?? "FILE").toUpperCase();
         rows.push({
           fileName,
           fileType: ext,
@@ -942,12 +960,12 @@ export const GET = async (req: NextRequest) => {
       if (t.documents) {
         try {
           const docs = JSON.parse(t.documents) as Array<{
-            url?: string; filename?: string; type?: string; uploadedAt?: string;
+            url?: string; filename?: string; originalName?: string; type?: string; uploadedAt?: string;
           }>;
           for (const d of docs) {
             if (!d.url) continue;
-            const fileName = d.filename ?? d.url.split("/").pop() ?? d.url;
-            const ext = fileName.split(".").pop()?.toUpperCase() ?? "FILE";
+            const fileName = getDisplayName(d);
+            const ext = (d.url.split(".").pop() ?? "FILE").toUpperCase();
             rows.push({
               fileName,
               fileType: ext,
@@ -973,12 +991,12 @@ export const GET = async (req: NextRequest) => {
       if (!r.documents) continue;
       try {
         const docs = JSON.parse(r.documents) as Array<{
-          url?: string; filename?: string; type?: string; uploadedAt?: string;
+          url?: string; filename?: string; originalName?: string; type?: string; uploadedAt?: string;
         }>;
         for (const d of docs) {
           if (!d.url) continue;
-          const fileName = d.filename ?? d.url.split("/").pop() ?? d.url;
-          const ext = fileName.split(".").pop()?.toUpperCase() ?? "FILE";
+          const fileName = getDisplayName(d);
+          const ext = (d.url.split(".").pop() ?? "FILE").toUpperCase();
           rows.push({
             fileName,
             fileType: ext,
