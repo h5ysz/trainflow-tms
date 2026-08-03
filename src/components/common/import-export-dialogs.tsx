@@ -14,8 +14,8 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
-  Upload, Download, FileSpreadsheet, Archive, Eye, Loader2, CheckCircle2,
-  FileText, FileArchive, FileDown, Clock, AlertCircle, History,
+  Upload, Download, FileSpreadsheet, Archive, Eye, Loader2,
+  FileText, FileArchive, FileDown, History,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -52,14 +52,14 @@ function RecentOperations({ logs, loading }: { logs: ImportExportLogEntry[]; loa
   if (loading) {
     return (
       <div className="flex items-center justify-center py-3 gap-2 text-[10px] text-muted-foreground">
-        <Loader2 className="h-3 w-3 animate-spin" /> Loading...
+        <Loader2 className="h-3 w-3 animate-spin" /> {t("misc.loading") || "Loading..."}
       </div>
     );
   }
   if (logs.length === 0) {
     return (
       <div className="text-center py-3 text-[10px] text-muted-foreground">
-        {t("requests.noRecentOps") || "No recent operations"}
+        {t("requests.noRecentOps")}
       </div>
     );
   }
@@ -79,9 +79,9 @@ function RecentOperations({ logs, loading }: { logs: ImportExportLogEntry[]; loa
             {new Date(log.createdAt).toLocaleString()}
           </span>
           {log.status === "FAILED" ? (
-            <Badge variant="destructive" className="text-[8px] h-3.5 px-1">Failed</Badge>
+            <Badge variant="destructive" className="text-[8px] h-3.5 px-1">{t("misc.error") || "Failed"}</Badge>
           ) : (
-            <Badge variant="outline" className="text-[8px] h-3.5 px-1 text-emerald-600">OK</Badge>
+            <Badge variant="outline" className="text-[8px] h-3.5 px-1 text-emerald-600">{t("misc.success") || "OK"}</Badge>
           )}
         </div>
       ))}
@@ -130,16 +130,6 @@ export interface ImportDialogProps {
   onImportFromArchive?: (requestId: string, items: string[]) => Promise<void>;
 }
 
-const GRANULAR_IMPORT_ITEMS = [
-  { key: "course_info", label: "Course Information", labelAr: "معلومات الدورة" },
-  { key: "trainees", label: "Trainees", labelAr: "المتدربون" },
-  { key: "attachments", label: "Attachments", labelAr: "المرفقات" },
-  { key: "schedule", label: "Schedule", labelAr: "الجدولة" },
-  { key: "notes", label: "Notes", labelAr: "الملاحظات" },
-  { key: "trainer", label: "Assigned Trainer", labelAr: "المدرب المعين" },
-  { key: "company_data", label: "Company-specific Data", labelAr: "بيانات الشركة" },
-] as const;
-
 export function ImportDialog({
   open, onOpenChange, onDeviceImport, onImportFromArchive,
 }: ImportDialogProps) {
@@ -154,6 +144,16 @@ export function ImportDialog({
   const [importing, setImporting] = React.useState(false);
   const [previewTarget, setPreviewTarget] = React.useState<ArchiveRequest | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
+
+  const GRANULAR_ITEMS = [
+    { key: "course_info", label: t("requests.itemCourseInfo") },
+    { key: "trainees", label: t("requests.itemTrainees") },
+    { key: "attachments", label: t("requests.itemAttachments") },
+    { key: "schedule", label: t("requests.itemSchedule") },
+    { key: "notes", label: t("requests.itemNotes") },
+    { key: "trainer", label: t("requests.itemTrainer") },
+    { key: "company_data", label: t("requests.itemCompanyData") },
+  ];
 
   React.useEffect(() => {
     if (tab === "archive" && open && archive.length === 0) {
@@ -174,24 +174,15 @@ export function ImportDialog({
     });
   }
 
-  function selectAllItems() {
-    setImportItems(new Set(GRANULAR_IMPORT_ITEMS.map(i => i.key)));
-  }
-
-  function clearItems() {
-    setImportItems(new Set());
-  }
-
   async function handleArchiveImport() {
     if (!selectedRequest || importItems.size === 0 || !onImportFromArchive) return;
     const selectedArchive = archive.find(a => a.id === selectedRequest);
     setImporting(true);
     try {
       await onImportFromArchive(selectedRequest, Array.from(importItems));
-      toast({ title: t("misc.success"), description: "Imported from archive" });
+      toast({ title: t("misc.success"), description: t("requests.importedFromArchive") });
       await addLog({
-        type: "IMPORT",
-        source: "ARCHIVE",
+        type: "IMPORT", source: "ARCHIVE",
         requestRef: selectedArchive?.refNumber,
         courseName: selectedArchive?.courseTitle ?? undefined,
         itemCount: selectedArchive?.traineeCount ?? 0,
@@ -201,15 +192,13 @@ export function ImportDialog({
       setSelectedRequest("");
       setImportItems(new Set(["trainees"]));
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "Import failed";
+      const msg = e instanceof ApiError ? e.message : t("requests.importFailed");
       toast({ title: t("misc.error"), description: msg, variant: "destructive" });
       await addLog({
-        type: "IMPORT",
-        source: "ARCHIVE",
+        type: "IMPORT", source: "ARCHIVE",
         requestRef: selectedArchive?.refNumber,
         courseName: selectedArchive?.courseTitle ?? undefined,
-        status: "FAILED",
-        errorMessage: msg,
+        status: "FAILED", errorMessage: msg,
       });
     } finally {
       setImporting(false);
@@ -226,7 +215,6 @@ export function ImportDialog({
     e.target.value = "";
   }
 
-  // Compute preview summary for the selected request
   const selectedArchive = archive.find(a => a.id === selectedRequest);
   const previewSummary = selectedArchive ? {
     trainees: selectedArchive.traineeCount,
@@ -245,20 +233,18 @@ export function ImportDialog({
             <Upload className="h-5 w-5 text-primary" />
             {t("requests.import")}
           </DialogTitle>
-          <DialogDescription className="text-xs">
-            {t("requests.importDesc") || "Import training data from your device or from your company's system archive."}
-          </DialogDescription>
+          <DialogDescription className="text-xs">{t("requests.importDesc")}</DialogDescription>
         </DialogHeader>
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as "device" | "archive")} className="flex-1 min-h-0 flex flex-col overflow-hidden">
           <TabsList className="mx-5 mt-4 w-fit shrink-0">
             <TabsTrigger value="device" className="gap-1.5">
               <FileSpreadsheet className="h-3.5 w-3.5" />
-              {t("requests.importFromDevice") || "From Device"}
+              {t("requests.importFromDevice")}
             </TabsTrigger>
             <TabsTrigger value="archive" className="gap-1.5">
               <Archive className="h-3.5 w-3.5" />
-              {t("requests.importFromArchive") || "From System Archive"}
+              {t("requests.importFromArchive")}
             </TabsTrigger>
           </TabsList>
 
@@ -270,8 +256,8 @@ export function ImportDialog({
             >
               <FileSpreadsheet className="h-10 w-10 text-muted-foreground" />
               <div>
-                <div className="text-sm font-medium">Drop an Excel file or click to browse</div>
-                <div className="text-xs text-muted-foreground mt-1">.xlsx — smart header mapping</div>
+                <div className="text-sm font-medium">{t("requests.dropExcel")}</div>
+                <div className="text-xs text-muted-foreground mt-1">{t("requests.excelFormat")}</div>
               </div>
               <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={handleDeviceFile} />
             </div>
@@ -281,18 +267,15 @@ export function ImportDialog({
           <TabsContent value="archive" className="m-0 p-5 overflow-y-auto flex-1 min-h-0">
             {loadingArchive ? (
               <div className="flex items-center justify-center py-8 gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-5 w-5 animate-spin" /> Loading archive...
+                <Loader2 className="h-5 w-5 animate-spin" /> {t("misc.loading") || "Loading..."}
               </div>
             ) : archive.length === 0 ? (
-              <div className="text-center py-8 text-sm text-muted-foreground">
-                No previous requests found in your company archive.
-              </div>
+              <div className="text-center py-8 text-sm text-muted-foreground">{t("requests.noArchiveRequests")}</div>
             ) : (
               <>
-                {/* Request list */}
                 <div className="space-y-2 mb-4">
                   <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Select a request to import from
+                    {t("requests.selectRequest")}
                   </div>
                   {archive.map((req) => (
                     <label
@@ -301,69 +284,57 @@ export function ImportDialog({
                         selectedRequest === req.id ? "border-primary bg-primary/5" : "hover:bg-muted/30"
                       }`}
                     >
-                      <input
-                        type="radio"
-                        name="archive-request"
-                        checked={selectedRequest === req.id}
-                        onChange={() => setSelectedRequest(req.id)}
-                        className="accent-primary"
-                      />
+                      <input type="radio" name="archive-request" checked={selectedRequest === req.id}
+                        onChange={() => setSelectedRequest(req.id)} className="accent-primary" />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-xs font-semibold text-primary">{req.refNumber}</span>
                           <Badge variant="outline" className="text-[9px] h-4">{req.status}</Badge>
                         </div>
                         <div className="text-xs text-muted-foreground mt-0.5">
-                          {req.courseTitle ?? "—"} · {new Date(req.createdAt).toLocaleDateString()} · {req.traineeCount} trainees
+                          {req.courseTitle ?? "—"} · {new Date(req.createdAt).toLocaleDateString()} · {req.traineeCount} {t("requests.previewTrainees")}
                         </div>
                       </div>
                       {req.hasAttachments && <FileText className="h-3.5 w-3.5 text-muted-foreground" />}
-                      <Button
-                        type="button" variant="ghost" size="sm" className="h-7 px-2"
-                        onClick={(e) => { e.preventDefault(); setPreviewTarget(req); }}
-                      >
+                      <Button type="button" variant="ghost" size="sm" className="h-7 px-2"
+                        onClick={(e) => { e.preventDefault(); setPreviewTarget(req); }}>
                         <Eye className="h-3.5 w-3.5" />
                       </Button>
                     </label>
                   ))}
                 </div>
 
-                {/* ─── Preview Summary (Enhancement 1) ─── */}
+                {/* Preview Summary */}
                 {previewSummary && (
                   <div className="rounded-md border bg-muted/20 p-3 mb-4">
                     <div className="text-xs font-semibold mb-2 flex items-center gap-1.5">
-                      <Eye className="h-3.5 w-3.5" /> Import Preview Summary
+                      <Eye className="h-3.5 w-3.5" /> {t("requests.importPreviewSummary")}
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-xs">
-                      <div className="flex flex-col"><span className="text-muted-foreground text-[10px]">Trainees</span><span className="font-semibold">{previewSummary.trainees}</span></div>
-                      <div className="flex flex-col"><span className="text-muted-foreground text-[10px]">Attachments</span><span className="font-semibold">{previewSummary.attachments}</span></div>
-                      <div className="flex flex-col"><span className="text-muted-foreground text-[10px]">Courses</span><span className="font-semibold">{previewSummary.courses}</span></div>
-                      <div className="flex flex-col"><span className="text-muted-foreground text-[10px]">Est. Size</span><span className="font-semibold">{previewSummary.estSize}</span></div>
-                      <div className="flex flex-col"><span className="text-muted-foreground text-[10px]">Created</span><span className="font-semibold">{previewSummary.createdDate}</span></div>
-                      <div className="flex flex-col"><span className="text-muted-foreground text-[10px]">Last Updated</span><span className="font-semibold">{previewSummary.updatedDate}</span></div>
+                      <div className="flex flex-col"><span className="text-muted-foreground text-[10px]">{t("requests.previewTrainees")}</span><span className="font-semibold">{previewSummary.trainees}</span></div>
+                      <div className="flex flex-col"><span className="text-muted-foreground text-[10px]">{t("requests.previewAttachments")}</span><span className="font-semibold">{previewSummary.attachments}</span></div>
+                      <div className="flex flex-col"><span className="text-muted-foreground text-[10px]">{t("requests.previewCourses")}</span><span className="font-semibold">{previewSummary.courses}</span></div>
+                      <div className="flex flex-col"><span className="text-muted-foreground text-[10px]">{t("requests.previewEstSize")}</span><span className="font-semibold">{previewSummary.estSize}</span></div>
+                      <div className="flex flex-col"><span className="text-muted-foreground text-[10px]">{t("requests.previewCreated")}</span><span className="font-semibold">{previewSummary.createdDate}</span></div>
+                      <div className="flex flex-col"><span className="text-muted-foreground text-[10px]">{t("requests.previewUpdated")}</span><span className="font-semibold">{previewSummary.updatedDate}</span></div>
                     </div>
                   </div>
                 )}
 
-                {/* ─── Granular Import Options (Enhancement 2) ─── */}
+                {/* Granular Options */}
                 {selectedRequest && (
                   <div className="space-y-2 mb-4">
                     <div className="flex items-center justify-between">
-                      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                        What to import
-                      </div>
+                      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t("requests.whatToImport")}</div>
                       <div className="flex gap-1">
-                        <Button type="button" variant="ghost" size="sm" className="h-6 text-[10px] px-2" onClick={selectAllItems}>All</Button>
-                        <Button type="button" variant="ghost" size="sm" className="h-6 text-[10px] px-2" onClick={clearItems}>Clear</Button>
+                        <Button type="button" variant="ghost" size="sm" className="h-6 text-[10px] px-2" onClick={() => setImportItems(new Set(GRANULAR_ITEMS.map(i => i.key)))}>{t("requests.selectAll")}</Button>
+                        <Button type="button" variant="ghost" size="sm" className="h-6 text-[10px] px-2" onClick={() => setImportItems(new Set())}>{t("requests.clear")}</Button>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      {GRANULAR_IMPORT_ITEMS.map((item) => (
+                      {GRANULAR_ITEMS.map((item) => (
                         <label key={item.key} className="flex items-center gap-2 rounded-md border p-2 cursor-pointer hover:bg-muted/30">
-                          <Checkbox
-                            checked={importItems.has(item.key)}
-                            onCheckedChange={() => toggleItem(item.key)}
-                          />
+                          <Checkbox checked={importItems.has(item.key)} onCheckedChange={() => toggleItem(item.key)} />
                           <span className="text-xs">{item.label}</span>
                         </label>
                       ))}
@@ -375,23 +346,20 @@ export function ImportDialog({
           </TabsContent>
         </Tabs>
 
-        {/* ─── Recent Operations (Enhancement 3) ─── */}
+        {/* Recent Operations */}
         <div className="border-t px-5 py-2 shrink-0">
           <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1 flex items-center gap-1">
-            <History className="h-3 w-3" /> Recent Operations
+            <History className="h-3 w-3" /> {t("requests.recentOperations")}
           </div>
           <RecentOperations logs={logs} loading={logsLoading} />
         </div>
 
         <DialogFooter className="p-4 border-t bg-muted/30 shrink-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t("action.cancel")}</Button>
           {tab === "archive" && (
-            <Button
-              onClick={handleArchiveImport}
-              disabled={!selectedRequest || importItems.size === 0 || importing}
-            >
+            <Button onClick={handleArchiveImport} disabled={!selectedRequest || importItems.size === 0 || importing}>
               {importing ? <Loader2 className="h-4 w-4 me-1.5 animate-spin" /> : <Archive className="h-4 w-4 me-1.5" />}
-              Import from Archive
+              {t("requests.importFromArchiveBtn")}
             </Button>
           )}
         </DialogFooter>
@@ -401,18 +369,16 @@ export function ImportDialog({
       <Dialog open={previewTarget !== null} onOpenChange={(o) => !o && setPreviewTarget(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Eye className="h-4 w-4" /> Archive Preview
-            </DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Eye className="h-4 w-4" /> {t("requests.archivePreview")}</DialogTitle>
           </DialogHeader>
           {previewTarget && (
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Request #</span><span className="font-mono font-semibold text-primary">{previewTarget.refNumber}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Course</span><span>{previewTarget.courseTitle ?? "—"}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Created</span><span>{new Date(previewTarget.createdAt).toLocaleDateString()}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Trainees</span><span>{previewTarget.traineeCount}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Status</span><Badge variant="outline">{previewTarget.status}</Badge></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Attachments</span><span>{previewTarget.hasAttachments ? "Yes" : "No"}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">{t("requests.requestNumber")}</span><span className="font-mono font-semibold text-primary">{previewTarget.refNumber}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">{t("requests.course")}</span><span>{previewTarget.courseTitle ?? "—"}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">{t("requests.created")}</span><span>{new Date(previewTarget.createdAt).toLocaleDateString()}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">{t("requests.previewTrainees")}</span><span>{previewTarget.traineeCount}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">{t("requests.status")}</span><Badge variant="outline">{previewTarget.status}</Badge></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">{t("requests.attachments")}</span><span>{previewTarget.hasAttachments ? t("requests.yes") : t("requests.no")}</span></div>
             </div>
           )}
         </DialogContent>
@@ -428,17 +394,6 @@ export interface ExportDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const EXPORT_ITEMS = [
-  { key: "requests", label: "Training Requests", labelAr: "طلبات التدريب" },
-  { key: "trainees", label: "Trainees", labelAr: "المتدربون" },
-  { key: "attendance", label: "Attendance", labelAr: "الحضور" },
-  { key: "results", label: "Assessment Results", labelAr: "نتائج التقييم" },
-  { key: "evaluations", label: "Evaluations", labelAr: "التقييمات" },
-  { key: "certificates", label: "Certificates", labelAr: "الشهادات" },
-  { key: "invoices", label: "Invoices", labelAr: "الفواتير" },
-  { key: "attachments", label: "Attachments", labelAr: "المرفقات" },
-] as const;
-
 export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -451,6 +406,25 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
   const [exporting, setExporting] = React.useState(false);
   const [progress, setProgress] = React.useState(0);
 
+  const EXPORT_ITEMS = [
+    { key: "requests", label: t("requests.itemRequests") },
+    { key: "trainees", label: t("requests.itemTrainees") },
+    { key: "attendance", label: t("requests.itemAttendance") },
+    { key: "results", label: t("requests.itemResults") },
+    { key: "evaluations", label: t("requests.itemEvaluations") },
+    { key: "certificates", label: t("requests.itemCertificates") },
+    { key: "invoices", label: t("requests.itemInvoices") },
+    { key: "attachments", label: t("requests.itemAttachments") },
+  ];
+
+  const scopeOptions = [
+    { value: "last", label: t("requests.scopeLast") },
+    { value: "specific_request", label: t("requests.scopeSpecificRequest") },
+    { value: "specific_course", label: t("requests.scopeSpecificCourse") },
+    { value: "date_range", label: t("requests.scopeDateRange") },
+    { value: "all", label: t("requests.scopeAll") },
+  ] as const;
+
   function toggleItem(key: string) {
     setItems((prev) => {
       const next = new Set(prev);
@@ -462,7 +436,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
   async function handleExport() {
     if (items.size === 0) {
-      toast({ title: t("misc.error"), description: "Select at least one item to export", variant: "destructive" });
+      toast({ title: t("misc.error"), description: t("requests.selectAtLeastOne"), variant: "destructive" });
       return;
     }
     setExporting(true);
@@ -471,21 +445,14 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
       const params = new URLSearchParams({ scope, format, items: Array.from(items).join(",") });
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
-
       setProgress(50);
       window.open(`/api/export/company-data?${params.toString()}`, "_blank");
       setProgress(100);
-
-      toast({ title: t("misc.success"), description: "Export started — check your downloads" });
-      await addLog({
-        type: "EXPORT",
-        source: "EXPORT",
-        itemCount: items.size,
-        status: "SUCCESS",
-      });
+      toast({ title: t("misc.success"), description: t("requests.exportStarted") });
+      await addLog({ type: "EXPORT", source: "EXPORT", itemCount: items.size, status: "SUCCESS" });
       onOpenChange(false);
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "Export failed";
+      const msg = e instanceof ApiError ? e.message : t("requests.exportFailed");
       toast({ title: t("misc.error"), description: msg, variant: "destructive" });
       await addLog({ type: "EXPORT", source: "EXPORT", status: "FAILED", errorMessage: msg });
     } finally {
@@ -493,14 +460,6 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
       setProgress(0);
     }
   }
-
-  const scopeOptions = [
-    { value: "last", label: "Last Request", labelAr: "آخر طلب" },
-    { value: "specific_request", label: "Specific Request", labelAr: "طلب محدد" },
-    { value: "specific_course", label: "Specific Course", labelAr: "دورة محددة" },
-    { value: "date_range", label: "Date Range", labelAr: "نطاق تاريخ" },
-    { value: "all", label: "All Company Data", labelAr: "كل بيانات الشركة" },
-  ] as const;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -510,23 +469,19 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
             <Download className="h-5 w-5 text-primary" />
             {t("requests.export")}
           </DialogTitle>
-          <DialogDescription className="text-xs">
-            {t("requests.exportDesc") || "Export your company's data from the system."}
-          </DialogDescription>
+          <DialogDescription className="text-xs">{t("requests.exportDesc")}</DialogDescription>
         </DialogHeader>
 
         <div className="p-5 overflow-y-auto flex-1 min-h-0 space-y-5">
           {/* Scope */}
           <div>
-            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Scope</div>
+            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{t("requests.scope")}</div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {scopeOptions.map((opt) => (
-                <label
-                  key={opt.value}
+                <label key={opt.value}
                   className={`flex items-center gap-2 rounded-md border p-2 cursor-pointer text-xs transition-colors ${
                     scope === opt.value ? "border-primary bg-primary/5" : "hover:bg-muted/30"
-                  }`}
-                >
+                  }`}>
                   <input type="radio" name="export-scope" checked={scope === opt.value} onChange={() => setScope(opt.value)} className="accent-primary" />
                   {opt.label}
                 </label>
@@ -543,10 +498,10 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
           {/* Items */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Items to Export</div>
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t("requests.itemsToExport")}</div>
               <div className="flex gap-1">
-                <Button type="button" variant="ghost" size="sm" className="text-xs h-7" onClick={() => setItems(new Set(EXPORT_ITEMS.map(i => i.key)))}>All</Button>
-                <Button type="button" variant="ghost" size="sm" className="text-xs h-7" onClick={() => setItems(new Set())}>Clear</Button>
+                <Button type="button" variant="ghost" size="sm" className="text-xs h-7" onClick={() => setItems(new Set(EXPORT_ITEMS.map(i => i.key)))}>{t("requests.selectAll")}</Button>
+                <Button type="button" variant="ghost" size="sm" className="text-xs h-7" onClick={() => setItems(new Set())}>{t("requests.clear")}</Button>
               </div>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -561,19 +516,17 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
           {/* Format */}
           <div>
-            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Format</div>
+            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{t("requests.format")}</div>
             <div className="flex gap-2">
               {([
                 { value: "excel", label: "Excel", icon: FileSpreadsheet },
                 { value: "pdf", label: "PDF", icon: FileText },
-                { value: "zip", label: "ZIP (with attachments)", icon: FileArchive },
+                { value: "zip", label: t("requests.zipWithAttachments"), icon: FileArchive },
               ] as const).map((opt) => (
-                <label
-                  key={opt.value}
+                <label key={opt.value}
                   className={`flex items-center gap-2 rounded-md border p-2.5 cursor-pointer text-xs transition-colors ${
                     format === opt.value ? "border-primary bg-primary/5" : "hover:bg-muted/30"
-                  }`}
-                >
+                  }`}>
                   <input type="radio" name="export-format" checked={format === opt.value} onChange={() => setFormat(opt.value)} className="accent-primary" />
                   <opt.icon className="h-3.5 w-3.5" />
                   {opt.label}
@@ -585,24 +538,24 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
           {exporting && (
             <div className="space-y-1">
               <Progress value={progress} className="h-1.5" />
-              <div className="text-[10px] text-muted-foreground text-center">Preparing export...</div>
+              <div className="text-[10px] text-muted-foreground text-center">{t("requests.preparingExport")}</div>
             </div>
           )}
         </div>
 
-        {/* ─── Recent Operations (Enhancement 3) ─── */}
+        {/* Recent Operations */}
         <div className="border-t px-5 py-2 shrink-0">
           <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1 flex items-center gap-1">
-            <History className="h-3 w-3" /> Recent Operations
+            <History className="h-3 w-3" /> {t("requests.recentOperations")}
           </div>
           <RecentOperations logs={logs} loading={logsLoading} />
         </div>
 
         <DialogFooter className="p-4 border-t bg-muted/30 shrink-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t("action.cancel")}</Button>
           <Button onClick={handleExport} disabled={exporting || items.size === 0}>
             {exporting ? <Loader2 className="h-4 w-4 me-1.5 animate-spin" /> : <FileDown className="h-4 w-4 me-1.5" />}
-            Export
+            {t("requests.exportBtn")}
           </Button>
         </DialogFooter>
       </DialogContent>
