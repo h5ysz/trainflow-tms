@@ -15,6 +15,11 @@ import { db } from "../src/lib/db";
 import { hashPassword } from "../src/lib/auth/jwt";
 import { nextRefNumber } from "../src/lib/api/ref-number";
 import type { UserRole } from "../src/lib/auth/permissions";
+// The Prisma enum, imported as a runtime value. Deliberately distinct from the
+// UserRole above: permissions.ts declares seven roles (it includes COMPANY_ADMIN
+// and AUDITOR, which are carried as Role rows + roleId), while the User.role
+// column only accepts the five the database enum defines.
+import { UserRole as DbUserRole } from "@prisma/client";
 
 async function main() {
   console.log("🌱 Seeding GCCLAB TMS (clean — no fake business data)...\n");
@@ -70,8 +75,16 @@ async function main() {
   // safe to re-run on every deploy.
   console.log("→ Backfilling roleId for existing users");
   const systemRoles = await db.role.findMany({ where: { isSystem: true } });
+  // Role.code is free-form text, and not every code is a User.role enum value:
+  // seed-test-users.ts creates COMPANY_ADMIN and AUDITOR roles that map onto
+  // COORDINATOR/VIEWER via baseType. Passing one of those to the enum-typed
+  // `role` filter makes Prisma throw ("Invalid value for argument `role`"),
+  // which failed the whole deploy seed. A code that cannot appear in the column
+  // has no users to backfill, so skipping it is the correct behaviour.
+  const enumRoles = new Set<string>(Object.values(DbUserRole));
   let backfilled = 0;
   for (const role of systemRoles) {
+    if (!enumRoles.has(role.code)) continue;
     const { count } = await db.user.updateMany({
       where: { role: role.code as UserRole, roleId: null, deletedAt: null },
       data: { roleId: role.id },
