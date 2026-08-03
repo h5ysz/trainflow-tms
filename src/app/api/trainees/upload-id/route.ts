@@ -1,5 +1,5 @@
 // /api/trainees/upload-id — accepts a single ID / Iqama attachment (image or
-// PDF) and stores it under public/uploads/trainee-ids/ with a random hex
+// PDF) and stores it under public/uploads/trainee-docs/ with a random hex
 // filename so the original (potentially non-ASCII or duplicate) name can't
 // collide on disk or leak through the URL. Returns the public URL the client
 // can store on the Trainee row (idAttachmentUrl) plus filename/size/mime for
@@ -9,8 +9,8 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { withModuleAction, ok, fail } from "@/lib/auth/api";
 
-const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads", "trainee-ids");
-const PUBLIC_PREFIX = "/uploads/trainee-ids";
+const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads", "trainee-docs");
+const PUBLIC_PREFIX = "/uploads/trainee-docs";
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
 // Extensions/MIME we accept — images of the ID card plus PDF scans. Anything
