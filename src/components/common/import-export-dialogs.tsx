@@ -395,7 +395,7 @@ export interface ExportDialogProps {
 }
 
 export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { toast } = useToast();
   const { logs, loading: logsLoading, addLog } = useRecentLogs();
   const [scope, setScope] = React.useState<"last" | "specific_request" | "specific_course" | "date_range" | "all">("last");
@@ -442,7 +442,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
     setExporting(true);
     setProgress(10);
     try {
-      const params = new URLSearchParams({ scope, format, items: Array.from(items).join(",") });
+      const params = new URLSearchParams({ scope, format, items: Array.from(items).join(","), locale });
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
       setProgress(50);
