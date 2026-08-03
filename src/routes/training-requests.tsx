@@ -166,9 +166,9 @@ const NEXT_ACTIONS: Record<string, { status: string; labelKey: string; variant: 
 // Keyed by CURRENT status → array of ALLOWED target statuses.
 const SELF_SERVICE_TRANSITIONS_BY_STATUS: Record<string, Set<string>> = {
   DRAFT: new Set(["SUBMITTED", "CANCELLED"]),
-  SUBMITTED: new Set(["CANCELLED"]),
+  // SUBMITTED: no self-service actions — request is in coordinator's hands
   REJECTED: new Set(["SUBMITTED"]),
-  REQUIRES_MODIFICATION: new Set(["SUBMITTED", "CANCELLED"]),
+  REQUIRES_MODIFICATION: new Set(["SUBMITTED"]),
 };
 
 function getActionsForRole(

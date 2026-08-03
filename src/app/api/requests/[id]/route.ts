@@ -106,9 +106,9 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
   if (!hasEdit && newStatus && newStatus !== existing.status) {
     const SELF_SERVICE_TRANSITIONS: Record<string, string[]> = {
       DRAFT: ["SUBMITTED", "CANCELLED"],
-      SUBMITTED: ["CANCELLED"],
+      // SUBMITTED: no self-service actions — request is in coordinator's hands
       REJECTED: ["SUBMITTED"],
-      REQUIRES_MODIFICATION: ["SUBMITTED", "CANCELLED"],
+      REQUIRES_MODIFICATION: ["SUBMITTED"],
     };
     const allowed = SELF_SERVICE_TRANSITIONS[existing.status] ?? [];
     if (!allowed.includes(newStatus)) {
