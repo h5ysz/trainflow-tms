@@ -22,6 +22,7 @@ import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/lib/store/app-store";
 import { canPerformAction } from "@/lib/auth/permissions";
+import { ImportDialog, ExportDialog } from "@/components/common/import-export-dialogs";
 
 interface RequestImportResult {
   requestsCreated: number;
@@ -145,6 +146,8 @@ export function TrainingRequestsRoute() {
   const [courses, setCourses] = useReactState<CourseOption[]>([]);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
     useList<Request>("/requests");
@@ -234,12 +237,9 @@ export function TrainingRequestsRoute() {
     }
   };
 
-  const handleImportClick = () => fileInputRef.current?.click();
+  const handleImportClick = () => setImportDialogOpen(true);
 
-  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
+  const handleImportFile = async (file: File) => {
     setImporting(true);
     try {
       const result = await api.postFile<RequestImportResult>("/requests/import", file);
@@ -503,12 +503,11 @@ export function TrainingRequestsRoute() {
         icon={ClipboardList}
         actions={
           <>
-            <Button variant="outline" onClick={() => window.open("/api/requests/export", "_blank")}>
+            <Button variant="outline" onClick={() => setExportDialogOpen(true)}>
               <Download className="h-4 w-4 me-1.5" />{t("requests.export")}
             </Button>
             {canCreate && (
               <>
-                <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={(e) => void handleImportFile(e)} />
                 <Button variant="outline" onClick={handleImportClick} disabled={importing}>
                   <Upload className="h-4 w-4 me-1.5" />{t("requests.import")}
                 </Button>
@@ -518,6 +517,43 @@ export function TrainingRequestsRoute() {
           </>
         }
       />
+
+      {/* ─── Enhanced Import / Export Dialogs ─── */}
+      <ImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        onDeviceImport={handleImportFile}
+        onImportFromArchive={async (requestId, archiveItems) => {
+          const result = await api.post<{ trainees: TraineeEntry[]; courseInfo?: { courseId: string; courseTitle: string | null } }>(
+            "/requests/import-from-archive",
+            { sourceRequestId: requestId, items: archiveItems },
+          );
+          if (result.trainees?.length > 0) {
+            const newTrainees = result.trainees.map((t: Record<string, unknown>) => ({
+              id: crypto.randomUUID(),
+              fullName: String(t.fullName || ""),
+              nationalId: String(t.nationalId || ""),
+              nationality: String(t.nationality || ""),
+              jobTitle: String(t.jobTitle || ""),
+              idAttachmentUrl: (t.idAttachmentUrl as string) ?? null,
+              idAttachmentName: null,
+              documents: Array.isArray(t.documents) ? t.documents : [],
+              valid: false,
+              errors: [],
+            }));
+            setTrainees([...trainees, ...newTrainees]);
+          }
+          if (result.courseInfo?.courseId) {
+            setField("courseId", result.courseInfo.courseId);
+          }
+          setDialogOpen(true);
+        }}
+      />
+      <ExportDialog
+        open={exportDialogOpen}
+        onOpenChange={setExportDialogOpen}
+      />
+
       {error && (
         <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
           <AlertCircle className="h-4 w-4" /> {error}
