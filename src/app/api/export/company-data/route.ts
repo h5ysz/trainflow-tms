@@ -1182,26 +1182,32 @@ export const GET = async (req: NextRequest) => {
   wb.views = wb.views; // ensure workbook views applied
 
   // ── Generate response based on format ──
+  // Every export generates a completely NEW file — no caching at any level.
+  // Filename format: <CourseName>_<RequestNumber>.<ext>
+  // Sanitize invalid filename characters.
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-  const scopeTag = scope === "specific_course" && scopeCourseTitle
-    ? `-${scopeCourseTitle.replace(/\s+/g, "_").slice(0, 30)}`
-    : `-${scope}`;
+
+  // Build the filename base: <CourseName>_<RequestNumber>
+  // For scope=specific_request, use the actual request ref number.
+  // For other scopes, use the scope tag.
+  const courseNameForFile = (allRequests[0]?.course?.title ?? scopeCourseTitle ?? "Export")
+    .replace(/[^a-zA-Z0-9\u0600-\u06FF\u0750-\u077F_-]/g, "_") // sanitize
+    .replace(/_+/g, "_")
+    .slice(0, 40);
+  const requestRefForFile = scopeRequestRef || (allRequests[0]?.refNumber ?? "all");
+  const fileBase = `${courseNameForFile}_${requestRefForFile}`;
 
   // ── EXCEL: generate .xlsx buffer ──
   const excelBuffer = await wb.xlsx.writeBuffer();
-  const excelFilename = `gcclab-export${scopeTag}-${locale}-${stamp}.xlsx`;
+  const excelFilename = `${fileBase}.xlsx`;
 
-  if (format === "pdf") {
-    // ── PDF: generate using LibreOffice headless from HTML ──
-    // pdfkit doesn't support Arabic text shaping (contextual forms).
-    // LibreOffice handles Arabic + RTL + fonts natively.
-    // We generate an HTML file with the export data, then convert to PDF.
+  // Helper: generate PDF buffer from HTML via LibreOffice
+  async function generatePdfBuffer(): Promise<Buffer> {
     const { execSync } = await import("child_process");
     const fs = await import("fs/promises");
     const os = await import("os");
     const pathMod = await import("path");
 
-    // Build HTML content
     const isAr = locale === "ar";
     const dir = isAr ? "rtl" : "ltr";
     const textAlign = isAr ? "right" : "left";
@@ -1297,23 +1303,19 @@ export const GET = async (req: NextRequest) => {
 <body>
   <h1>GCCLAB TMS — ${isAr ? "تقرير التصدير" : "Export Report"}</h1>
   <p class="subtitle">${new Date().toLocaleString(isAr ? "ar-SA" : "en-US")}</p>
-
   <h2>${isAr ? "الملخص" : "Summary"}</h2>
-  <table>
-    <tbody>${summaryRows}</tbody>
-  </table>
-
+  <table><tbody>${summaryRows}</tbody></table>
   ${requestsRows}
   ${traineeRows}
-
   <h2 style="margin-top:24px">${isAr ? "العناصر المُصدّرة" : "Exported Items"}</h2>
   <ul>${itemsList}</ul>
 </body>
 </html>`;
 
-    // Write HTML to temp file, convert to PDF via LibreOffice
+    // Use unique temp filenames to prevent file reuse
     const tmpDir = os.tmpdir();
-    const htmlPath = pathMod.join(tmpDir, `gcclab-export-${stamp}.html`);
+    const uniqueId = `${stamp}-${Math.random().toString(36).slice(2, 8)}`;
+    const htmlPath = pathMod.join(tmpDir, `gcclab-${uniqueId}.html`);
     await fs.writeFile(htmlPath, html, "utf-8");
 
     try {
@@ -1321,57 +1323,63 @@ export const GET = async (req: NextRequest) => {
         timeout: 30000,
         env: { ...process.env, HOME: process.env.HOME || "/tmp" },
       });
-      const pdfPath = pathMod.join(tmpDir, `gcclab-export-${stamp}.pdf`);
+      const pdfPath = pathMod.join(tmpDir, `gcclab-${uniqueId}.pdf`);
       const pdfBuffer = await fs.readFile(pdfPath);
-      // Cleanup
+      // Cleanup temp files
       await fs.unlink(htmlPath).catch(() => {});
       await fs.unlink(pdfPath).catch(() => {});
-
-      const pdfFilename = `gcclab-export${scopeTag}-${locale}-${stamp}.pdf`;
-      return new Response(pdfBuffer, {
-        headers: {
-          "Content-Type": "application/pdf",
-          "Content-Disposition": `attachment; filename="${pdfFilename}"`,
-          "Cache-Control": "no-store",
-        },
-      });
+      return pdfBuffer;
     } catch {
-      // If LibreOffice fails, fall back to simple HTML download
-      const htmlFilename = `gcclab-export${scopeTag}-${locale}-${stamp}.html`;
-      return new Response(html, {
-        headers: {
-          "Content-Type": "text/html; charset=utf-8",
-          "Content-Disposition": `attachment; filename="${htmlFilename}"`,
-          "Cache-Control": "no-store",
-        },
-      });
+      // If LibreOffice fails, return HTML as fallback
+      await fs.unlink(htmlPath).catch(() => {});
+      return Buffer.from(html, "utf-8");
     }
   }
 
+  // ── PDF format ──
+  if (format === "pdf") {
+    const pdfBuffer = await generatePdfBuffer();
+    const pdfFilename = `${fileBase}.pdf`;
+    const isPdfFallback = pdfBuffer.length > 0 && pdfBuffer[0] === 0x25; // '%' = HTML, '%PDF' = real PDF
+    return new Response(pdfBuffer, {
+      headers: {
+        "Content-Type": isPdfFallback ? "application/pdf" : "text/html; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${pdfFilename}"`,
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        "Pragma": "no-cache",
+        "Expires": "0",
+      },
+    });
+  }
+
+  // ── ZIP format: Excel + PDF + Attachments ──
   if (format === "zip") {
-    // ── ZIP: archive the Excel + any attachment files ──
     const JSZip = (await import("jszip")).default;
     const zip = new JSZip();
 
-    // Add the Excel file
+    // Add Excel
     zip.file(excelFilename, excelBuffer);
 
-    // Add attachment files if requested
+    // Add PDF
+    const pdfBuffer = await generatePdfBuffer();
+    zip.file(`${fileBase}.pdf`, pdfBuffer);
+
+    // Add attachment files with original filenames
     if (items.includes("attachments") && rows.length > 0) {
       const attachmentsFolder = zip.folder("attachments");
       if (attachmentsFolder) {
+        const fs = await import("fs/promises");
+        const path = await import("path");
         for (const a of rows) {
           const relativePath = a.url.replace(/^https?:\/\/[^/]+/, "");
+          // Use the original display name, fallback to URL basename
           const fileName = a.fileName || relativePath.split("/").pop() || "attachment";
-          // Try to read the file from public/uploads
-          const fs = await import("fs/promises");
-          const path = await import("path");
           const filePath = path.join(process.cwd(), "public", relativePath);
           try {
             const fileData = await fs.readFile(filePath);
             attachmentsFolder.file(fileName, fileData);
           } catch {
-            // File not on disk — add a text file with the URL
+            // File not on disk — add a text file with metadata
             attachmentsFolder.file(`${fileName}.url.txt`, `URL: ${a.url}\nTrainee: ${a.traineeName}\nRequest: ${a.requestRef}`);
           }
         }
@@ -1379,12 +1387,14 @@ export const GET = async (req: NextRequest) => {
     }
 
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
-    const zipFilename = `gcclab-export${scopeTag}-${locale}-${stamp}.zip`;
+    const zipFilename = `${fileBase}.zip`;
     return new Response(zipBuffer, {
       headers: {
         "Content-Type": "application/zip",
         "Content-Disposition": `attachment; filename="${zipFilename}"`,
-        "Cache-Control": "no-store",
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        "Pragma": "no-cache",
+        "Expires": "0",
       },
     });
   }
@@ -1394,7 +1404,9 @@ export const GET = async (req: NextRequest) => {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": `attachment; filename="${excelFilename}"`,
-      "Cache-Control": "no-store",
+      "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+      "Pragma": "no-cache",
+      "Expires": "0",
     },
   });
 };
