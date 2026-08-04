@@ -20,6 +20,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { api } from "@/lib/api/client";
 import { Input } from "@/components/ui/input";
+import { useI18n } from "@/lib/i18n/context";
 import {
   X, Send, Loader2, Trash2, Lightbulb,
   ClipboardList, FileText, BarChart3, HelpCircle, MessageSquare,
@@ -29,25 +30,11 @@ import {
 import { cn } from "@/lib/utils";
 import { ActionPreviewCard, type PreviewResult, type ExecuteResult } from "./copilot/action-preview-card";
 
-// ─── Locale detection — Arabic-first ────────────────────────────────────────
-// Default is "ar" (Arabic). The stored locale is read from localStorage after
-// mount; if it's explicitly "en", we switch to English. Otherwise Arabic stays.
-function useLocale(): string {
-  const [locale, setLocale] = useState("ar");
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      const stored = localStorage.getItem("gcclab-tms-store");
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored);
-          if (parsed.state?.locale === "en") setLocale("en");
-        } catch { /* ignore */ }
-      }
-    }, 0);
-    return () => clearTimeout(handle);
-  }, []);
-  return locale;
-}
+// Locale is now sourced from the I18nContext (the same context the rest of the
+// app uses). This is reactive — when the user switches language, the panel
+// updates instantly. The old useLocale() fallback read localStorage directly
+// and didn't react to locale changes, which caused the panel to stay in
+// English even after the user switched to Arabic.
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -79,9 +66,9 @@ const QUICK_ACTIONS: QuickAction[] = [
   {
     id: "create-request",
     icon: ClipboardList,
-    titleAr: "إنشاء طلب تدريب",
+    titleAr: "إنشاء طلب دورة",
     titleEn: "Create Course Request",
-    descAr: "ابدأ طلب تدريب جديد للشركة",
+    descAr: "ابدأ طلب تدريب جديد",
     descEn: "Start a new training request",
     prompt: "Help me create a new training course request",
     accent: "from-blue-500 to-blue-600",
@@ -101,7 +88,7 @@ const QUICK_ACTIONS: QuickAction[] = [
     icon: FileText,
     titleAr: "إنشاء تقرير",
     titleEn: "Generate Report",
-    descAr: "إنشاء تقرير تفصيلي للنشاط",
+    descAr: "إنشاء تقرير تفصيلي",
     descEn: "Generate a detailed activity report",
     prompt: "Generate a summary report of training activities",
     accent: "from-amber-500 to-amber-600",
@@ -111,7 +98,7 @@ const QUICK_ACTIONS: QuickAction[] = [
     icon: BarChart3,
     titleAr: "تحليل البيانات",
     titleEn: "Analyze Data",
-    descAr: "رؤى وإحصائيات الأداء",
+    descAr: "تحليلات وإحصائيات الأداء",
     descEn: "Performance insights and statistics",
     prompt: "Analyze training data and show key insights",
     accent: "from-purple-500 to-purple-600",
@@ -139,7 +126,7 @@ interface SuggestedQuestion {
 const SUGGESTED_QUESTIONS: SuggestedQuestion[] = [
   {
     id: "add-trainee",
-    labelAr: "كيف أضيف متدرب؟",
+    labelAr: "كيف أضيف متدربًا؟",
     labelEn: "How do I add a trainee?",
     prompt: "How do I add a trainee?",
   },
@@ -151,13 +138,13 @@ const SUGGESTED_QUESTIONS: SuggestedQuestion[] = [
   },
   {
     id: "review-request",
-    labelAr: "كيف أراجع الطلب؟",
+    labelAr: "كيف أراجع طلبًا؟",
     labelEn: "How do I review a request?",
     prompt: "How do I review a request?",
   },
   {
     id: "generate-report",
-    labelAr: "كيف أصدر تقرير؟",
+    labelAr: "كيف أصدر تقريرًا؟",
     labelEn: "How do I generate a report?",
     prompt: "How do I generate a report?",
   },
@@ -166,8 +153,10 @@ const SUGGESTED_QUESTIONS: SuggestedQuestion[] = [
 const STORAGE_KEY = "gcclab-copilot-history";
 
 export function CopilotPanel() {
-  const locale = useLocale();
-  const isAr = locale !== "en"; // Arabic by default
+  // Use the real I18nContext — reactive locale + dir from the app store.
+  // This is the same context AppShell, Sidebar, Topbar, etc. use.
+  const { locale, dir } = useI18n();
+  const isAr = locale === "ar";
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -324,21 +313,21 @@ export function CopilotPanel() {
     localStorage.removeItem(STORAGE_KEY);
   };
 
-  // ─── Localized labels (Arabic-first) ─────────────────────────────────────
+  // ─── Localized labels (bilingual, reactive to locale) ───────────────────
   const L = {
-    assistantTitle: isAr ? "مساعد المختبر الخليجي الذكي" : "GCC LAB AI Assistant",
+    assistantTitle: isAr ? "مساعد GCC LAB الذكي" : "GCC LAB AI Assistant",
     assistantSubtitle: isAr ? "جاهز لمساعدتك في إدارة التدريب" : "Ready to help you manage training",
     welcome: isAr ? "مرحبًا، كيف يمكنني مساعدتك اليوم؟" : "Hello! How can I help you today?",
     welcomeDesc: isAr
-      ? "اسألني عن الدورات، المتدربين، الطلبات، التقارير، الشهادات..."
-      : "Ask me about courses, trainees, requests, reports, certificates...",
+      ? "اسألني عن الدورات التدريبية، المتدربين، الطلبات، التقارير، الشهادات، أو أي شيء داخل النظام."
+      : "Ask me about courses, trainees, requests, reports, certificates, or anything in the system.",
     quickActions: isAr ? "الإجراءات السريعة" : "Quick Actions",
     suggestedQuestions: isAr ? "أسئلة مقترحة" : "Suggested Questions",
     typeMessage: isAr ? "اكتب رسالتك..." : "Type your message...",
     aiPowered: isAr ? "يعمل بالذكاء الاصطناعي • يحترم صلاحياتك" : "AI-powered • Respects your permissions",
     clearHistory: isAr ? "مسح المحادثة" : "Clear history",
     close: isAr ? "إغلاق" : "Close",
-    openAssistant: isAr ? "افتح مساعد المختبر الخليجي" : "Open GCC LAB Assistant",
+    openAssistant: isAr ? "افتح مساعد GCC LAB" : "Open GCC LAB Assistant",
     preparingAction: isAr ? "جاري تحضير معاينة الإجراء..." : "Preparing action preview...",
     send: isAr ? "إرسال" : "Send",
     you: isAr ? "أنت" : "You",
@@ -429,8 +418,10 @@ export function CopilotPanel() {
             onClick={() => setOpen(false)}
           />
 
-          {/* Panel container — always on the physical right */}
+          {/* Panel container — always on the physical right, but dir follows
+              locale so Arabic text/bubbles/avatars align correctly. */}
           <div
+            dir={dir}
             className={cn(
               "absolute right-0 top-0 h-full",
               "w-full sm:w-[440px] md:w-[480px]",
@@ -607,14 +598,19 @@ export function CopilotPanel() {
                   </div>
                 </div>
               ) : (
-                /* ─── Conversation messages ─────────────────────────────── */
-                <div className="space-y-6">
+                /* ─── Conversation messages ───────────────────────────────
+                    dir="ltr" on the messages container keeps the physical
+                    layout consistent (user right, assistant left) in both
+                    RTL and LTR. Each bubble uses dir="auto" so the text
+                    inside flows according to its own script (Arabic RTL,
+                    English LTR) — same behavior as WhatsApp/Telegram. */
+                <div className="space-y-6" dir="ltr">
                   {messages.map((msg, idx) => (
                     <div key={idx} className="space-y-2.5 animate-in fade-in slide-in-from-bottom-1.5 duration-300">
                       <div
                         className={cn(
                           "flex gap-3 items-end",
-                          msg.role === "user" ? "justify-end flex-row-reverse" : "justify-start"
+                          msg.role === "user" ? "justify-end" : "justify-start"
                         )}
                       >
                         {/* Assistant avatar — GCC LAB logo */}
@@ -632,8 +628,9 @@ export function CopilotPanel() {
                           </div>
                         )}
 
-                        {/* Message bubble */}
+                        {/* Message bubble — dir="auto" detects text direction */}
                         <div
+                          dir="auto"
                           className={cn(
                             "px-4 py-3 text-[13.5px] whitespace-pre-wrap break-words leading-relaxed",
                             msg.role === "user"
@@ -644,7 +641,7 @@ export function CopilotPanel() {
                           {msg.content}
                         </div>
 
-                        {/* User avatar — Arabic initial circle */}
+                        {/* User avatar */}
                         {msg.role === "user" && (
                           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-foreground font-bold text-[13px] shadow-sm ring-2 ring-background">
                             {L.you.charAt(0)}
