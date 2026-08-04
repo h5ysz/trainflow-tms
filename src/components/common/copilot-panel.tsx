@@ -79,7 +79,7 @@ const QUICK_ACTIONS: QuickAction[] = [
   {
     id: "create-request",
     icon: ClipboardList,
-    titleAr: "إنشاء طلب دورة",
+    titleAr: "إنشاء طلب تدريب",
     titleEn: "Create Course Request",
     descAr: "ابدأ طلب تدريب جديد للشركة",
     descEn: "Start a new training request",
@@ -326,19 +326,19 @@ export function CopilotPanel() {
 
   // ─── Localized labels (Arabic-first) ─────────────────────────────────────
   const L = {
-    assistantTitle: isAr ? "مساعد GCC LAB الذكي" : "GCC LAB AI Assistant",
+    assistantTitle: isAr ? "مساعد المختبر الخليجي الذكي" : "GCC LAB AI Assistant",
     assistantSubtitle: isAr ? "جاهز لمساعدتك في إدارة التدريب" : "Ready to help you manage training",
     welcome: isAr ? "مرحبًا، كيف يمكنني مساعدتك اليوم؟" : "Hello! How can I help you today?",
     welcomeDesc: isAr
-      ? "اسألني عن الدورات، المتدربين، التقارير، الشهادات، أو أي شيء يخص النظام"
-      : "Ask me about courses, trainees, reports, certificates, or anything about the system",
+      ? "اسألني عن الدورات، المتدربين، الطلبات، التقارير، الشهادات..."
+      : "Ask me about courses, trainees, requests, reports, certificates...",
     quickActions: isAr ? "إجراءات سريعة" : "Quick Actions",
     suggestedQuestions: isAr ? "أسئلة شائعة" : "Suggested Questions",
     typeMessage: isAr ? "اكتب رسالتك..." : "Type your message...",
-    aiPowered: isAr ? "مدعوم بالذكاء الاصطناعي • يحترم صلاحياتك" : "AI-powered • Respects your permissions",
+    aiPowered: isAr ? "يعمل بالذكاء الاصطناعي • يحترم صلاحياتك" : "AI-powered • Respects your permissions",
     clearHistory: isAr ? "مسح المحادثة" : "Clear history",
     close: isAr ? "إغلاق" : "Close",
-    openAssistant: isAr ? "افتح مساعد GCC LAB" : "Open GCC LAB Assistant",
+    openAssistant: isAr ? "افتح مساعد المختبر الخليجي" : "Open GCC LAB Assistant",
     preparingAction: isAr ? "جاري تحضير معاينة الإجراء..." : "Preparing action preview...",
     send: isAr ? "إرسال" : "Send",
     you: isAr ? "أنت" : "You",
@@ -351,12 +351,21 @@ export function CopilotPanel() {
           Perfect circle, GCC LAB logo, soft pulse, hover glow, modern shadow
           ════════════════════════════════════════════════════════════════════ */}
       {!open && (
-        <div className="fixed bottom-6 right-6 z-50">
+        <div
+          className="fixed bottom-6 right-6 z-50 animate-in fade-in zoom-in-50 duration-500"
+          style={{ animationFillMode: "both" }}
+        >
+          {/* Soft ambient glow behind the button */}
+          <div
+            className="pointer-events-none absolute -inset-3 rounded-full bg-primary/20 blur-xl"
+            aria-hidden
+          />
+
           {/* Pulse ring — only when shouldPulse */}
           {shouldPulse && (
             <>
-              <span className="pointer-events-none absolute inset-0 rounded-full bg-primary/30 animate-ping" style={{ animationDuration: "2.5s" }} />
-              <span className="pointer-events-none absolute inset-0 rounded-full bg-primary/20 animate-ping" style={{ animationDuration: "2.5s", animationDelay: "0.8s" }} />
+              <span className="pointer-events-none absolute inset-0 rounded-full bg-primary/30 animate-ping" style={{ animationDuration: "2.8s" }} />
+              <span className="pointer-events-none absolute inset-0 rounded-full bg-primary/20 animate-ping" style={{ animationDuration: "2.8s", animationDelay: "1s" }} />
             </>
           )}
 
@@ -365,17 +374,28 @@ export function CopilotPanel() {
             className={cn(
               "relative flex h-14 w-14 items-center justify-center rounded-full",
               "bg-gradient-to-br from-primary to-primary-hover",
-              "shadow-[0_8px_32px_-8px_rgba(0,0,0,0.3),0_4px_12px_-2px_rgba(0,0,0,0.15)]",
-              "ring-1 ring-white/20",
-              "transition-all duration-300 cubic-bezier(0.4,0,0.2,1)",
-              "hover:scale-110 hover:shadow-[0_12px_40px_-8px_rgba(0,0,0,0.4),0_0_32px_rgba(59,130,246,0.3)]",
+              "shadow-[0_10px_30px_-6px_rgba(0,0,0,0.35),0_4px_10px_-2px_rgba(0,0,0,0.12)]",
+              "ring-1 ring-white/25",
+              "transition-all duration-300 ease-out",
+              "hover:scale-105 hover:shadow-[0_14px_36px_-6px_rgba(0,0,0,0.4),0_0_28px_rgba(59,130,246,0.25)]",
               "active:scale-95",
               "group",
+              // Subtle floating animation — gentle 3s up/down
+              "animate-[float_3s_ease-in-out_infinite]",
             )}
+            style={{
+              animationName: "float",
+              animationDuration: "3s",
+              animationIterationCount: "infinite",
+              animationTimingFunction: "ease-in-out",
+            }}
             aria-label={L.openAssistant}
           >
+            {/* Inline keyframes for the floating animation */}
+            <style>{`@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}`}</style>
+
             {/* Gradient overlay for depth */}
-            <span className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-tr from-transparent via-white/5 to-white/20" />
+            <span className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-tr from-transparent via-white/5 to-white/25" />
 
             {/* GCC LAB official logo */}
             <Image
@@ -415,40 +435,42 @@ export function CopilotPanel() {
           >
             {/* ─── Premium Header Card ─────────────────────────────────────
                 Large circular logo, Arabic title, subtitle, gradient bg */}
-            <div className="relative shrink-0 overflow-hidden border-b">
-              {/* Gradient background */}
-              <div className="absolute inset-0 bg-gradient-to-br from-primary via-primary to-primary-hover opacity-97" />
-              <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-transparent to-white/10" />
+            <div className="relative shrink-0 overflow-hidden border-b border-primary/20">
+              {/* Gradient background — primary → primary-hover, full opacity */}
+              <div className="absolute inset-0 bg-gradient-to-br from-primary via-primary to-primary-hover" />
+              <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-transparent to-white/12" />
 
-              {/* Decorative pattern */}
+              {/* Decorative dot pattern — subtle premium texture */}
               <div
-                className="absolute inset-0 opacity-10"
+                className="absolute inset-0 opacity-[0.08]"
                 style={{
                   backgroundImage: "radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 80%, white 1px, transparent 1px)",
                   backgroundSize: "32px 32px",
                 }}
               />
 
-              <div className="relative flex items-center justify-between p-5">
-                <div className="flex items-center gap-3.5 min-w-0">
-                  {/* Large circular logo with glow */}
+              <div className="relative flex items-center justify-between px-5 py-5">
+                <div className="flex items-center gap-4 min-w-0">
+                  {/* Large circular logo with soft glow + premium ring */}
                   <div className="relative shrink-0">
-                    <div className="absolute inset-0 rounded-full bg-white/20 blur-md" />
-                    <div className="relative flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-lg ring-2 ring-white/30">
+                    {/* Soft glow halo */}
+                    <div className="absolute -inset-1 rounded-full bg-white/25 blur-md" aria-hidden />
+                    {/* Logo container */}
+                    <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-[0_4px_14px_rgba(0,0,0,0.18)] ring-2 ring-white/40">
                       <Image
                         src="/gcclab-icon.png"
                         alt="GCC LAB"
-                        width={30}
-                        height={30}
-                        className="h-8 w-8 shrink-0 object-contain rounded-full"
+                        width={34}
+                        height={34}
+                        className="h-9 w-9 shrink-0 object-contain rounded-full"
                       />
                     </div>
                   </div>
-                  <div className="min-w-0">
-                    <h2 className="text-base font-bold text-white leading-tight tracking-tight truncate">
+                  <div className="min-w-0 flex flex-col gap-0.5">
+                    <h2 className="text-[17px] font-bold text-white leading-tight tracking-tight truncate">
                       {L.assistantTitle}
                     </h2>
-                    <p className="text-xs text-white/80 leading-tight truncate mt-0.5">
+                    <p className="text-[12.5px] text-white/85 leading-tight truncate font-medium">
                       {L.assistantSubtitle}
                     </p>
                   </div>
@@ -457,7 +479,7 @@ export function CopilotPanel() {
                   {messages.length > 0 && (
                     <button
                       onClick={clearHistory}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                      className="flex h-9 w-9 items-center justify-center rounded-xl text-white/70 hover:text-white hover:bg-white/15 transition-all duration-200 active:scale-90"
                       title={L.clearHistory}
                       aria-label={L.clearHistory}
                     >
@@ -466,11 +488,11 @@ export function CopilotPanel() {
                   )}
                   <button
                     onClick={() => setOpen(false)}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                    className="flex h-9 w-9 items-center justify-center rounded-xl text-white/70 hover:text-white hover:bg-white/15 transition-all duration-200 active:scale-90"
                     title={L.close}
                     aria-label={L.close}
                   >
-                    <X className="h-4 w-4" />
+                    <X className="h-5 w-5" />
                   </button>
                 </div>
               </div>
@@ -480,17 +502,17 @@ export function CopilotPanel() {
             <div ref={scrollRef} className="flex-1 overflow-y-auto tf-scroll px-4 py-5 space-y-5 bg-muted/30">
               {messages.length === 0 && showSuggestions ? (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
-                  {/* Welcome card */}
-                  <div className="rounded-2xl bg-card p-4 shadow-sm ring-1 ring-border/50">
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 shadow-md">
+                  {/* Welcome card — softer shadow, better padding, premium typography */}
+                  <div className="rounded-2xl bg-card p-5 shadow-[0_2px_12px_-2px_rgba(0,0,0,0.06)] ring-1 ring-border/40">
+                    <div className="flex items-start gap-3.5">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-amber-500 shadow-[0_4px_12px_-2px_rgba(245,158,11,0.4)]">
                         <Lightbulb className="h-5 w-5 text-white" />
                       </div>
-                      <div className="min-w-0 flex-1 pt-0.5">
-                        <h3 className="font-bold text-sm text-foreground leading-tight">
+                      <div className="min-w-0 flex-1 pt-1">
+                        <h3 className="font-bold text-[15px] text-foreground leading-snug">
                           {L.welcome}
                         </h3>
-                        <p className="text-xs text-muted-foreground leading-relaxed mt-1.5">
+                        <p className="text-[12.5px] text-muted-foreground leading-relaxed mt-1.5">
                           {L.welcomeDesc}
                         </p>
                       </div>
@@ -498,15 +520,15 @@ export function CopilotPanel() {
                   </div>
 
                   {/* Quick Actions */}
-                  <div className="space-y-2.5">
-                    <div className="flex items-center gap-2 px-1">
-                      <div className="h-px flex-1 bg-border" />
-                      <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3 px-1">
+                      <div className="h-px flex-1 bg-gradient-to-l from-transparent to-border/70 rtl:bg-gradient-to-r" />
+                      <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.12em]">
                         {L.quickActions}
                       </span>
-                      <div className="h-px flex-1 bg-border" />
+                      <div className="h-px flex-1 bg-gradient-to-r from-transparent to-border/70 rtl:bg-gradient-to-l" />
                     </div>
-                    <div className="grid grid-cols-1 gap-2">
+                    <div className="grid grid-cols-1 gap-2.5">
                       {QUICK_ACTIONS.map((action, idx) => {
                         const Icon = action.icon;
                         const title = isAr ? action.titleAr : action.titleEn;
@@ -516,29 +538,32 @@ export function CopilotPanel() {
                             key={action.id}
                             onClick={() => void send(action.prompt)}
                             className={cn(
-                              "group flex items-center gap-3 rounded-xl bg-card p-3 text-start",
-                              "ring-1 ring-border/50",
-                              "transition-all duration-200",
-                              "hover:ring-primary/30 hover:shadow-md hover:-translate-y-0.5",
-                              "active:translate-y-0 active:scale-[0.98]",
+                              "group flex items-center gap-3.5 rounded-2xl bg-card p-3.5 text-start",
+                              "ring-1 ring-border/40",
+                              "transition-all duration-250 ease-out",
+                              "hover:ring-primary/25 hover:shadow-[0_6px_20px_-6px_rgba(0,0,0,0.12)] hover:-translate-y-0.5",
+                              "active:translate-y-0 active:scale-[0.98] active:shadow-sm",
                             )}
-                            style={{ animationDelay: `${idx * 50}ms` }}
+                            style={{
+                              animationDelay: `${idx * 60}ms`,
+                              animationFillMode: "both",
+                            }}
                           >
                             <div className={cn(
-                              "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
-                              "bg-gradient-to-br shadow-sm",
+                              "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
+                              "bg-gradient-to-br shadow-[0_3px_10px_-2px_rgba(0,0,0,0.15)]",
                               action.accent,
-                              "transition-transform duration-200 group-hover:scale-110",
+                              "transition-transform duration-250 ease-out group-hover:scale-110 group-active:scale-95",
                             )}>
-                              <Icon className="h-5 w-5 text-white" />
+                              <Icon className="h-5 w-5 text-white" strokeWidth={2.2} />
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className="text-sm font-semibold text-foreground leading-tight">{title}</div>
-                              <div className="text-[11px] text-muted-foreground leading-tight mt-0.5 truncate">
+                              <div className="text-[13.5px] font-semibold text-foreground leading-tight">{title}</div>
+                              <div className="text-[11.5px] text-muted-foreground leading-tight mt-0.5 truncate">
                                 {desc}
                               </div>
                             </div>
-                            <ArrowLeft className="h-4 w-4 text-muted-foreground/40 shrink-0 transition-all duration-200 group-hover:text-primary group-hover:-translate-x-1 rtl:rotate-180" />
+                            <ArrowLeft className="h-4 w-4 text-muted-foreground/30 shrink-0 transition-all duration-250 group-hover:text-primary group-hover:-translate-x-1 rtl:rotate-180" />
                           </button>
                         );
                       })}
@@ -546,13 +571,13 @@ export function CopilotPanel() {
                   </div>
 
                   {/* Suggested Questions */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 px-1">
-                      <div className="h-px flex-1 bg-border" />
-                      <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3 px-1">
+                      <div className="h-px flex-1 bg-gradient-to-l from-transparent to-border/70 rtl:bg-gradient-to-r" />
+                      <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.12em]">
                         {L.suggestedQuestions}
                       </span>
-                      <div className="h-px flex-1 bg-border" />
+                      <div className="h-px flex-1 bg-gradient-to-r from-transparent to-border/70 rtl:bg-gradient-to-l" />
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       {SUGGESTED_QUESTIONS.map((q) => (
@@ -560,10 +585,11 @@ export function CopilotPanel() {
                           key={q.id}
                           onClick={() => void send(q.prompt)}
                           className={cn(
-                            "rounded-xl bg-card px-3 py-2.5 text-start text-xs font-medium",
-                            "ring-1 ring-border/50 text-foreground/80",
-                            "transition-all duration-200",
-                            "hover:ring-primary/30 hover:bg-primary/5 hover:text-primary hover:shadow-sm",
+                            "rounded-xl bg-card px-3.5 py-3 text-start text-[12.5px] font-medium",
+                            "ring-1 ring-border/40 text-foreground/80",
+                            "transition-all duration-200 ease-out",
+                            "hover:ring-primary/25 hover:bg-primary/5 hover:text-primary hover:shadow-[0_2px_8px_-2px_rgba(0,0,0,0.06)]",
+                            "active:scale-[0.97]",
                           )}
                         >
                           {isAr ? q.labelAr : q.labelEn}
@@ -574,25 +600,25 @@ export function CopilotPanel() {
                 </div>
               ) : (
                 /* ─── Conversation messages ─────────────────────────────── */
-                <div className="space-y-5">
+                <div className="space-y-6">
                   {messages.map((msg, idx) => (
-                    <div key={idx} className="space-y-2 animate-in fade-in slide-in-from-bottom-1 duration-300">
+                    <div key={idx} className="space-y-2.5 animate-in fade-in slide-in-from-bottom-1.5 duration-300">
                       <div
                         className={cn(
-                          "flex gap-2.5 items-end",
-                          msg.role === "user" ? "justify-end" : "justify-start"
+                          "flex gap-3 items-end",
+                          msg.role === "user" ? "justify-end flex-row-reverse" : "justify-start"
                         )}
                       >
                         {/* Assistant avatar — GCC LAB logo */}
                         {msg.role === "assistant" && (
                           <div className="relative shrink-0">
-                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-hover shadow-md ring-2 ring-background">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-hover shadow-[0_3px_10px_-2px_rgba(0,0,0,0.2)] ring-2 ring-background">
                               <Image
                                 src="/gcclab-icon.png"
                                 alt="GCC LAB"
-                                width={20}
-                                height={20}
-                                className="h-5 w-5 shrink-0 object-contain rounded-full"
+                                width={22}
+                                height={22}
+                                className="h-[22px] w-[22px] shrink-0 object-contain rounded-full"
                               />
                             </div>
                           </div>
@@ -601,18 +627,18 @@ export function CopilotPanel() {
                         {/* Message bubble */}
                         <div
                           className={cn(
-                            "px-4 py-2.5 text-sm whitespace-pre-wrap break-words leading-relaxed",
+                            "px-4 py-3 text-[13.5px] whitespace-pre-wrap break-words leading-relaxed",
                             msg.role === "user"
-                              ? "bg-gradient-to-br from-primary to-primary-hover text-primary-foreground rounded-2xl rounded-br-md shadow-md max-w-[78%] font-medium"
-                              : "bg-card text-card-foreground rounded-2xl rounded-bl-md shadow-sm ring-1 ring-border/50 max-w-[78%]"
+                              ? "bg-gradient-to-br from-primary to-primary-hover text-primary-foreground rounded-[1.25rem] rounded-br-md shadow-[0_3px_12px_-3px_rgba(0,0,0,0.2)] max-w-[75%] font-medium"
+                              : "bg-card text-card-foreground rounded-[1.25rem] rounded-bl-md shadow-[0_2px_8px_-2px_rgba(0,0,0,0.06)] ring-1 ring-border/40 max-w-[75%]"
                           )}
                         >
                           {msg.content}
                         </div>
 
-                        {/* User avatar — initials circle */}
+                        {/* User avatar — Arabic initial circle */}
                         {msg.role === "user" && (
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-foreground font-bold text-xs shadow-sm ring-2 ring-background">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-foreground font-bold text-[13px] shadow-sm ring-2 ring-background">
                             {L.you.charAt(0)}
                           </div>
                         )}
@@ -624,7 +650,7 @@ export function CopilotPanel() {
                         && msg.previewToken
                         && !msg.actionResolved
                         && (
-                          <div className="ps-11.5" style={{ paddingLeft: "2.875rem" }}>
+                          <div className="ps-12" style={{ paddingLeft: "3rem" }}>
                             <ActionPreviewCard
                               preview={msg.preview}
                               previewToken={msg.previewToken}
@@ -641,9 +667,9 @@ export function CopilotPanel() {
                         && !msg.preview
                         && !msg.actionResolved
                         && (
-                          <div className="ps-11.5" style={{ paddingLeft: "2.875rem" }}>
-                            <div className="rounded-xl bg-card p-3 text-xs text-muted-foreground flex items-center gap-2 ring-1 ring-border/50 shadow-sm">
-                              <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                          <div className="ps-12" style={{ paddingLeft: "3rem" }}>
+                            <div className="rounded-xl bg-card p-3 text-[12px] text-muted-foreground flex items-center gap-2 ring-1 ring-border/40 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.06)]">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
                               {L.preparingAction}
                             </div>
                           </div>
@@ -653,17 +679,17 @@ export function CopilotPanel() {
 
                   {/* ─── Typing indicator ─────────────────────────────────── */}
                   {loading && (
-                    <div className="flex gap-2.5 items-end justify-start animate-in fade-in duration-200">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-hover shadow-md ring-2 ring-background">
+                    <div className="flex gap-3 items-end justify-start animate-in fade-in slide-in-from-bottom-1 duration-200">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-hover shadow-[0_3px_10px_-2px_rgba(0,0,0,0.2)] ring-2 ring-background">
                         <Image
                           src="/gcclab-icon.png"
                           alt="GCC LAB"
-                          width={20}
-                          height={20}
-                          className="h-5 w-5 shrink-0 object-contain rounded-full"
+                          width={22}
+                          height={22}
+                          className="h-[22px] w-[22px] shrink-0 object-contain rounded-full"
                         />
                       </div>
-                      <div className="bg-card rounded-2xl rounded-bl-md px-5 py-4 shadow-sm ring-1 ring-border/50">
+                      <div className="bg-card rounded-[1.25rem] rounded-bl-md px-5 py-4 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.06)] ring-1 ring-border/40">
                         <div className="flex items-center gap-1.5">
                           <span className="h-2 w-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "1s" }} />
                           <span className="h-2 w-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: "150ms", animationDuration: "1s" }} />
@@ -677,8 +703,8 @@ export function CopilotPanel() {
             </div>
 
             {/* ─── Input Area ─────────────────────────────────────────────── */}
-            <div className="shrink-0 border-t bg-background p-3">
-              <div className="flex items-end gap-2">
+            <div className="shrink-0 border-t border-border/40 bg-background px-4 py-3.5">
+              <div className="flex items-end gap-2.5">
                 <div className="relative flex-1">
                   <Input
                     ref={inputRef}
@@ -692,30 +718,30 @@ export function CopilotPanel() {
                     }}
                     placeholder={L.typeMessage}
                     disabled={loading}
-                    className="h-11 rounded-2xl pe-3 ps-4 text-sm bg-muted/50 border-border/50 focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-primary/20"
+                    className="h-12 rounded-2xl pe-4 ps-4 text-[13.5px] bg-muted/40 border-border/40 placeholder:text-muted-foreground/70 focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:border-primary/30 transition-all duration-200"
                   />
                 </div>
                 <button
                   onClick={() => void send()}
                   disabled={loading || !input.trim()}
                   className={cn(
-                    "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl",
+                    "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl",
                     "bg-gradient-to-br from-primary to-primary-hover text-primary-foreground",
-                    "shadow-md transition-all duration-200",
-                    "hover:scale-105 hover:shadow-lg",
-                    "active:scale-95",
-                    "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
+                    "shadow-[0_4px_14px_-3px_rgba(0,0,0,0.2)] transition-all duration-200 ease-out",
+                    "hover:scale-105 hover:shadow-[0_6px_18px_-3px_rgba(0,0,0,0.25)]",
+                    "active:scale-95 active:shadow-sm",
+                    "disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-[0_4px_14px_-3px_rgba(0,0,0,0.2)]",
                   )}
                   aria-label={L.send}
                 >
                   {loading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <Send className="h-4 w-4 rtl:-scale-x-100" />
+                    <Send className="h-[18px] w-[18px] rtl:-scale-x-100" strokeWidth={2.2} />
                   )}
                 </button>
               </div>
-              <p className="mt-2 text-[10px] text-muted-foreground text-center font-medium">
+              <p className="mt-2.5 text-[10.5px] text-muted-foreground/80 text-center font-medium leading-tight">
                 {L.aiPowered}
               </p>
             </div>
