@@ -25,7 +25,9 @@ export const GET = withModuleAction("trainees", "view", async ({ params, user })
       jobTitle: true,
       mobile: true,
       email: true,
-      idAttachmentUrl: true,
+      // Phase 3: documents[] is the only attachment source — the legacy
+      // idAttachmentUrl column is no longer selected.
+      documents: true,
       status: true,
       companyId: true,
       deletedAt: true,

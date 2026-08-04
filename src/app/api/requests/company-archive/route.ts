@@ -34,7 +34,8 @@ export const GET = withModuleAction("requests", "view", async ({ req, user }) =>
         select: {
           trainees: {
             where: { deletedAt: null },
-            select: { trainee: { select: { documents: true, idAttachmentUrl: true } } },
+            // Phase 3: documents[] is the only attachment source.
+            select: { trainee: { select: { documents: true } } },
           },
         },
       },
@@ -48,15 +49,17 @@ export const GET = withModuleAction("requests", "view", async ({ req, user }) =>
     let hasAttachments = false;
     // Check request-level documents
     if (r.documents) hasAttachments = true;
-    // Check trainee-level documents
-    for (const rc of r.requestCourses) {
-      for (const trc of rc.trainees) {
-        if (trc.trainee?.idAttachmentUrl || trc.trainee?.documents) {
-          hasAttachments = true;
-          break;
+    // Check trainee-level documents[]
+    if (!hasAttachments) {
+      for (const rc of r.requestCourses) {
+        for (const trc of rc.trainees) {
+          if (trc.trainee?.documents) {
+            hasAttachments = true;
+            break;
+          }
         }
+        if (hasAttachments) break;
       }
-      if (hasAttachments) break;
     }
 
     return {

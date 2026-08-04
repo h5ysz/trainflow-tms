@@ -41,10 +41,34 @@ interface TraineeInfo {
   jobTitle?: string | null;
   mobile?: string | null;
   email?: string | null;
+  // Phase 3: documents[] is the single source of truth. The legacy
+  // `idAttachmentUrl` column is still returned by the API for backward
+  // compat but is ignored here.
   idAttachmentUrl?: string | null;
+  documents?: string | null; // JSON-encoded array of { url, filename, type, uploadedAt }
   status: string;
   companyId: string;
   company?: { id: string; name: string; refNumber: string } | null;
+}
+
+// Parse trainee.documents JSON and return the first ID-type document
+// (id/iqama). Returns null if no ID document is attached.
+function getIdDocumentFromTrainee(trainee: TraineeInfo): { url: string; filename?: string } | null {
+  if (!trainee.documents) return null;
+  try {
+    const parsed = JSON.parse(trainee.documents);
+    if (!Array.isArray(parsed)) return null;
+    const idDoc = parsed.find(
+      (d: unknown): d is { url: string; filename?: string; type: string } =>
+        !!d &&
+        typeof (d as { url?: unknown }).url === "string" &&
+        typeof (d as { type?: unknown }).type === "string" &&
+        ((d as { type: string }).type === "id" || (d as { type: string }).type === "iqama"),
+    );
+    return idDoc ? { url: idDoc.url, filename: idDoc.filename } : null;
+  } catch {
+    return null;
+  }
 }
 
 interface HistoryEntry {
@@ -300,26 +324,30 @@ export function TraineeDetailRoute() {
               <DetailField label={t("trainee.status")} value={trainee.status} />
             </div>
 
-            {/* ID Attachment */}
-            {trainee.idAttachmentUrl && (
-              <div className="mt-4 border-t pt-4">
-                <div className="text-xs font-medium mb-2 flex items-center gap-2">
-                  <FileText className="h-3.5 w-3.5" /> {t("trainee.idAttachment")}
+            {/* ID Attachment — Phase 3: read from documents[] */}
+            {(() => {
+              const idDoc = getIdDocumentFromTrainee(trainee);
+              if (!idDoc) return null;
+              return (
+                <div className="mt-4 border-t pt-4">
+                  <div className="text-xs font-medium mb-2 flex items-center gap-2">
+                    <FileText className="h-3.5 w-3.5" /> {t("trainee.idAttachment")}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button asChild variant="outline" size="sm">
+                      <a href={idDoc.url} target="_blank" rel="noreferrer">
+                        <Eye className="h-3.5 w-3.5 me-1.5" /> {t("requests.review.preview")}
+                      </a>
+                    </Button>
+                    <Button asChild variant="ghost" size="sm">
+                      <a href={idDoc.url} target="_blank" rel="noreferrer" download>
+                        <Download className="h-3.5 w-3.5" />
+                      </a>
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button asChild variant="outline" size="sm">
-                    <a href={trainee.idAttachmentUrl} target="_blank" rel="noreferrer">
-                      <Eye className="h-3.5 w-3.5 me-1.5" /> {t("requests.review.preview")}
-                    </a>
-                  </Button>
-                  <Button asChild variant="ghost" size="sm">
-                    <a href={trainee.idAttachmentUrl} target="_blank" rel="noreferrer" download>
-                      <Download className="h-3.5 w-3.5" />
-                    </a>
-                  </Button>
-                </div>
-              </div>
-            )}
+              );
+            })()}
           </Card>
         </TabsContent>
 

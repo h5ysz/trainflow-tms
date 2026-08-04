@@ -122,18 +122,13 @@ function parseTraineeDocuments(raw?: string | null): ParsedDoc[] {
   }
 }
 
-// Backward compat: also surface the legacy idAttachmentUrl as an "id" type document.
+// Phase 3: documents[] is the single source of truth. The legacy
+// `idAttachmentUrl` fallback shim has been removed — every URL that was
+// in idAttachmentUrl now lives in documents[] (as a `{type:"id"}` entry)
+// thanks to the Phase 2 backfill. This function is now a thin wrapper
+// around parseTraineeDocuments for readability at call sites.
 function getEffectiveDocuments(trainee: ReviewTrainee): ParsedDoc[] {
-  const docs = parseTraineeDocuments(trainee.documents);
-  if (trainee.idAttachmentUrl && !docs.some((d) => d.type === "id" || d.type === "iqama")) {
-    docs.push({
-      url: trainee.idAttachmentUrl,
-      filename: fileNameFromUrl(trainee.idAttachmentUrl),
-      type: "id",
-      uploadedAt: new Date().toISOString(),
-    });
-  }
-  return docs;
+  return parseTraineeDocuments(trainee.documents);
 }
 
 interface ReviewRequestCourse {
@@ -359,14 +354,25 @@ export function RequestReviewDialog({
   const attachmentsWithOwner = useMemo<{
     ownerName: string; ownerNationalId: string; course: string; url: string;
   }[]>(() => {
-    return allTrainees
-      .filter(({ trainee }) => Boolean(trainee.idAttachmentUrl))
-      .map(({ trainee, course }) => ({
-        ownerName: trainee.fullName,
-        ownerNationalId: trainee.nationalId,
-        course,
-        url: trainee.idAttachmentUrl as string,
-      }));
+    // Phase 3: derive the attachment list from documents[] only. Each
+    // trainee may have multiple documents (id/iqama/passport/certificate/
+    // medical/other) — surface every URL, not just the ID. This replaces
+    // the legacy single-URL `idAttachmentUrl` view.
+    const out: { ownerName: string; ownerNationalId: string; course: string; url: string }[] = [];
+    for (const { trainee, course } of allTrainees) {
+      const docs = getEffectiveDocuments(trainee);
+      for (const d of docs) {
+        if (d.url) {
+          out.push({
+            ownerName: trainee.fullName,
+            ownerNationalId: trainee.nationalId,
+            course,
+            url: d.url,
+          });
+        }
+      }
+    }
+    return out;
   }, [allTrainees]);
 
   // ─── Action handlers ───────────────────────────────────────────────────────

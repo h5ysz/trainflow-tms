@@ -899,10 +899,13 @@ export const GET = async (req: NextRequest) => {
     ws.columns = headers.map((h) => ({ header: h, key: h }));
 
     // Gather attachments from:
-    //  1. Trainee.documents (JSON array)
-    //  2. Trainee.idAttachmentUrl (legacy single field)
-    //  3. TrainingRequest.documents (JSON array)
+    //  1. Trainee.documents (JSON array) — single source of truth (Phase 3)
+    //  2. TrainingRequest.documents (JSON array)
     // (AttachmentRow type + rows array declared above the if block)
+    //
+    // Phase 3: Trainee.idAttachmentUrl is no longer read. After Phase 2
+    // backfill, every URL that was in idAttachmentUrl also lives in
+    // documents[] as a `{type:"id"}` entry.
 
     // Helper: extract a human-readable filename from the stored JSON.
     // The upload handler stores both `filename` (random hex) and `originalName`
@@ -940,7 +943,6 @@ export const GET = async (req: NextRequest) => {
       where: traineeAttachWhere,
       select: {
         fullName: true, nationalId: true, documents: true,
-        idAttachmentUrl: true,
       },
     });
     // Fetch trainee→requestRef map separately
@@ -963,19 +965,11 @@ export const GET = async (req: NextRequest) => {
     }
     for (const t of traineesForAttachments) {
       const reqRef = traineeRequestMap.get(t.nationalId) ?? "";
-      if (t.idAttachmentUrl) {
-        const fileName = getDisplayName({ url: t.idAttachmentUrl });
-        const ext = (t.idAttachmentUrl.split(".").pop() ?? "FILE").toUpperCase();
-        rows.push({
-          fileName,
-          fileType: ext,
-          category: locale === "ar" ? "هوية" : "ID",
-          traineeName: t.fullName,
-          requestRef: reqRef,
-          uploadedAt: "",
-          url: t.idAttachmentUrl,
-        });
-      }
+      // Phase 3: documents[] is the single source of truth. The legacy
+      // `idAttachmentUrl` column is no longer read here — after Phase 2
+      // backfill, every URL that was in idAttachmentUrl also lives in
+      // documents[] (as a `{type:"id"}` entry), so iterating documents[]
+      // alone produces the correct, deduplicated attachment rows.
       if (t.documents) {
         try {
           const docs = JSON.parse(t.documents) as Array<{

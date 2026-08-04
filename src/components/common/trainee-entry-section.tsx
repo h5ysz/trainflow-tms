@@ -231,6 +231,48 @@ function emptyRow(partial?: Partial<TraineeEntry>): TraineeEntry {
   };
 }
 
+// ── Phase 1: documents[] is the single source of truth ────────────────────
+// The legacy `idAttachmentUrl` field is no longer written by any client
+// callback. All ID uploads go into `documents[]` as `{type:"id"}` entries.
+// These helpers locate the ID-type document within documents[] for display,
+// stats, and filtering — they never read `idAttachmentUrl`.
+const ID_DOC_TYPES: TraineeDocument["type"][] = ["id", "iqama"];
+
+function getIdDocument(row: TraineeEntry): TraineeDocument | undefined {
+  return row.documents.find((d) => ID_DOC_TYPES.includes(d.type));
+}
+
+function hasIdDocument(row: TraineeEntry): boolean {
+  return getIdDocument(row) !== undefined;
+}
+
+// Phase 1 — normalize legacy `idAttachmentUrl` into documents[] on load.
+//
+// When loading existing trainee data from the API (which still returns the
+// legacy column for backward compat), fold any `idAttachmentUrl` value into
+// `documents[]` as a `{type:"id"}` entry IF that URL is not already
+// represented. This ensures the in-memory TraineeEntry state is always
+// consistent with the new single-source-of-truth model, regardless of
+// whether the DB row has been backfilled yet (Phase 2).
+//
+// After Phase 2 backfill completes, this becomes a no-op for all rows
+// (the URL will already be in documents[]).
+export function normalizeIdAttachmentIntoDocuments(
+  idAttachmentUrl: string | null | undefined,
+  documents: TraineeDocument[],
+): TraineeDocument[] {
+  if (!idAttachmentUrl) return documents;
+  const alreadyPresent = documents.some((d) => d.url === idAttachmentUrl);
+  if (alreadyPresent) return documents;
+  const syntheticDoc: TraineeDocument = {
+    url: idAttachmentUrl,
+    filename: idAttachmentUrl.split("/").pop() ?? "id-attachment",
+    type: "id",
+    uploadedAt: new Date().toISOString(),
+  };
+  return [...documents, syntheticDoc];
+}
+
 function validateRow(row: TraineeEntry, allIds: Map<string, number>, selfIndex: number): TraineeEntry {
   const errors: string[] = [];
   if (!row.fullName.trim()) errors.push("Missing name");
@@ -326,7 +368,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
       return id && (idCounts.get(id) ?? 0) > 1;
     }).length;
     const missingAttachment = trainees.filter(
-      (r) => r.fullName.trim() && r.nationalId.trim() && !r.idAttachmentUrl
+      (r) => r.fullName.trim() && r.nationalId.trim() && !hasIdDocument(r)
     ).length;
     return { total, valid, invalid, duplicates, missingAttachment };
   }, [trainees]);
@@ -352,7 +394,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
           return id ? (idCounts.get(id) ?? 0) > 1 : false;
         }
         case "missing-attachment":
-          return r.fullName.trim() !== "" && r.nationalId.trim() !== "" && !r.idAttachmentUrl;
+          return r.fullName.trim() !== "" && r.nationalId.trim() !== "" && !hasIdDocument(r);
         default: return true;
       }
     });
@@ -461,14 +503,26 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
   }, [filtered]);
 
   // ─── Per-row ID upload ────────────────────────────────────────────────
+  // Phase 1: writes ONLY to documents[] as a `{type:"id"}` entry. The
+  // legacy `idAttachmentUrl` field is never touched. Uploading a new ID
+  // replaces any existing "id"/"iqama" document in documents[] so the
+  // per-type uniqueness rule is preserved on the client side (the server
+  // endpoint /api/trainees/[id]/documents enforces the same rule).
   const uploadIdForRow = React.useCallback(async (rowId: string, file: File) => {
     try {
       const res = await api.postFile<UploadIdResponse>("/trainees/upload-id", file);
-      updateTrainees(trainees.map((r) => (
-        r.id === rowId
-          ? { ...r, idAttachmentUrl: res.url, idAttachmentName: res.filename }
-          : r
-      )));
+      const newDoc: TraineeDocument = {
+        url: res.url,
+        filename: file.name,
+        type: "id",
+        uploadedAt: new Date().toISOString(),
+      };
+      updateTrainees(trainees.map((r) => {
+        if (r.id !== rowId) return r;
+        // Replace any existing ID-type doc (id/iqama) — keep the rest.
+        const others = r.documents.filter((d) => !ID_DOC_TYPES.includes(d.type));
+        return { ...r, documents: [...others, newDoc] };
+      }));
       toast({ title: t("misc.success"), description: t("requests.idAttached", { name: file.name }) });
     } catch (e) {
       toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
@@ -506,7 +560,9 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
 
   // ─── Document status helper ─────────────────────────────────────────
   const getDocStatus = React.useCallback((row: TraineeEntry): "uploaded" | "missing" | "needs_update" => {
-    if (row.documents.length > 0 || row.idAttachmentUrl) return "uploaded";
+    // Phase 1: documents[] is the only source — any document (ID or other
+    // type) counts as "uploaded".
+    if (row.documents.length > 0) return "uploaded";
     if (row.fullName.trim() && row.nationalId.trim()) return "missing";
     return "needs_update";
   }, []);
@@ -518,9 +574,11 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
   }, [uploadIdForRow]);
 
   const removeIdForRow = React.useCallback((rowId: string) => {
+    // Phase 1: remove any ID-type document from documents[]. Do NOT touch
+    // the legacy `idAttachmentUrl` field (it's no longer the source of truth).
     updateTrainees(trainees.map((r) => (
       r.id === rowId
-        ? { ...r, idAttachmentUrl: null, idAttachmentName: null }
+        ? { ...r, documents: r.documents.filter((d) => !ID_DOC_TYPES.includes(d.type)) }
         : r
     )));
   }, [trainees, updateTrainees]);
@@ -564,7 +622,16 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
         return id && (id === needle || needle.includes(id) || id.includes(needle));
       });
       if (idx >= 0) {
-        next[idx] = { ...next[idx], idAttachmentUrl: u.url, idAttachmentName: u.filename };
+        // Phase 1: store the matched ID file in documents[] as `{type:"id"}`.
+        // Replace any existing ID-type doc on that row.
+        const newDoc: TraineeDocument = {
+          url: u.url,
+          filename: u.file.name,
+          type: "id",
+          uploadedAt: new Date().toISOString(),
+        };
+        const others = next[idx].documents.filter((d) => !ID_DOC_TYPES.includes(d.type));
+        next[idx] = { ...next[idx], documents: [...others, newDoc] };
         matched++;
       } else {
         unmatched.push({ filename: u.file.name, url: u.url });
@@ -789,7 +856,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
               active={filter === "missing-attachment"}
               onClick={() => setFilter("missing-attachment")}
               onJump={stats.missingAttachment > 0 ? () => {
-                const first = trainees.find((r) => r.fullName.trim() && r.nationalId.trim() && !r.idAttachmentUrl);
+                const first = trainees.find((r) => r.fullName.trim() && r.nationalId.trim() && !hasIdDocument(r));
                 if (first) jumpToRow(first.id);
               } : null}
             />
@@ -953,34 +1020,38 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
                           />
                         </div>
                         <div className="w-56 shrink-0 px-2 flex items-center gap-1">
-                          {/* ID/Iqama attachment */}
-                          {row.idAttachmentUrl ? (
-                            <>
-                              <a
-                                href={row.idAttachmentUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-xs text-primary truncate max-w-[80px]"
-                                title={row.idAttachmentName ?? "View ID attachment"}
-                              >
-                                <FileCheck className="h-3 w-3 shrink-0 text-emerald-600" />
-                                <span className="truncate">{row.idAttachmentName ?? "ID"}</span>
-                              </a>
-                              <RowIdReplace onPick={(f) => void replaceIdForRow(row.id, f)} />
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6"
-                                onClick={() => removeIdForRow(row.id)}
-                                aria-label={t("requests.removeIdAttachment")}
-                              >
-                                <X className="h-3 w-3" />
-                              </Button>
-                            </>
-                          ) : (
-                            <RowIdUpload onPick={(f) => void uploadIdForRow(row.id, f)} />
-                          )}
+                          {/* ID/Iqama attachment — Phase 1: read from documents[] */}
+                          {(() => {
+                            const idDoc = getIdDocument(row);
+                            if (idDoc) {
+                              return (
+                                <>
+                                  <a
+                                    href={idDoc.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1 text-xs text-primary truncate max-w-[80px]"
+                                    title={idDoc.filename ?? "View ID attachment"}
+                                  >
+                                    <FileCheck className="h-3 w-3 shrink-0 text-emerald-600" />
+                                    <span className="truncate">{idDoc.filename ?? "ID"}</span>
+                                  </a>
+                                  <RowIdReplace onPick={(f) => void replaceIdForRow(row.id, f)} />
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6"
+                                    onClick={() => removeIdForRow(row.id)}
+                                    aria-label={t("requests.removeIdAttachment")}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </Button>
+                                </>
+                              );
+                            }
+                            return <RowIdUpload onPick={(f) => void uploadIdForRow(row.id, f)} />;
+                          })()}
                           {/* Multi-document upload */}
                           <RowDocUpload
                             rowId={row.id}

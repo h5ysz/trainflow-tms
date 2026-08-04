@@ -32,7 +32,7 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
               trainee: {
                 select: {
                   id: true, fullName: true, nationalId: true, nationality: true,
-                  jobTitle: true, mobile: true, email: true, idAttachmentUrl: true,
+                  jobTitle: true, mobile: true, email: true,
                   documents: true,
                 },
               },
@@ -75,7 +75,6 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
           jobTitle: tr.jobTitle ?? "",
           mobile: tr.mobile ?? "",
           email: tr.email ?? "",
-          idAttachmentUrl: tr.idAttachmentUrl ?? null,
           documents,
         });
       }
@@ -112,7 +111,6 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
           jobTitle: tr.jobTitle ?? "",
           mobile: tr.mobile ?? "",
           email: tr.email ?? "",
-          idAttachmentUrl: tr.idAttachmentUrl ?? null,
           documents,
         });
       }

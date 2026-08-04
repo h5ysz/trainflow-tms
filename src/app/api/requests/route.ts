@@ -202,6 +202,21 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
       const existing = await db.trainee.findFirst({
         where: { companyId: finalCompanyId, nationalId: t.nationalId, deletedAt: null },
       });
+      // ── Phase 1: documents[] is the single source of truth ──
+      // The legacy `idAttachmentUrl` column is no longer written. Any
+      // incoming `t.idAttachmentUrl` value is folded into `documents[]`
+      // as a `{type:"id"}` entry (if that URL isn't already present),
+      // so legacy clients/scripts that still send the field don't lose
+      // data. New uploads always arrive in `t.documents[]` directly.
+      const incomingDocs = Array.isArray(t.documents) ? t.documents : [];
+      const existingDocs = existing ? parseDocsSafe(existing.documents) : [];
+      const mergedDocs = mergeIdAttachmentIntoDocuments(
+        incomingDocs,
+        existingDocs,
+        (t.idAttachmentUrl as string) ?? null,
+      );
+      const documentsJson = mergedDocs.length > 0 ? JSON.stringify(mergedDocs) : (existing ? existing.documents : null);
+
       const trainee = existing
         ? await db.trainee.update({
             where: { id: existing.id },
@@ -211,16 +226,13 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
               jobTitle: t.jobTitle ?? existing.jobTitle,
               mobile: t.mobile ?? existing.mobile,
               email: t.email ?? existing.email,
-              // Store the ID attachment URL from the current submission
-              idAttachmentUrl: (t.idAttachmentUrl as string) ?? existing.idAttachmentUrl,
               updatedAt: now,
               updatedBy: user.id,
-              // REPLACE documents entirely with the current submission's set.
-              // Previously this MERGED old + new, which caused old demo/test
-              // attachments to persist across submissions and appear in exports.
-              documents: Array.isArray(t.documents) && t.documents.length > 0
-                ? JSON.stringify(t.documents)
-                : existing.documents,
+              // ── documents[] is the ONLY attachment store ──
+              // We no longer write to `idAttachmentUrl`. The column is
+              // left untouched (whatever value was there stays) but is
+              // ignored by all read paths after Phase 3.
+              documents: documentsJson,
             },
           })
         : await db.trainee.create({
@@ -234,10 +246,9 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
               mobile: t.mobile ?? null,
               email: t.email ?? null,
               companyId: finalCompanyId,
-              idAttachmentUrl: (t.idAttachmentUrl as string) ?? null,
-              documents: Array.isArray(t.documents) && t.documents.length > 0
-                ? JSON.stringify(t.documents)
-                : null,
+              // ── documents[] is the ONLY attachment store ──
+              // No `idAttachmentUrl` write — left null on new rows.
+              documents: documentsJson,
               createdBy: user.id,
               updatedBy: user.id,
               updatedAt: now,
@@ -325,4 +336,39 @@ function mergeDocuments(existing: unknown[], incoming: unknown[]): unknown[] {
     }
   }
   return Array.from(byUrl.values());
+}
+
+// Phase 1 — single source of truth: documents[]
+//
+// Fold any legacy `idAttachmentUrl` value into the documents array as a
+// `{type:"id"}` entry. Skip if the URL is already present in either the
+// incoming or existing documents array (prevents duplicates). The result
+// is the canonical documents[] we persist to the Trainee row.
+//
+// This is the ONLY place where idAttachmentUrl is converted — every other
+// code path treats documents[] as the source of truth.
+function mergeIdAttachmentIntoDocuments(
+  incomingDocs: unknown[],
+  existingDocs: unknown[],
+  idAttachmentUrl: string | null,
+): unknown[] {
+  // Start with existing, overlay incoming (by URL).
+  const merged = mergeDocuments(existingDocs, incomingDocs);
+  if (!idAttachmentUrl) return merged;
+
+  // Check if the idAttachmentUrl is already represented in the merged set.
+  const alreadyPresent = merged.some(
+    (d) => d && typeof (d as { url?: string }).url === "string" && (d as { url: string }).url === idAttachmentUrl,
+  );
+  if (alreadyPresent) return merged;
+
+  // Otherwise, add it as a synthetic "id"-type document so the URL is
+  // preserved in documents[] going forward.
+  merged.push({
+    url: idAttachmentUrl,
+    filename: idAttachmentUrl.split("/").pop() ?? "id-attachment",
+    type: "id",
+    uploadedAt: new Date().toISOString(),
+  });
+  return merged;
 }

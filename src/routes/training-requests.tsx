@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
 import { FormDialog, Field, FormGrid } from "@/components/common/form-dialog";
 import { GenerateSessionsDialog } from "@/components/common/generate-sessions-dialog";
-import { TraineeEntrySection, type TraineeEntry } from "@/components/common/trainee-entry-section";
+import { TraineeEntrySection, type TraineeEntry, normalizeIdAttachmentIntoDocuments } from "@/components/common/trainee-entry-section";
 import {
   AdditionalDocumentsSection,
   type AdditionalDocument,
@@ -684,6 +684,11 @@ export function TrainingRequestsRoute() {
     try {
       // Strip client-only fields from each trainee before sending — the API
       // doesn't need valid/errors/id; it computes its own validation.
+      //
+      // Phase 1: documents[] is the single source of truth. We do NOT send
+      // `idAttachmentUrl` — the server-side handler folds any legacy value
+      // into documents[] if needed, but new uploads always arrive in
+      // documents[] directly from the client.
       const payloadTrainees = trainees
         .filter((tr) => tr.fullName && tr.nationalId)
         .map((tr) => ({
@@ -691,9 +696,6 @@ export function TrainingRequestsRoute() {
           nationalId: tr.nationalId,
           nationality: tr.nationality || null,
           jobTitle: tr.jobTitle || null,
-          idAttachmentUrl: tr.idAttachmentUrl || null,
-          // Carry any documents already attached at the client (e.g. uploaded
-          // via the row's RowDocUpload). The API merges them into Trainee.documents.
           documents: Array.isArray(tr.documents) ? tr.documents : [],
         }));
       await api.post("/requests", {
@@ -783,13 +785,17 @@ export function TrainingRequestsRoute() {
               const parsed = tn.documents ? JSON.parse(tn.documents) : [];
               if (Array.isArray(parsed)) docs = parsed;
             } catch { /* ignore */ }
+            // Phase 1: fold any legacy `idAttachmentUrl` value into documents[]
+            // so the in-memory state is consistent with the new model. This is
+            // a no-op once Phase 2 backfill has run.
+            docs = normalizeIdAttachmentIntoDocuments(tn.idAttachmentUrl, docs);
             return {
               id: crypto.randomUUID(),
               fullName: tn.fullName || "",
               nationalId: tn.nationalId || "",
               nationality: tn.nationality || "",
               jobTitle: tn.jobTitle || "",
-              idAttachmentUrl: tn.idAttachmentUrl ?? null,
+              idAttachmentUrl: null,
               idAttachmentName: null,
               documents: docs,
               valid: true,
@@ -832,6 +838,9 @@ export function TrainingRequestsRoute() {
     }
     setSubmitting(true);
     try {
+      // Phase 1: documents[] is the single source of truth. We do NOT send
+      // `idAttachmentUrl` — the server-side handler folds any legacy value
+      // into documents[] if needed.
       const payloadTrainees = trainees
         .filter((tr) => tr.fullName && tr.nationalId)
         .map((tr) => ({
@@ -839,7 +848,6 @@ export function TrainingRequestsRoute() {
           nationalId: tr.nationalId,
           nationality: tr.nationality || null,
           jobTitle: tr.jobTitle || null,
-          idAttachmentUrl: tr.idAttachmentUrl || null,
           documents: Array.isArray(tr.documents) ? tr.documents : [],
         }));
       await api.put(`/requests/${editTarget.id}`, {
@@ -895,18 +903,25 @@ export function TrainingRequestsRoute() {
             { sourceRequestId: requestId, items: archiveItems },
           );
           if (result.trainees?.length > 0) {
-            const newTrainees = result.trainees.map((t: TraineeEntry) => ({
-              id: crypto.randomUUID(),
-              fullName: String(t.fullName || ""),
-              nationalId: String(t.nationalId || ""),
-              nationality: String(t.nationality || ""),
-              jobTitle: String(t.jobTitle || ""),
-              idAttachmentUrl: (t.idAttachmentUrl as string) ?? null,
-              idAttachmentName: null,
-              documents: Array.isArray(t.documents) ? t.documents : [],
-              valid: false,
-              errors: [],
-            }));
+            const newTrainees = result.trainees.map((t: TraineeEntry) => {
+              // Phase 1: normalize legacy idAttachmentUrl into documents[]
+              const normalizedDocs = normalizeIdAttachmentIntoDocuments(
+                t.idAttachmentUrl as string | null | undefined,
+                Array.isArray(t.documents) ? t.documents : [],
+              );
+              return {
+                id: crypto.randomUUID(),
+                fullName: String(t.fullName || ""),
+                nationalId: String(t.nationalId || ""),
+                nationality: String(t.nationality || ""),
+                jobTitle: String(t.jobTitle || ""),
+                idAttachmentUrl: null,
+                idAttachmentName: null,
+                documents: normalizedDocs,
+                valid: false,
+                errors: [],
+              };
+            });
             setTrainees([...trainees, ...newTrainees]);
           }
           if (result.courseInfo?.courseId) {
