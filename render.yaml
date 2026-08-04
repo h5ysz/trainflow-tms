@@ -81,9 +81,16 @@ services:
         value: https://trainflow-tms.onrender.com
 
       # ─── AI Copilot Provider ───
-      # If OPENAI_API_KEY is not set, the AI assistant returns a graceful
-      # "not configured" message instead of crashing. The provider uses
-      # native fetch — no SDK dependency.
+      # If no API key is set, the AI assistant returns a graceful
+      # "not configured" message instead of crashing.
+      # Provider selection is automatic (priority: Gemini → OpenAI → NoOp).
+      #
+      # ─── Gemini (default provider) ───
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        sync: false
+      # ─── OpenAI (alternative provider) ───
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL

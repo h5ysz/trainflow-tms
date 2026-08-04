@@ -5,16 +5,15 @@
 // It never knows or cares which provider is active.
 //
 // Selection logic (priority order):
-//   1. OpenAI     — if OPENAI_API_KEY is set
-//   2. NoOp       — always available as fallback
-//
-// Future providers (Anthropic, Azure, Gemini) will be added here in priority
-// order before OpenAI. The chat route won't need to change — only this file.
+//   1. Gemini     — if GEMINI_API_KEY is set (DEFAULT provider)
+//   2. OpenAI     — if OPENAI_API_KEY is set
+//   3. NoOp       — always available as fallback
 //
 // The provider instance is cached for the process lifetime. Env var changes
 // require a restart (consistent with how JWT_SECRET and other secrets work).
 
 import type { AIProvider } from "./types";
+import { GeminiProvider } from "./gemini";
 import { OpenAIProvider } from "./openai";
 import { NoOpProvider } from "./noop";
 
@@ -24,8 +23,9 @@ let cachedProvider: AIProvider | null = null;
  * Returns the active AI provider.
  *
  * Priority:
- *   1. OpenAI (if OPENAI_API_KEY is set)
- *   2. NoOp (fallback — returns a "not configured" message)
+ *   1. Gemini (if GEMINI_API_KEY is set) — DEFAULT
+ *   2. OpenAI (if OPENAI_API_KEY is set)
+ *   3. NoOp (fallback — returns a "not configured" message)
  *
  * The result is cached. Subsequent calls return the same instance.
  */
@@ -36,17 +36,25 @@ export function getAIProvider(): AIProvider {
 }
 
 function detectProvider(): AIProvider {
-  // 1. OpenAI (highest priority)
+  // 1. Gemini (default, highest priority)
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      return new GeminiProvider();
+    } catch (err) {
+      console.error("[ai-provider] Gemini provider init failed, falling back:", err);
+    }
+  }
+
+  // 2. OpenAI
   if (process.env.OPENAI_API_KEY) {
     try {
       return new OpenAIProvider();
     } catch (err) {
-      // Constructor threw (e.g. CONFIG_MISSING) — fall through to NoOp
       console.error("[ai-provider] OpenAI provider init failed, falling back to NoOp:", err);
     }
   }
 
-  // 2. NoOp fallback (always available)
+  // 3. NoOp fallback (always available)
   return new NoOpProvider();
 }
 
