@@ -18,6 +18,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import Image from "next/image";
+import ReactMarkdown from "react-markdown";
 import { api } from "@/lib/api/client";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/lib/i18n/context";
@@ -58,59 +59,65 @@ interface QuickAction {
   titleEn: string;
   descAr: string;
   descEn: string;
-  prompt: string;
+  promptAr: string;
+  promptEn: string;
   accent: string; // tailwind gradient classes for the icon chip
 }
 
 const QUICK_ACTIONS: QuickAction[] = [
   {
-    id: "create-request",
-    icon: ClipboardList,
-    titleAr: "إنشاء طلب دورة",
-    titleEn: "Create Course Request",
-    descAr: "ابدأ طلب تدريب جديد",
-    descEn: "Start a new training request",
-    prompt: "Help me create a new training course request",
+    id: "track-requests",
+    icon: MessageSquare,
+    titleAr: "عرض حالة الطلبات",
+    titleEn: "Show Request Status",
+    descAr: "اعرض حالة طلبات التدريب الأخيرة",
+    descEn: "Show recent training request statuses",
+    promptAr: "اعرض حالة طلبات التدريب الأخيرة",
+    promptEn: "Show me the status of my recent training requests",
     accent: "from-blue-500 to-blue-600",
   },
   {
-    id: "track-requests",
-    icon: MessageSquare,
-    titleAr: "متابعة الطلبات",
-    titleEn: "Track Requests",
-    descAr: "عرض حالة الطلبات الحالية",
-    descEn: "View current request statuses",
-    prompt: "Show me the status of my recent training requests",
+    id: "upcoming-courses",
+    icon: ClipboardList,
+    titleAr: "الدورات القادمة",
+    titleEn: "Upcoming Courses",
+    descAr: "ما هي الدورات القادمة؟",
+    descEn: "What are the upcoming courses?",
+    promptAr: "ما هي الدورات القادمة؟",
+    promptEn: "What are the upcoming courses?",
     accent: "from-emerald-500 to-emerald-600",
   },
   {
-    id: "create-report",
+    id: "registered-trainees",
     icon: FileText,
-    titleAr: "إنشاء تقرير",
-    titleEn: "Generate Report",
-    descAr: "إنشاء تقرير تفصيلي",
-    descEn: "Generate a detailed activity report",
-    prompt: "Generate a summary report of training activities",
+    titleAr: "المتدربون المسجلون",
+    titleEn: "Registered Trainees",
+    descAr: "اعرض المتدربين المسجلين",
+    descEn: "Show registered trainees",
+    promptAr: "اعرض المتدربين المسجلين",
+    promptEn: "Show registered trainees",
     accent: "from-amber-500 to-amber-600",
   },
   {
     id: "analyze-data",
     icon: BarChart3,
-    titleAr: "تحليل البيانات",
-    titleEn: "Analyze Data",
-    descAr: "تحليلات وإحصائيات الأداء",
-    descEn: "Performance insights and statistics",
-    prompt: "Analyze training data and show key insights",
+    titleAr: "إحصائيات التدريب",
+    titleEn: "Training Statistics",
+    descAr: "اعرض إحصائيات التدريب",
+    descEn: "Show training statistics",
+    promptAr: "اعرض إحصائيات التدريب",
+    promptEn: "Show training statistics",
     accent: "from-purple-500 to-purple-600",
   },
   {
-    id: "help",
+    id: "pending-review",
     icon: HelpCircle,
-    titleAr: "المساعدة",
-    titleEn: "Help",
-    descAr: "دليل استخدام النظام",
-    descEn: "System usage guide",
-    prompt: "How do I use the GCC LAB training management system?",
+    titleAr: "الطلبات قيد المراجعة",
+    titleEn: "Pending Review",
+    descAr: "ما هي الطلبات قيد المراجعة؟",
+    descEn: "Which requests are pending review?",
+    promptAr: "ما هي الطلبات قيد المراجعة؟",
+    promptEn: "Which requests are pending review?",
     accent: "from-primary to-primary-hover",
   },
 ];
@@ -120,7 +127,8 @@ interface SuggestedQuestion {
   id: string;
   labelAr: string;
   labelEn: string;
-  prompt: string;
+  promptAr: string;
+  promptEn: string;
 }
 
 const SUGGESTED_QUESTIONS: SuggestedQuestion[] = [
@@ -128,25 +136,29 @@ const SUGGESTED_QUESTIONS: SuggestedQuestion[] = [
     id: "add-trainee",
     labelAr: "كيف أضيف متدربًا؟",
     labelEn: "How do I add a trainee?",
-    prompt: "How do I add a trainee?",
+    promptAr: "كيف أضيف متدربًا؟",
+    promptEn: "How do I add a trainee?",
   },
   {
     id: "upload-attachments",
     labelAr: "كيف أرفع المرفقات؟",
     labelEn: "How do I upload attachments?",
-    prompt: "How do I upload attachments?",
+    promptAr: "كيف أرفع المرفقات؟",
+    promptEn: "How do I upload attachments?",
   },
   {
     id: "review-request",
     labelAr: "كيف أراجع طلبًا؟",
     labelEn: "How do I review a request?",
-    prompt: "How do I review a request?",
+    promptAr: "كيف أراجع طلبًا؟",
+    promptEn: "How do I review a request?",
   },
   {
     id: "generate-report",
     labelAr: "كيف أصدر تقريرًا؟",
     labelEn: "How do I generate a report?",
-    prompt: "How do I generate a report?",
+    promptAr: "كيف أصدر تقريرًا؟",
+    promptEn: "How do I generate a report?",
   },
 ];
 
@@ -536,10 +548,11 @@ export function CopilotPanel() {
                         const Icon = action.icon;
                         const title = isAr ? action.titleAr : action.titleEn;
                         const desc = isAr ? action.descAr : action.descEn;
+                        const prompt = isAr ? action.promptAr : action.promptEn;
                         return (
                           <button
                             key={action.id}
-                            onClick={() => void send(action.prompt)}
+                            onClick={() => void send(prompt)}
                             className={cn(
                               "group flex items-center gap-3.5 rounded-2xl bg-card p-3.5 text-start",
                               "ring-1 ring-border/40",
@@ -586,7 +599,7 @@ export function CopilotPanel() {
                       {SUGGESTED_QUESTIONS.map((q) => (
                         <button
                           key={q.id}
-                          onClick={() => void send(q.prompt)}
+                          onClick={() => void send(isAr ? q.promptAr : q.promptEn)}
                           className={cn(
                             "rounded-xl bg-card px-3.5 py-3 text-start text-[12.5px] font-medium",
                             "ring-1 ring-border/40 text-foreground/80",
@@ -632,17 +645,45 @@ export function CopilotPanel() {
                           </div>
                         )}
 
-                        {/* Message bubble — dir="auto" detects text direction */}
+                        {/* Message bubble — assistant uses Markdown rendering,
+                            user messages stay plain text */}
                         <div
                           dir="auto"
                           className={cn(
-                            "px-4 py-3 text-[13.5px] whitespace-pre-wrap break-words leading-relaxed",
+                            "px-4 py-3 text-[13.5px] break-words leading-relaxed",
                             msg.role === "user"
-                              ? "bg-gradient-to-br from-primary to-primary-hover text-primary-foreground rounded-[1.25rem] rounded-br-md shadow-[0_3px_12px_-3px_rgba(0,0,0,0.2)] max-w-[75%] font-medium"
+                              ? "bg-gradient-to-br from-primary to-primary-hover text-primary-foreground rounded-[1.25rem] rounded-br-md shadow-[0_3px_12px_-3px_rgba(0,0,0,0.2)] max-w-[75%] font-medium whitespace-pre-wrap"
                               : "bg-card text-card-foreground rounded-[1.25rem] rounded-bl-md shadow-[0_2px_8px_-2px_rgba(0,0,0,0.06)] ring-1 ring-border/40 max-w-[75%]"
                           )}
                         >
-                          {msg.content}
+                          {msg.role === "assistant" ? (
+                            <div className="copilot-markdown">
+                              <ReactMarkdown
+                                components={{
+                                  // Render bold, lists, tables, etc. with proper styling
+                                  strong: ({ children }) => <strong className="font-bold text-foreground">{children}</strong>,
+                                  ul: ({ children }) => <ul className="list-disc ps-5 my-1.5 space-y-0.5">{children}</ul>,
+                                  ol: ({ children }) => <ol className="list-decimal ps-5 my-1.5 space-y-0.5">{children}</ol>,
+                                  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                                  p: ({ children }) => <p className="my-1 first:mt-0 last:mb-0">{children}</p>,
+                                  code: ({ children }) => <code className="rounded bg-muted/60 px-1 py-0.5 text-[12px] font-mono">{children}</code>,
+                                  pre: ({ children }) => <pre className="my-2 rounded-lg bg-muted/60 p-3 overflow-x-auto text-[12px]">{children}</pre>,
+                                  table: ({ children }) => <table className="my-2 w-full border-collapse text-[12px]">{children}</table>,
+                                  th: ({ children }) => <th className="border border-border/50 px-2 py-1 text-start font-semibold bg-muted/30">{children}</th>,
+                                  td: ({ children }) => <td className="border border-border/50 px-2 py-1">{children}</td>,
+                                  h1: ({ children }) => <h3 className="text-[15px] font-bold my-1.5">{children}</h3>,
+                                  h2: ({ children }) => <h4 className="text-[14px] font-bold my-1.5">{children}</h4>,
+                                  h3: ({ children }) => <h5 className="text-[13.5px] font-bold my-1">{children}</h5>,
+                                  a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2">{children}</a>,
+                                  blockquote: ({ children }) => <blockquote className="border-s-2 border-primary/30 ps-3 my-1.5 text-muted-foreground">{children}</blockquote>,
+                                }}
+                              >
+                                {msg.content}
+                              </ReactMarkdown>
+                            </div>
+                          ) : (
+                            msg.content
+                          )}
                         </div>
 
                         {/* User avatar */}
