@@ -197,7 +197,7 @@ function getActionsForRole(
 }
 
 export function TrainingRequestsRoute() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { toast } = useToast();
   const { user } = useAppStore();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -224,23 +224,19 @@ export function TrainingRequestsRoute() {
   // (see const isCoordinator = canEdit; after the hook calls)
 
   function toggleSelect(id: string) {
+    // Only ONE request can be selected at a time — clicking a new row
+    // replaces the previous selection.
     setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+      if (prev.has(id)) return new Set(); // toggle off
+      return new Set([id]); // select only this one
     });
-  }
-  function toggleSelectAll() {
-    if (data && selectedIds.size === data.length) {
-      setSelectedIds(new Set());
-    } else if (data) {
-      setSelectedIds(new Set(data.map((r) => r.id)));
-    }
   }
   function clearSelection() {
     setSelectedIds(new Set());
   }
+
+  // selectedRequest and directExport are defined after the hooks below
+  // (they need access to `data` and `locale`)
 
   // Open the right-side drawer for coordinator view
   const openDrawer = async (req: Request) => {
@@ -285,6 +281,22 @@ export function TrainingRequestsRoute() {
   const canCreate = user ? canPerformAction(user.permissions, "requests", "create") : false;
   const canEdit = user ? canPerformAction(user.permissions, "requests", "edit") : false;
   const isCoordinator = canEdit; // roles with requests.edit (coordinator/admin/trainer)
+
+  // Get the currently selected request object (single selection only)
+  const selectedRequest = data?.find((r) => selectedIds.has(r.id)) || null;
+
+  // Direct export — no dialog, immediately opens the export URL
+  function directExport(fmt: "excel" | "pdf" | "zip") {
+    if (!selectedRequest) return;
+    const params = new URLSearchParams({
+      scope: "specific_request",
+      specificId: selectedRequest.id,
+      items: "requests,trainees,attendance,results,evaluations,certificates,invoices,attachments",
+      format: fmt,
+      locale,
+    });
+    window.open(`/api/export/company-data?${params.toString()}`, "_blank");
+  }
 
   useEffect(() => {
     if (dialogOpen) {
@@ -912,25 +924,25 @@ export function TrainingRequestsRoute() {
         </div>
       )}
 
-      {/* ── Coordinator-only: Bulk actions toolbar (shown when rows are selected) ── */}
-      {isCoordinator && selectedIds.size > 0 && (
+      {/* ── Coordinator-only: Single-selection toolbar with direct export ── */}
+      {isCoordinator && selectedIds.size > 0 && selectedRequest && (
         <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-4 py-2.5">
           <div className="flex items-center gap-2 text-sm">
-            <span className="font-medium">{selectedIds.size}</span>
-            <span className="text-muted-foreground">{selectedIds.size === 1 ? "request selected" : "requests selected"}</span>
+            <span className="font-medium">{selectedRequest.refNumber}</span>
+            <span className="text-muted-foreground">— {selectedRequest.courseTitle || "—"}</span>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => window.print()}>
-              <Printer className="h-3.5 w-3.5 me-1.5" />{t("action.print") || "Print"}
+            <Button variant="outline" size="sm" onClick={() => directExport("pdf")}>
+              <Printer className="h-3.5 w-3.5 me-1.5" />Print PDF
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setExportDialogOpen(true)}>
-              <FileSpreadsheet className="h-3.5 w-3.5 me-1.5" />{t("requests.export") || "Export Excel"}
+            <Button variant="outline" size="sm" onClick={() => directExport("excel")}>
+              <FileSpreadsheet className="h-3.5 w-3.5 me-1.5" />Export Excel
             </Button>
-            <Button variant="outline" size="sm" onClick={() => window.print()}>
-              <FileTextIcon className="h-3.5 w-3.5 me-1.5" />PDF
+            <Button variant="outline" size="sm" onClick={() => directExport("zip")}>
+              <FileTextIcon className="h-3.5 w-3.5 me-1.5" />Download ZIP
             </Button>
             <Button variant="ghost" size="sm" onClick={clearSelection}>
-              <X className="h-3.5 w-3.5 me-1.5" />{t("requests.clear") || "Clear"}
+              <X className="h-3.5 w-3.5" />
             </Button>
           </div>
         </div>
