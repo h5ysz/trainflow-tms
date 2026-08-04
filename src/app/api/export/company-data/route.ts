@@ -922,9 +922,20 @@ export const GET = async (req: NextRequest) => {
       return lastPart;
     }
 
-    // 1. Trainee documents
+    // 1. Trainee documents — ONLY for trainees linked to in-scope requests
+    // (via the requestCourses → trainees junction). Previously this queried
+    // ALL trainees in the company, which included old demo/test data.
     const traineeAttachWhere: Record<string, unknown> = { deletedAt: null };
     if (companyId) traineeAttachWhere.companyId = companyId;
+    // Filter to only trainees that belong to in-scope requests
+    if (requestIds.length > 0) {
+      traineeAttachWhere.requestCourses = {
+        some: {
+          requestCourse: { requestId: { in: requestIds }, deletedAt: null },
+          deletedAt: null,
+        },
+      };
+    }
     const traineesForAttachments = await db.trainee.findMany({
       where: traineeAttachWhere,
       select: {
