@@ -132,6 +132,7 @@ export function Topbar() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifLoading, setNotifLoading] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
   const initials = user ? user.fullName.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase() : "";
@@ -169,14 +170,20 @@ export function Topbar() {
     }
   };
 
-  // ─── Click a notification → navigate to the related record ─────────────
-  // 1. Resolve the target route + param from the notification payload.
-  // 2. Mark the notification as read via PATCH /api/notifications/[id].
-  // 3. Update local state immediately so the badge + item highlight react
+  // ─── Click a notification → mark read, close panel, navigate ──────────
+  // 1. Close the notification panel immediately so navigation is visible.
+  // 2. Resolve the target route + param from the notification payload.
+  // 3. Mark the notification as read via PATCH /api/notifications/[id].
+  // 4. Update local state immediately so the badge + item highlight react
   //    instantly (no wait for the API round-trip).
-  // 4. Navigate to the target. If no target could be resolved, show the
-  //    localized "record no longer exists" toast.
+  // 5. Navigate to the target. If a specific record ref was resolved, the
+  //    param is passed so the target page opens that exact record. If no
+  //    target could be resolved, show the localized "no longer exists" toast.
   const handleNotificationClick = async (n: Notification) => {
+    // Close the panel first — the user should see the destination page, not
+    // the notification dropdown covering it.
+    setNotifOpen(false);
+
     const target = resolveNotificationTarget(n);
 
     // Mark as read immediately (fire-and-forget the API call, but update
@@ -193,6 +200,9 @@ export function Topbar() {
     }
 
     if (target) {
+      // Navigate with the param — detail pages (session-detail, trainee-detail)
+      // use it to fetch the exact record. List pages (requests, certificates,
+      // invoices) receive the ref number and can highlight/open it.
       navigate(target.route, target.param);
     } else {
       // No resolvable target — show the localized "no longer exists" toast.
@@ -233,7 +243,7 @@ export function Topbar() {
           {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
         </Button>
 
-        <Popover onOpenChange={(open) => { if (open) loadNotifications(); }}>
+        <Popover open={notifOpen} onOpenChange={(open) => { setNotifOpen(open); if (open) loadNotifications(); }}>
           <PopoverTrigger asChild>
             <Button variant="ghost" size="icon" className="relative">
               <Bell className="h-4 w-4" />

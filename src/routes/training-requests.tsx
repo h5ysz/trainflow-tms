@@ -199,7 +199,7 @@ function getActionsForRole(
 export function TrainingRequestsRoute() {
   const { t, locale } = useI18n();
   const { toast } = useToast();
-  const { user } = useAppStore();
+  const { user, routeParam, navigate } = useAppStore();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<Request | null>(null);
@@ -746,6 +746,27 @@ export function TrainingRequestsRoute() {
       setPreviewLoading(false);
     }
   };
+
+  // ─── Auto-open a specific request when navigated from a notification ──
+  // When the notification click handler navigates to "requests" with a ref
+  // number (e.g. "TR-2026-000007") as the routeParam, this effect finds the
+  // matching request in the loaded list and opens its preview/drawer.
+  // The routeParam is cleared after opening so it doesn't re-trigger.
+  useEffect(() => {
+    if (!routeParam || !data || data.length === 0) return;
+    const match = data.find(
+      (r) => r.refNumber === routeParam || r.id === routeParam,
+    );
+    if (match) {
+      if (isCoordinator) {
+        void openDrawer(match);
+      } else {
+        void openPreview(match);
+      }
+      // Clear the param so it doesn't re-trigger on refetch/re-render
+      navigate("requests");
+    }
+  }, [routeParam, data]);
 
   // ── Edit existing request: loads the request data into the form + opens
   // the same dialog as "New Request" but in edit mode. The form is pre-filled
