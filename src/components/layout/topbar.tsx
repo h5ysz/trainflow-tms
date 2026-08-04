@@ -24,7 +24,7 @@ import {
   UserCircle, Settings, LogOut, ShieldCheck, UserCog, GraduationCap, Building2,
   Loader2, Eye,
 } from "lucide-react";
-import { canAccessModule, type UserRole } from "@/lib/auth/permissions";
+import { canAccessModule, type UserRole, type RouteKey } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
@@ -45,8 +45,81 @@ interface Notification {
   title: string;
   message: string;
   type: string;
+  category: string;
   isRead: boolean;
   createdAt: string;
+  link?: string | null;
+}
+
+// ─── Notification → Route resolution ─────────────────────────────────────
+// Maps a notification to the route + param needed to open the related record.
+// Returns null when no target can be resolved (the UI then shows a "record no
+// longer exists" toast instead of navigating).
+//
+// Priority:
+//   1. The `link` field — if it contains a path like "/sessions/SES-000004",
+//      parse the ref number and navigate to the detail route.
+//   2. The `message` field — TRAINING notifications embed the ref number
+//      (e.g., "Training request TR-2026-000007 has been submitted...").
+//      We extract the ref and map category → route.
+//
+// No DB calls — pure string parsing. The existence check happens after
+// navigation: if the target page can't find the record, it shows its own
+// not-found state. For notifications where we can't resolve a target, we
+// show the localized "no longer exists" toast.
+interface NotificationTarget {
+  route: RouteKey;
+  param?: string;
+}
+
+function resolveNotificationTarget(n: Notification): NotificationTarget | null {
+  // ── 1. Try the link field ──
+  if (n.link) {
+    // Patterns: "/sessions/SES-000004", "/certificates", "invoices", etc.
+    const link = n.link.trim();
+    // Session detail: /sessions/<ref>
+    const sessionMatch = link.match(/\/sessions\/([A-Z0-9-]+)/i);
+    if (sessionMatch) return { route: "session-detail", param: sessionMatch[1] };
+    // Trainee detail: /trainees/<id>
+    const traineeMatch = link.match(/\/trainees\/([A-Za-z0-9-]+)/i);
+    if (traineeMatch) return { route: "trainee-detail", param: traineeMatch[1] };
+    // Certificate list (no specific ID in link — go to list)
+    if (/\/certificates/i.test(link)) return { route: "certificates" };
+    // Invoices list
+    if (/invoices/i.test(link)) return { route: "invoices" };
+    // Renewal dashboard
+    if (/renewal/i.test(link)) return { route: "renewal-dashboard" };
+  }
+
+  // ── 2. Parse the message for a ref number ──
+  const msg = n.message ?? "";
+  // Training request refs: TR-XXXXX or TR-XXXXXXXX
+  const trMatch = msg.match(/\bTR-[\w-]+\b/i);
+  if (trMatch && (n.category === "TRAINING" || /request/i.test(n.title))) {
+    return { route: "requests", param: trMatch[0] };
+  }
+  // Session refs: SES-XXXXX
+  const sesMatch = msg.match(/\bSES-[\w-]+\b/i);
+  if (sesMatch) return { route: "session-detail", param: sesMatch[0] };
+  // Certificate refs: CERT-XXXXX
+  const certMatch = msg.match(/\bCERT-[\w-]+\b/i);
+  if (certMatch) return { route: "certificates", param: certMatch[0] };
+  // Invoice refs: INV-XXXXX
+  const invMatch = msg.match(/\bINV-[\w-]+\b/i);
+  if (invMatch) return { route: "invoices", param: invMatch[0] };
+  // Retest refs: RT-XXXXX
+  const rtMatch = msg.match(/\bRT-[\w-]+\b/i);
+  if (rtMatch) return { route: "renewal-dashboard", param: rtMatch[0] };
+
+  // ── 3. Category-based fallback (list page, no specific record) ──
+  switch (n.category) {
+    case "TRAINING": return { route: "requests" };
+    case "SESSION": return { route: "sessions" };
+    case "CERTIFICATE": return { route: "certificates" };
+    case "FINANCIAL": return { route: "invoices" };
+    case "SYSTEM": return null; // no specific target
+    default: return null;
+  }
 }
 
 export function Topbar() {
@@ -93,6 +166,43 @@ export function Topbar() {
       toast({ title: t("misc.success"), description: t("notifications.markAllRead") });
     } catch (e) {
       toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    }
+  };
+
+  // ─── Click a notification → navigate to the related record ─────────────
+  // 1. Resolve the target route + param from the notification payload.
+  // 2. Mark the notification as read via PATCH /api/notifications/[id].
+  // 3. Update local state immediately so the badge + item highlight react
+  //    instantly (no wait for the API round-trip).
+  // 4. Navigate to the target. If no target could be resolved, show the
+  //    localized "record no longer exists" toast.
+  const handleNotificationClick = async (n: Notification) => {
+    const target = resolveNotificationTarget(n);
+
+    // Mark as read immediately (fire-and-forget the API call, but update
+    // local state synchronously so the badge updates instantly).
+    if (!n.isRead) {
+      setNotifications((prev) => prev.map((x) => x.id === n.id ? { ...x, isRead: true } : x));
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+      try {
+        await api.patch(`/notifications/${n.id}`, { isRead: true });
+      } catch {
+        // Ignore — the local state is already updated. The next load will
+        // re-fetch the true read status.
+      }
+    }
+
+    if (target) {
+      navigate(target.route, target.param);
+    } else {
+      // No resolvable target — show the localized "no longer exists" toast.
+      toast({
+        title: t("misc.error"),
+        description: locale === "ar"
+          ? "العنصر المرتبط بهذا الإشعار لم يعد موجودًا."
+          : "The related item no longer exists.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -153,16 +263,20 @@ export function Topbar() {
               ) : (
                 <div className="divide-y">
                   {notifications.map((n) => (
-                    <div key={n.id} className={`flex items-start gap-2 p-3 ${!n.isRead ? "bg-primary/5" : ""}`}>
+                    <button
+                      key={n.id}
+                      onClick={() => void handleNotificationClick(n)}
+                      className={`flex w-full items-start gap-2 p-3 text-start transition-colors hover:bg-muted/60 ${!n.isRead ? "bg-primary/5" : ""}`}
+                    >
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-medium flex items-center gap-1.5">
                           {n.title}
-                          {!n.isRead && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
+                          {!n.isRead && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
                         </div>
                         <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">{n.message}</div>
                         <div className="text-[10px] text-muted-foreground mt-1">{new Date(n.createdAt).toLocaleString()}</div>
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
