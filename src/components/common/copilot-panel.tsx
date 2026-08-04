@@ -332,8 +332,8 @@ export function CopilotPanel() {
     welcomeDesc: isAr
       ? "اسألني عن الدورات، المتدربين، الطلبات، التقارير، الشهادات..."
       : "Ask me about courses, trainees, requests, reports, certificates...",
-    quickActions: isAr ? "إجراءات سريعة" : "Quick Actions",
-    suggestedQuestions: isAr ? "أسئلة شائعة" : "Suggested Questions",
+    quickActions: isAr ? "الإجراءات السريعة" : "Quick Actions",
+    suggestedQuestions: isAr ? "أسئلة مقترحة" : "Suggested Questions",
     typeMessage: isAr ? "اكتب رسالتك..." : "Type your message...",
     aiPowered: isAr ? "يعمل بالذكاء الاصطناعي • يحترم صلاحياتك" : "AI-powered • Respects your permissions",
     clearHistory: isAr ? "مسح المحادثة" : "Clear history",
@@ -355,13 +355,20 @@ export function CopilotPanel() {
           className="fixed bottom-6 right-6 z-50 animate-in fade-in zoom-in-50 duration-500"
           style={{ animationFillMode: "both" }}
         >
-          {/* Soft ambient glow behind the button */}
+          {/* Breathing glow — soft, slow opacity pulse separate from float anim.
+              This gives the button a "living" premium feel without being flashy. */}
           <div
-            className="pointer-events-none absolute -inset-3 rounded-full bg-primary/20 blur-xl"
+            className="pointer-events-none absolute -inset-4 rounded-full bg-primary/25 blur-2xl"
             aria-hidden
+            style={{
+              animationName: "breathe",
+              animationDuration: "4s",
+              animationIterationCount: "infinite",
+              animationTimingFunction: "ease-in-out",
+            }}
           />
 
-          {/* Pulse ring — only when shouldPulse */}
+          {/* Pulse ring — only when shouldPulse (attention cue for new users) */}
           {shouldPulse && (
             <>
               <span className="pointer-events-none absolute inset-0 rounded-full bg-primary/30 animate-ping" style={{ animationDuration: "2.8s" }} />
@@ -374,25 +381,26 @@ export function CopilotPanel() {
             className={cn(
               "relative flex h-14 w-14 items-center justify-center rounded-full",
               "bg-gradient-to-br from-primary to-primary-hover",
-              "shadow-[0_10px_30px_-6px_rgba(0,0,0,0.35),0_4px_10px_-2px_rgba(0,0,0,0.12)]",
+              "shadow-[0_8px_24px_-6px_rgba(0,0,0,0.3),0_3px_8px_-2px_rgba(0,0,0,0.1)]",
               "ring-1 ring-white/25",
               "transition-all duration-300 ease-out",
-              "hover:scale-105 hover:shadow-[0_14px_36px_-6px_rgba(0,0,0,0.4),0_0_28px_rgba(59,130,246,0.25)]",
+              "hover:scale-105 hover:shadow-[0_12px_32px_-6px_rgba(0,0,0,0.35),0_0_24px_rgba(59,130,246,0.2)]",
               "active:scale-95",
               "group",
-              // Subtle floating animation — gentle 3s up/down
-              "animate-[float_3s_ease-in-out_infinite]",
             )}
             style={{
               animationName: "float",
-              animationDuration: "3s",
+              animationDuration: "3.5s",
               animationIterationCount: "infinite",
               animationTimingFunction: "ease-in-out",
             }}
             aria-label={L.openAssistant}
           >
-            {/* Inline keyframes for the floating animation */}
-            <style>{`@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}`}</style>
+            {/* Inline keyframes: float (gentle up/down) + breathe (glow opacity) */}
+            <style>{`
+              @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+              @keyframes breathe{0%,100%{opacity:0.4}50%{opacity:0.7}}
+            `}</style>
 
             {/* Gradient overlay for depth */}
             <span className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-tr from-transparent via-white/5 to-white/25" />
@@ -540,9 +548,9 @@ export function CopilotPanel() {
                             className={cn(
                               "group flex items-center gap-3.5 rounded-2xl bg-card p-3.5 text-start",
                               "ring-1 ring-border/40",
-                              "transition-all duration-250 ease-out",
-                              "hover:ring-primary/25 hover:shadow-[0_6px_20px_-6px_rgba(0,0,0,0.12)] hover:-translate-y-0.5",
-                              "active:translate-y-0 active:scale-[0.98] active:shadow-sm",
+                              "transition-all duration-300 ease-out",
+                              "hover:ring-primary/20 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.1)] hover:-translate-y-0.5",
+                              "active:translate-y-0 active:scale-[0.98] active:shadow-[0_2px_8px_-2px_rgba(0,0,0,0.06)]",
                             )}
                             style={{
                               animationDelay: `${idx * 60}ms`,
@@ -553,17 +561,17 @@ export function CopilotPanel() {
                               "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
                               "bg-gradient-to-br shadow-[0_3px_10px_-2px_rgba(0,0,0,0.15)]",
                               action.accent,
-                              "transition-transform duration-250 ease-out group-hover:scale-110 group-active:scale-95",
+                              "transition-transform duration-300 ease-out group-hover:scale-105 group-active:scale-95",
                             )}>
                               <Icon className="h-5 w-5 text-white" strokeWidth={2.2} />
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className="text-[13.5px] font-semibold text-foreground leading-tight">{title}</div>
+                              <div className="text-[13.5px] font-semibold text-foreground leading-tight transition-colors duration-300 group-hover:text-primary">{title}</div>
                               <div className="text-[11.5px] text-muted-foreground leading-tight mt-0.5 truncate">
                                 {desc}
                               </div>
                             </div>
-                            <ArrowLeft className="h-4 w-4 text-muted-foreground/30 shrink-0 transition-all duration-250 group-hover:text-primary group-hover:-translate-x-1 rtl:rotate-180" />
+                            <ArrowLeft className="h-4 w-4 text-muted-foreground/25 shrink-0 transition-all duration-300 ease-out group-hover:text-primary group-hover:-translate-x-1.5 rtl:rotate-180" />
                           </button>
                         );
                       })}
