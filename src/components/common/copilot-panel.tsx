@@ -224,6 +224,10 @@ export function CopilotPanel() {
       }>("/copilot/chat", {
         message: msg,
         history: messages.map(m => ({ role: m.role, content: m.content })),
+        // Pass the active UI locale so the backend can inject a language-
+        // specific system prompt. This is the root-cause fix for the AI
+        // responding in English even when the UI is Arabic.
+        locale,
       });
 
       const assistantMsg: ChatMessage = {

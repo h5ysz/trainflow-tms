@@ -21,11 +21,12 @@ interface CopilotUser {
   permissions: string[];
 }
 
-export async function buildCopilotContext(user: CopilotUser): Promise<CopilotContext> {
+export async function buildCopilotContext(user: CopilotUser, locale: "ar" | "en" = "en"): Promise<CopilotContext> {
   const role = user.role;
   const isContractor = role === "CONTRACTOR";
   const companyId = user.companyId;
   const canSeeFinancial = role === "SUPER_ADMIN" || role === "COORDINATOR" || role === "AUDITOR";
+  const isArabic = locale === "ar";
 
   const [upcomingSessions, pendingRequests, overdueInvoices, expiringCerts, todaySessions, stats] = await Promise.all([
     db.trainingSession.findMany({
@@ -56,9 +57,29 @@ export async function buildCopilotContext(user: CopilotUser): Promise<CopilotCon
     db.trainingSession.aggregate({ _count: true, where: { deletedAt: null, ...(isContractor && companyId ? { enrollments: { some: { companyId, deletedAt: null } } } : {}) } }),
   ]);
 
-  const systemPrompt = `You are GCCLAB AI Copilot, an intelligent assistant for the GCC Electrical Testing Laboratory Training Management System.
+  // ─── Language directive (root-cause fix for AI responding in wrong language) ──
+  // The LLM is explicitly told which language to use. This is NOT a translation
+  // layer — the model itself generates the response in the target language.
+  const languageDirective = isArabic
+    ? `## LANGUAGE (STRICT)
+You are communicating in ARABIC.
+- Always answer in Modern Standard Arabic (الفصحى).
+- NEVER answer in English unless the user explicitly writes in English.
+- Use professional Arabic suitable for Saudi business users.
+- Use Arabic technical terminology (e.g., "متدرب" not "trainee", "دورة" not "course", "جلسة" not "session", "شهادة" not "certificate", "فاتورة" not "invoice").
+- Proper nouns (system names like "GCC LAB", person names, reference numbers like TR-2026-000007) remain in their original form.
+- Numbers may remain as Western Arabic numerals (0-9) — this is standard in Saudi business contexts.`
+    : `## LANGUAGE (STRICT)
+You are communicating in ENGLISH.
+- Always answer in English.
+- NEVER answer in Arabic unless the user explicitly writes in Arabic.
+- Use professional English suitable for business users.`;
+
+  const systemPrompt = `You are GCC LAB AI Assistant, an intelligent assistant for the GCC Electrical Testing Laboratory Training Management System.
 
 Your role is to help ${role} users perform their work faster by answering questions, providing insights, and assisting with operations.
+
+${languageDirective}
 
 SYSTEM CONTEXT:
 - User: ${user.fullName} (${user.email})
@@ -75,7 +96,6 @@ RULES:
 - Always respect the user's permissions. A contractor can only see their own company's data.
 - Be concise and professional. Use bullet points for lists.
 - When suggesting actions, describe what the user should do in the UI.
-- Support both English and Arabic. Respond in the user's language.
 - If you don't have enough data, say so and suggest where to find it.
 
 CURRENT SYSTEM DATA (live as of ${new Date().toISOString()}):`;

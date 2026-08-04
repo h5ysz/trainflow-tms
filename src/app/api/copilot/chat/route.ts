@@ -80,14 +80,19 @@ function buildActionPromptSection(userRole: UserRole): string {
 
 export const POST = withAuth(async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
-  const { message, history } = body as { message?: string; history?: ChatMessage[] };
+  const { message, history, locale } = body as { message?: string; history?: ChatMessage[]; locale?: string };
 
   if (!message || typeof message !== "string") {
     return fail("message is required", 422, "VALIDATION_ERROR");
   }
 
-  // Build context from live system data (Phase 1, unchanged)
-  const { systemPrompt, contextData } = await buildCopilotContext(user);
+  // Normalize the locale — default to "en" if missing or unrecognized.
+  // The frontend sends the active UI locale so the LLM can respond in the
+  // same language the user is reading.
+  const normalizedLocale = locale === "ar" ? "ar" : "en";
+
+  // Build context from live system data (Phase 1, unchanged — now locale-aware)
+  const { systemPrompt, contextData } = await buildCopilotContext(user, normalizedLocale);
 
   // Extend the system prompt with Phase 2 action instructions
   const actionSection = buildActionPromptSection(user.role);
