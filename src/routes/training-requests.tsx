@@ -691,6 +691,7 @@ export function TrainingRequestsRoute() {
           nationalId: tr.nationalId,
           nationality: tr.nationality || null,
           jobTitle: tr.jobTitle || null,
+          idAttachmentUrl: tr.idAttachmentUrl || null,
           // Carry any documents already attached at the client (e.g. uploaded
           // via the row's RowDocUpload). The API merges them into Trainee.documents.
           documents: Array.isArray(tr.documents) ? tr.documents : [],
@@ -838,6 +839,7 @@ export function TrainingRequestsRoute() {
           nationalId: tr.nationalId,
           nationality: tr.nationality || null,
           jobTitle: tr.jobTitle || null,
+          idAttachmentUrl: tr.idAttachmentUrl || null,
           documents: Array.isArray(tr.documents) ? tr.documents : [],
         }));
       await api.put(`/requests/${editTarget.id}`, {

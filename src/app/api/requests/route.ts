@@ -144,6 +144,7 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
     jobTitle?: string | null;
     mobile?: string | null;
     email?: string | null;
+    idAttachmentUrl?: string | null;
     documents?: unknown[];
   }> = Array.isArray(trainees) ? trainees : [];
   const effectiveTraineeCount = submittedTrainees.length > 0 ? submittedTrainees.length : (traineeCount ?? 1);
@@ -210,14 +211,16 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
               jobTitle: t.jobTitle ?? existing.jobTitle,
               mobile: t.mobile ?? existing.mobile,
               email: t.email ?? existing.email,
+              // Store the ID attachment URL from the current submission
+              idAttachmentUrl: (t.idAttachmentUrl as string) ?? existing.idAttachmentUrl,
               updatedAt: now,
               updatedBy: user.id,
-              // Merge documents: keep existing ones, add any new ones from the
-              // payload that aren't already present (matched by url).
-              documents: JSON.stringify(mergeDocuments(
-                parseDocsSafe(existing.documents),
-                Array.isArray(t.documents) ? t.documents as never[] : [],
-              )),
+              // REPLACE documents entirely with the current submission's set.
+              // Previously this MERGED old + new, which caused old demo/test
+              // attachments to persist across submissions and appear in exports.
+              documents: Array.isArray(t.documents) && t.documents.length > 0
+                ? JSON.stringify(t.documents)
+                : existing.documents,
             },
           })
         : await db.trainee.create({
@@ -231,6 +234,7 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
               mobile: t.mobile ?? null,
               email: t.email ?? null,
               companyId: finalCompanyId,
+              idAttachmentUrl: (t.idAttachmentUrl as string) ?? null,
               documents: Array.isArray(t.documents) && t.documents.length > 0
                 ? JSON.stringify(t.documents)
                 : null,
