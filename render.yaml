@@ -79,3 +79,14 @@ services:
       # links that get printed on PDFs, where no Origin header is available.
       - key: APP_URL
         value: https://trainflow-tms.onrender.com
+
+      # ─── AI Copilot Provider ───
+      # If OPENAI_API_KEY is not set, the AI assistant returns a graceful
+      # "not configured" message instead of crashing. The provider uses
+      # native fetch — no SDK dependency.
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        sync: false
+      - key: OPENAI_BASE_URL
+        sync: false

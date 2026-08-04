@@ -16,7 +16,7 @@ import type { UserRole } from "@/lib/auth/permissions";
 import { buildCopilotContext } from "@/lib/ai/copilot-context";
 import { getActionCatalog } from "@/lib/ai/actions/registry";
 import { resolveActionPermission } from "@/lib/ai/actions/registry";
-import ZAI from "z-ai-web-dev-sdk";
+import { getAIProvider } from "@/lib/ai/provider";
 
 interface ChatMessage {
   role: "user" | "assistant" | "system";
@@ -106,14 +106,14 @@ export const POST = withAuth(async ({ req, user }) => {
   ];
 
   try {
-    const zai = await ZAI.create();
-    const response = await zai.chat.completions.create({
+    const provider = getAIProvider();
+    const response = await provider.chat({
       messages,
       temperature: 0.5, // slightly lower for more deterministic action selection
       maxTokens: 2000,
     });
 
-    const raw = response.choices[0]?.message?.content ?? "I apologize, I couldn't generate a response. Please try again.";
+    const raw = response.content || "I apologize, I couldn't generate a response. Please try again.";
 
     // Try to parse an ACTION_PLAN envelope. The LLM is instructed to return
     // JSON only when proposing an action — but it may wrap it in markdown
