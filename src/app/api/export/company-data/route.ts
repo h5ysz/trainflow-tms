@@ -1346,7 +1346,10 @@ export const GET = async (req: NextRequest) => {
     const pdfBuffer = await generatePdfBuffer();
     const pdfFilename = `${fileBase}.pdf`;
     const isPdfFallback = pdfBuffer.length > 0 && pdfBuffer[0] === 0x25; // '%' = HTML, '%PDF' = real PDF
-    return new Response(pdfBuffer, {
+    // Wrap with Uint8Array: Buffer extends Uint8Array at runtime (zero-copy),
+    // but TypeScript's DOM lib types Response's BodyInit more narrowly and
+    // rejects Buffer directly. This fixes the CI typecheck failure.
+    return new Response(new Uint8Array(pdfBuffer), {
       headers: {
         "Content-Type": isPdfFallback ? "application/pdf" : "text/html; charset=utf-8",
         "Content-Disposition": `attachment; filename="${pdfFilename}"`,
@@ -1393,7 +1396,8 @@ export const GET = async (req: NextRequest) => {
 
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
     const zipFilename = `${fileBase}.zip`;
-    return new Response(zipBuffer, {
+    // Wrap with Uint8Array (zero-copy) to satisfy Response BodyInit typing.
+    return new Response(new Uint8Array(zipBuffer), {
       headers: {
         "Content-Type": "application/zip",
         "Content-Disposition": `attachment; filename="${zipFilename}"`,
