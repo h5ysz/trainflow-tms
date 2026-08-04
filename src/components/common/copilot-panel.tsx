@@ -1,56 +1,46 @@
 "use client";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GCC LAB AI Assistant — Floating Side Panel (Premium Enterprise Redesign)
+// GCC LAB AI Assistant — Premium Enterprise Redesign (v2, Arabic-first)
 // ─────────────────────────────────────────────────────────────────────────────
-// A floating button (bottom-right) that opens a premium AI chat panel.
-// Available on every page. Respects the user's language (RTL/LTR) and theme.
-// Conversation history is stored in localStorage.
+// Floating button is ALWAYS bottom-right (physical right-6, not logical end-6)
+// so it stays in the correct position in both RTL and LTR layouts.
+//
+// Arabic is the default language. English is a fallback only when the user's
+// locale is explicitly "en".
 //
 // Phase 2 (action-aware) functionality is fully preserved:
-//   - Detects ACTION_PLAN responses from the chat endpoint and renders an
-//     inline ActionPreviewCard. The user confirms/cancels before execution.
-//   - The "Preparing Action..." → "Action Preview Card" → "Execution
-//     progress" → "Completed"/"Failed" flow lives entirely inside the
-//     chat thread.
+//   - ACTION_PLAN detection → ActionPreviewCard → confirm/cancel → execute
+//   - "Preparing Action..." → preview → execution → completed/failed flow
 //
-// UI/UX redesign (no logic changes):
-//   - Floating button: perfect circle with GCC LAB logo, soft shadow,
-//     subtle glow, hover scale, pulse animation only when there's a
-//     suggestion (i.e. when the panel is closed and has suggestions to show)
-//   - Header: GCC LAB logo + "مساعد GCC LAB الذكي" + subtitle
-//   - Quick Actions: 5 clickable cards
-//   - Suggested Questions: 4 questions
-//   - Conversation: user messages right, assistant left, typing animation,
-//     loading dots, modern rounded chat bubbles
-//   - Responsive: desktop side panel, tablet/mobile full-screen sheet
-//
-// Uses dynamic import to avoid SSR issues with the I18nProvider — the panel
-// only renders client-side after hydration.
+// NO logic changes from the original — only JSX, styling, and copy.
+// Uses dynamic import to avoid SSR issues with the I18nProvider.
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { api } from "@/lib/api/client";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   X, Send, Loader2, Trash2, Lightbulb,
   ClipboardList, FileText, BarChart3, HelpCircle, MessageSquare,
+  ArrowLeft,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ActionPreviewCard, type PreviewResult, type ExecuteResult } from "./copilot/action-preview-card";
 
-// Fallback locale detection — avoids useI18n dependency at the layout level
+// ─── Locale detection — Arabic-first ────────────────────────────────────────
+// Default is "ar" (Arabic). The stored locale is read from localStorage after
+// mount; if it's explicitly "en", we switch to English. Otherwise Arabic stays.
 function useLocale(): string {
-  const [locale, setLocale] = useState("en");
+  const [locale, setLocale] = useState("ar");
   useEffect(() => {
     const handle = setTimeout(() => {
       const stored = localStorage.getItem("gcclab-tms-store");
       if (stored) {
         try {
           const parsed = JSON.parse(stored);
-          if (parsed.state?.locale) setLocale(parsed.state.locale);
+          if (parsed.state?.locale === "en") setLocale("en");
         } catch { /* ignore */ }
       }
     }, 0);
@@ -63,9 +53,6 @@ interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
-  // Phase 2: when the assistant returns an ACTION_PLAN, we attach the plan
-  // + (after preview fetch) the preview + token. The ActionPreviewCard
-  // renders inline below the message bubble.
   actionPlan?: {
     actionType: string;
     params: Record<string, unknown>;
@@ -73,13 +60,10 @@ interface ChatMessage {
   };
   preview?: PreviewResult;
   previewToken?: string;
-  // Once the user confirms/cancels, we hide the action card.
   actionResolved?: boolean;
 }
 
-// ─── Quick Actions (5 enterprise shortcuts) ─────────────────────────────────
-// Each maps to a pre-written prompt that the existing /copilot/chat endpoint
-// understands. Clicking a card calls send(prompt) — same as a suggested prompt.
+// ─── Quick Actions — 5 enterprise shortcuts (Arabic-first) ──────────────────
 interface QuickAction {
   id: string;
   icon: LucideIcon;
@@ -88,6 +72,7 @@ interface QuickAction {
   descAr: string;
   descEn: string;
   prompt: string;
+  accent: string; // tailwind gradient classes for the icon chip
 }
 
 const QUICK_ACTIONS: QuickAction[] = [
@@ -96,9 +81,10 @@ const QUICK_ACTIONS: QuickAction[] = [
     icon: ClipboardList,
     titleAr: "إنشاء طلب دورة",
     titleEn: "Create Course Request",
-    descAr: "ابدأ طلب تدريب جديد",
+    descAr: "ابدأ طلب تدريب جديد للشركة",
     descEn: "Start a new training request",
     prompt: "Help me create a new training course request",
+    accent: "from-blue-500 to-blue-600",
   },
   {
     id: "track-requests",
@@ -108,24 +94,27 @@ const QUICK_ACTIONS: QuickAction[] = [
     descAr: "عرض حالة الطلبات الحالية",
     descEn: "View current request statuses",
     prompt: "Show me the status of my recent training requests",
+    accent: "from-emerald-500 to-emerald-600",
   },
   {
     id: "create-report",
     icon: FileText,
     titleAr: "إنشاء تقرير",
     titleEn: "Generate Report",
-    descAr: "إنشاء تقرير تفصيلي",
-    descEn: "Generate a detailed report",
+    descAr: "إنشاء تقرير تفصيلي للنشاط",
+    descEn: "Generate a detailed activity report",
     prompt: "Generate a summary report of training activities",
+    accent: "from-amber-500 to-amber-600",
   },
   {
     id: "analyze-data",
     icon: BarChart3,
     titleAr: "تحليل البيانات",
     titleEn: "Analyze Data",
-    descAr: "رؤى وإحصائيات",
-    descEn: "Insights and statistics",
+    descAr: "رؤى وإحصائيات الأداء",
+    descEn: "Performance insights and statistics",
     prompt: "Analyze training data and show key insights",
+    accent: "from-purple-500 to-purple-600",
   },
   {
     id: "help",
@@ -135,13 +124,11 @@ const QUICK_ACTIONS: QuickAction[] = [
     descAr: "دليل استخدام النظام",
     descEn: "System usage guide",
     prompt: "How do I use the GCC LAB training management system?",
+    accent: "from-primary to-primary-hover",
   },
 ];
 
-// ─── Suggested Questions (4 FAQ-style prompts) ──────────────────────────────
-// Bilingual. The user-facing label is localized; the prompt sent to the API
-// is in English (the LLM handles both languages, but the existing analytical
-// prompts were English, so we keep the same convention).
+// ─── Suggested Questions — 4 FAQ-style prompts (Arabic-first) ────────────────
 interface SuggestedQuestion {
   id: string;
   labelAr: string;
@@ -176,17 +163,11 @@ const SUGGESTED_QUESTIONS: SuggestedQuestion[] = [
   },
 ];
 
-// Legacy analytical prompts (e.g. "Show today's sessions", "Which trainees
-// failed?") were previously shown in the welcome screen. They have been
-// replaced by the Quick Actions + Suggested Questions above for a cleaner
-// enterprise UX. The LLM still understands them if a user types them
-// manually — no API change is needed.
-
 const STORAGE_KEY = "gcclab-copilot-history";
 
 export function CopilotPanel() {
   const locale = useLocale();
-  const isAr = locale === "ar";
+  const isAr = locale !== "en"; // Arabic by default
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -195,9 +176,7 @@ export function CopilotPanel() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Whether to pulse the floating button — only when closed AND there are
-  // suggestions to show (i.e. no conversation yet, or history cleared).
-  // This is a soft attention cue, not a notification badge.
+  // Pulse only when closed + has suggestions to show + no messages yet
   const shouldPulse = !open && showSuggestions && messages.length === 0;
 
   // Load history from localStorage — deferred to avoid set-state-in-effect
@@ -218,21 +197,21 @@ export function CopilotPanel() {
   // Save history to localStorage
   const saveHistory = useCallback((msgs: ChatMessage[]) => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(msgs.slice(-50))); // keep last 50
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(msgs.slice(-50)));
     } catch { /* ignore */ }
   }, []);
 
   // Auto-scroll to bottom on new message
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
     }
   }, [messages, loading]);
 
   // Focus input when panel opens
   useEffect(() => {
     if (open && inputRef.current) {
-      setTimeout(() => inputRef.current?.focus(), 100);
+      setTimeout(() => inputRef.current?.focus(), 150);
     }
   }, [open]);
 
@@ -268,15 +247,12 @@ export function CopilotPanel() {
       setMessages(updated);
       saveHistory(updated);
 
-      // Phase 2: if the assistant proposed an action, fetch the preview
-      // automatically so the user can review + confirm.
       if (res.kind === "ACTION_PLAN" && res.action) {
         try {
           const previewRes = await api.post<{ preview: PreviewResult; previewToken: string }>(
             "/copilot/actions/preview",
             { actionType: res.action.actionType, params: res.action.params }
           );
-          // Attach the preview to the same assistant message
           let updatedWithPreview: ChatMessage[] = [];
           setMessages((prev) => {
             const next = [...prev];
@@ -291,10 +267,8 @@ export function CopilotPanel() {
             updatedWithPreview = next;
             return next;
           });
-          // Persist the preview so a reload doesn't lose it
           saveHistory(updatedWithPreview);
         } catch (e) {
-          // Preview failed — replace the action plan with an error message
           const errMsg = (e as Error).message || "Failed to prepare action preview.";
           let updatedWithError: ChatMessage[] = [];
           setMessages((prev) => {
@@ -327,7 +301,6 @@ export function CopilotPanel() {
     }
   };
 
-  // Phase 2: handle action card dismissal / execution result
   const handleActionResolved = (idx: number, result: ExecuteResult | null) => {
     setMessages((prev) => {
       const next = [...prev];
@@ -335,8 +308,6 @@ export function CopilotPanel() {
         next[idx] = {
           ...next[idx],
           actionResolved: true,
-          // If execution succeeded, append the result text as part of the
-          // assistant message so the user can see what happened.
           content: result
             ? `${next[idx].content}\n\n✅ ${result.message}`
             : next[idx].content,
@@ -353,160 +324,190 @@ export function CopilotPanel() {
     localStorage.removeItem(STORAGE_KEY);
   };
 
-  // ─── Localized labels ────────────────────────────────────────────────────
+  // ─── Localized labels (Arabic-first) ─────────────────────────────────────
   const L = {
     assistantTitle: isAr ? "مساعد GCC LAB الذكي" : "GCC LAB AI Assistant",
     assistantSubtitle: isAr ? "جاهز لمساعدتك في إدارة التدريب" : "Ready to help you manage training",
-    welcome: isAr ? "مرحباً! كيف يمكنني مساعدتك اليوم؟" : "Hello! How can I help you today?",
+    welcome: isAr ? "مرحبًا، كيف يمكنني مساعدتك اليوم؟" : "Hello! How can I help you today?",
     welcomeDesc: isAr
-      ? "اسألني عن الجلسات، المتدرِّبين، الفواتير، الشهادات، وأكثر."
-      : "Ask me about sessions, trainees, invoices, certificates, and more.",
+      ? "اسألني عن الدورات، المتدربين، التقارير، الشهادات، أو أي شيء يخص النظام"
+      : "Ask me about courses, trainees, reports, certificates, or anything about the system",
     quickActions: isAr ? "إجراءات سريعة" : "Quick Actions",
-    suggestedQuestions: isAr ? "أسئلة مقترحة" : "Suggested Questions",
+    suggestedQuestions: isAr ? "أسئلة شائعة" : "Suggested Questions",
     typeMessage: isAr ? "اكتب رسالتك..." : "Type your message...",
     aiPowered: isAr ? "مدعوم بالذكاء الاصطناعي • يحترم صلاحياتك" : "AI-powered • Respects your permissions",
     clearHistory: isAr ? "مسح المحادثة" : "Clear history",
     close: isAr ? "إغلاق" : "Close",
     openAssistant: isAr ? "افتح مساعد GCC LAB" : "Open GCC LAB Assistant",
     preparingAction: isAr ? "جاري تحضير معاينة الإجراء..." : "Preparing action preview...",
+    send: isAr ? "إرسال" : "Send",
+    you: isAr ? "أنت" : "You",
   };
 
   return (
     <>
-      {/* ─── Floating Button ────────────────────────────────────────────────
-          Perfect circle (1:1) with GCC LAB logo, soft shadow, subtle glow.
-          Hover: scale + glow intensify. Pulse only when shouldPulse=true. */}
+      {/* ════════════════════════════════════════════════════════════════════
+          Floating Button — ALWAYS bottom-right (physical right-6)
+          Perfect circle, GCC LAB logo, soft pulse, hover glow, modern shadow
+          ════════════════════════════════════════════════════════════════════ */}
       {!open && (
-        <button
-          onClick={() => setOpen(true)}
-          className={cn(
-            "fixed bottom-6 end-6 z-50 flex h-14 w-14 items-center justify-center rounded-full",
-            "bg-gradient-to-br from-primary to-primary-hover text-primary-foreground",
-            "shadow-[0_8px_24px_-4px_rgba(0,0,0,0.25),0_0_0_1px_rgba(255,255,255,0.08)]",
-            "ring-2 ring-primary/20",
-            "transition-all duration-300 ease-out",
-            "hover:scale-110 hover:shadow-[0_12px_32px_-4px_rgba(0,0,0,0.35),0_0_24px_rgba(59,130,246,0.25)]",
-            "hover:ring-primary/40",
-            "active:scale-95",
-            "group relative overflow-hidden",
-          )}
-          aria-label={L.openAssistant}
-        >
-          {/* Subtle inner glow ring on hover */}
-          <span className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-tr from-white/10 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-
-          {/* GCC LAB logo — replaces the generic Sparkles icon */}
-          <Image
-            src="/gcclab-icon.png"
-            alt="GCC LAB"
-            width={32}
-            height={32}
-            className="h-8 w-8 shrink-0 object-contain rounded-full"
-            priority
-          />
-
-          {/* Pulse animation — only when there's a suggestion to show.
-              Uses a softer, slower ping than the default animate-ping. */}
+        <div className="fixed bottom-6 right-6 z-50">
+          {/* Pulse ring — only when shouldPulse */}
           {shouldPulse && (
-            <span className="pointer-events-none absolute inset-0 rounded-full">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/40 opacity-60" style={{ animationDuration: "2.5s" }} />
-            </span>
+            <>
+              <span className="pointer-events-none absolute inset-0 rounded-full bg-primary/30 animate-ping" style={{ animationDuration: "2.5s" }} />
+              <span className="pointer-events-none absolute inset-0 rounded-full bg-primary/20 animate-ping" style={{ animationDuration: "2.5s", animationDelay: "0.8s" }} />
+            </>
           )}
-        </button>
+
+          <button
+            onClick={() => setOpen(true)}
+            className={cn(
+              "relative flex h-14 w-14 items-center justify-center rounded-full",
+              "bg-gradient-to-br from-primary to-primary-hover",
+              "shadow-[0_8px_32px_-8px_rgba(0,0,0,0.3),0_4px_12px_-2px_rgba(0,0,0,0.15)]",
+              "ring-1 ring-white/20",
+              "transition-all duration-300 cubic-bezier(0.4,0,0.2,1)",
+              "hover:scale-110 hover:shadow-[0_12px_40px_-8px_rgba(0,0,0,0.4),0_0_32px_rgba(59,130,246,0.3)]",
+              "active:scale-95",
+              "group",
+            )}
+            aria-label={L.openAssistant}
+          >
+            {/* Gradient overlay for depth */}
+            <span className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-tr from-transparent via-white/5 to-white/20" />
+
+            {/* GCC LAB official logo */}
+            <Image
+              src="/gcclab-icon.png"
+              alt="GCC LAB"
+              width={36}
+              height={36}
+              className="relative h-9 w-9 shrink-0 object-contain rounded-full transition-transform duration-300 group-hover:scale-110"
+              priority
+            />
+          </button>
+        </div>
       )}
 
-      {/* ─── Side Panel / Full-screen Sheet (responsive) ───────────────────── */}
+      {/* ════════════════════════════════════════════════════════════════════
+          Assistant Panel — slides in from physical right
+          ════════════════════════════════════════════════════════════════════ */}
       {open && (
-        <div className="fixed inset-0 z-50 flex justify-end">
+        <div className="fixed inset-0 z-50">
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200"
+            className="absolute inset-0 bg-black/50 backdrop-blur-md animate-in fade-in duration-300"
             onClick={() => setOpen(false)}
           />
 
-          {/* Panel — full-width on mobile/tablet, max-w-md on desktop */}
+          {/* Panel container — always on the physical right */}
           <div
             className={cn(
-              "relative flex h-full flex-col bg-background shadow-2xl animate-in slide-in-from-right duration-300",
-              "w-full max-w-md",
-              // Subtle top accent bar in GCC LAB brand color
-              "border-s",
+              "absolute right-0 top-0 h-full",
+              "w-full sm:w-[440px] md:w-[480px]",
+              "bg-background",
+              "shadow-[0_0_60px_-12px_rgba(0,0,0,0.4)]",
+              "flex flex-col",
+              "animate-in slide-in-from-right duration-400",
             )}
+            style={{ animationFillMode: "both" }}
           >
-            {/* ─── Header — GCC LAB Logo + Title + Subtitle ─────────────────── */}
-            <div className="flex items-center justify-between border-b bg-gradient-to-r from-primary/5 to-transparent p-4 shrink-0">
-              <div className="flex items-center gap-3 min-w-0">
-                {/* GCC LAB Logo in a branded chip */}
-                <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-hover shadow-md ring-1 ring-primary/20">
-                  <Image
-                    src="/gcclab-icon.png"
-                    alt="GCC LAB"
-                    width={26}
-                    height={26}
-                    className="h-6 w-6 shrink-0 object-contain rounded-md"
-                  />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-sm font-bold leading-tight tracking-tight truncate">
-                    {L.assistantTitle}
+            {/* ─── Premium Header Card ─────────────────────────────────────
+                Large circular logo, Arabic title, subtitle, gradient bg */}
+            <div className="relative shrink-0 overflow-hidden border-b">
+              {/* Gradient background */}
+              <div className="absolute inset-0 bg-gradient-to-br from-primary via-primary to-primary-hover opacity-97" />
+              <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-transparent to-white/10" />
+
+              {/* Decorative pattern */}
+              <div
+                className="absolute inset-0 opacity-10"
+                style={{
+                  backgroundImage: "radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 80%, white 1px, transparent 1px)",
+                  backgroundSize: "32px 32px",
+                }}
+              />
+
+              <div className="relative flex items-center justify-between p-5">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  {/* Large circular logo with glow */}
+                  <div className="relative shrink-0">
+                    <div className="absolute inset-0 rounded-full bg-white/20 blur-md" />
+                    <div className="relative flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-lg ring-2 ring-white/30">
+                      <Image
+                        src="/gcclab-icon.png"
+                        alt="GCC LAB"
+                        width={30}
+                        height={30}
+                        className="h-8 w-8 shrink-0 object-contain rounded-full"
+                      />
+                    </div>
                   </div>
-                  <div className="text-xs text-muted-foreground leading-tight truncate">
-                    {L.assistantSubtitle}
+                  <div className="min-w-0">
+                    <h2 className="text-base font-bold text-white leading-tight tracking-tight truncate">
+                      {L.assistantTitle}
+                    </h2>
+                    <p className="text-xs text-white/80 leading-tight truncate mt-0.5">
+                      {L.assistantSubtitle}
+                    </p>
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                {messages.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    onClick={clearHistory}
-                    title={L.clearHistory}
-                    aria-label={L.clearHistory}
+                <div className="flex items-center gap-1 shrink-0">
+                  {messages.length > 0 && (
+                    <button
+                      onClick={clearHistory}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                      title={L.clearHistory}
+                      aria-label={L.clearHistory}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setOpen(false)}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                    title={L.close}
+                    aria-label={L.close}
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  onClick={() => setOpen(false)}
-                  title={L.close}
-                  aria-label={L.close}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* ─── Messages Area ─────────────────────────────────────────────── */}
-            <div ref={scrollRef} className="flex-1 overflow-y-auto tf-scroll p-4 space-y-4">
-              {messages.length === 0 && showSuggestions && (
-                <div className="space-y-5">
-                  {/* Welcome message */}
-                  <div className="rounded-2xl bg-gradient-to-br from-muted/60 to-muted/30 p-4 ring-1 ring-border/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary">
-                        <Lightbulb className="h-4 w-4" />
+            {/* ─── Messages Area ──────────────────────────────────────────── */}
+            <div ref={scrollRef} className="flex-1 overflow-y-auto tf-scroll px-4 py-5 space-y-5 bg-muted/30">
+              {messages.length === 0 && showSuggestions ? (
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                  {/* Welcome card */}
+                  <div className="rounded-2xl bg-card p-4 shadow-sm ring-1 ring-border/50">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 shadow-md">
+                        <Lightbulb className="h-5 w-5 text-white" />
                       </div>
-                      <span className="font-semibold text-sm">
-                        {L.welcome}
-                      </span>
+                      <div className="min-w-0 flex-1 pt-0.5">
+                        <h3 className="font-bold text-sm text-foreground leading-tight">
+                          {L.welcome}
+                        </h3>
+                        <p className="text-xs text-muted-foreground leading-relaxed mt-1.5">
+                          {L.welcomeDesc}
+                        </p>
+                      </div>
                     </div>
-                    <p className="text-xs text-muted-foreground leading-relaxed ps-9">
-                      {L.welcomeDesc}
-                    </p>
                   </div>
 
-                  {/* ─── Quick Actions (5 cards) ───────────────────────────── */}
-                  <div className="space-y-2">
-                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      {L.quickActions}
+                  {/* Quick Actions */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center gap-2 px-1">
+                      <div className="h-px flex-1 bg-border" />
+                      <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                        {L.quickActions}
+                      </span>
+                      <div className="h-px flex-1 bg-border" />
                     </div>
                     <div className="grid grid-cols-1 gap-2">
-                      {QUICK_ACTIONS.map((action) => {
+                      {QUICK_ACTIONS.map((action, idx) => {
                         const Icon = action.icon;
                         const title = isAr ? action.titleAr : action.titleEn;
                         const desc = isAr ? action.descAr : action.descEn;
@@ -515,172 +516,206 @@ export function CopilotPanel() {
                             key={action.id}
                             onClick={() => void send(action.prompt)}
                             className={cn(
-                              "group flex items-center gap-3 rounded-xl border bg-card p-3 text-start",
+                              "group flex items-center gap-3 rounded-xl bg-card p-3 text-start",
+                              "ring-1 ring-border/50",
                               "transition-all duration-200",
-                              "hover:border-primary/40 hover:bg-primary/5 hover:shadow-sm",
-                              "active:scale-[0.98]",
+                              "hover:ring-primary/30 hover:shadow-md hover:-translate-y-0.5",
+                              "active:translate-y-0 active:scale-[0.98]",
                             )}
+                            style={{ animationDelay: `${idx * 50}ms` }}
                           >
-                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
-                              <Icon className="h-4 w-4" />
+                            <div className={cn(
+                              "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+                              "bg-gradient-to-br shadow-sm",
+                              action.accent,
+                              "transition-transform duration-200 group-hover:scale-110",
+                            )}>
+                              <Icon className="h-5 w-5 text-white" />
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className="text-sm font-medium leading-tight">{title}</div>
+                              <div className="text-sm font-semibold text-foreground leading-tight">{title}</div>
                               <div className="text-[11px] text-muted-foreground leading-tight mt-0.5 truncate">
                                 {desc}
                               </div>
                             </div>
+                            <ArrowLeft className="h-4 w-4 text-muted-foreground/40 shrink-0 transition-all duration-200 group-hover:text-primary group-hover:-translate-x-1 rtl:rotate-180" />
                           </button>
                         );
                       })}
                     </div>
                   </div>
 
-                  {/* ─── Suggested Questions (4 questions) ─────────────────── */}
+                  {/* Suggested Questions */}
                   <div className="space-y-2">
-                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      {L.suggestedQuestions}
+                    <div className="flex items-center gap-2 px-1">
+                      <div className="h-px flex-1 bg-border" />
+                      <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                        {L.suggestedQuestions}
+                      </span>
+                      <div className="h-px flex-1 bg-border" />
                     </div>
-                    <div className="grid grid-cols-1 gap-1.5">
+                    <div className="grid grid-cols-2 gap-2">
                       {SUGGESTED_QUESTIONS.map((q) => (
                         <button
                           key={q.id}
                           onClick={() => void send(q.prompt)}
                           className={cn(
-                            "flex items-center gap-2 rounded-lg px-3 py-2 text-start text-sm",
-                            "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-                            "transition-colors",
+                            "rounded-xl bg-card px-3 py-2.5 text-start text-xs font-medium",
+                            "ring-1 ring-border/50 text-foreground/80",
+                            "transition-all duration-200",
+                            "hover:ring-primary/30 hover:bg-primary/5 hover:text-primary hover:shadow-sm",
                           )}
                         >
-                          <span className="h-1 w-1 rounded-full bg-primary/60 shrink-0" />
-                          <span className="truncate">{isAr ? q.labelAr : q.labelEn}</span>
+                          {isAr ? q.labelAr : q.labelEn}
                         </button>
                       ))}
                     </div>
                   </div>
                 </div>
-              )}
+              ) : (
+                /* ─── Conversation messages ─────────────────────────────── */
+                <div className="space-y-5">
+                  {messages.map((msg, idx) => (
+                    <div key={idx} className="space-y-2 animate-in fade-in slide-in-from-bottom-1 duration-300">
+                      <div
+                        className={cn(
+                          "flex gap-2.5 items-end",
+                          msg.role === "user" ? "justify-end" : "justify-start"
+                        )}
+                      >
+                        {/* Assistant avatar — GCC LAB logo */}
+                        {msg.role === "assistant" && (
+                          <div className="relative shrink-0">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-hover shadow-md ring-2 ring-background">
+                              <Image
+                                src="/gcclab-icon.png"
+                                alt="GCC LAB"
+                                width={20}
+                                height={20}
+                                className="h-5 w-5 shrink-0 object-contain rounded-full"
+                              />
+                            </div>
+                          </div>
+                        )}
 
-              {/* ─── Conversation messages ─────────────────────────────────── */}
-              {messages.map((msg, idx) => (
-                <div key={idx} className="space-y-2">
-                  <div
-                    className={cn(
-                      "flex gap-2 items-end",
-                      msg.role === "user" ? "justify-end" : "justify-start"
-                    )}
-                  >
-                    {/* Assistant avatar — GCC LAB mini logo */}
-                    {msg.role === "assistant" && (
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-hover shadow-sm ring-1 ring-primary/20">
+                        {/* Message bubble */}
+                        <div
+                          className={cn(
+                            "px-4 py-2.5 text-sm whitespace-pre-wrap break-words leading-relaxed",
+                            msg.role === "user"
+                              ? "bg-gradient-to-br from-primary to-primary-hover text-primary-foreground rounded-2xl rounded-br-md shadow-md max-w-[78%] font-medium"
+                              : "bg-card text-card-foreground rounded-2xl rounded-bl-md shadow-sm ring-1 ring-border/50 max-w-[78%]"
+                          )}
+                        >
+                          {msg.content}
+                        </div>
+
+                        {/* User avatar — initials circle */}
+                        {msg.role === "user" && (
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-foreground font-bold text-xs shadow-sm ring-2 ring-background">
+                            {L.you.charAt(0)}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Phase 2: Action Preview Card */}
+                      {msg.role === "assistant"
+                        && msg.preview
+                        && msg.previewToken
+                        && !msg.actionResolved
+                        && (
+                          <div className="ps-11.5" style={{ paddingLeft: "2.875rem" }}>
+                            <ActionPreviewCard
+                              preview={msg.preview}
+                              previewToken={msg.previewToken}
+                              locale={locale as "en" | "ar"}
+                              onDismiss={() => handleActionResolved(idx, null)}
+                              onExecuted={(result) => handleActionResolved(idx, result)}
+                            />
+                          </div>
+                        )}
+
+                      {/* Phase 2: preparing action hint */}
+                      {msg.role === "assistant"
+                        && msg.actionPlan
+                        && !msg.preview
+                        && !msg.actionResolved
+                        && (
+                          <div className="ps-11.5" style={{ paddingLeft: "2.875rem" }}>
+                            <div className="rounded-xl bg-card p-3 text-xs text-muted-foreground flex items-center gap-2 ring-1 ring-border/50 shadow-sm">
+                              <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                              {L.preparingAction}
+                            </div>
+                          </div>
+                        )}
+                    </div>
+                  ))}
+
+                  {/* ─── Typing indicator ─────────────────────────────────── */}
+                  {loading && (
+                    <div className="flex gap-2.5 items-end justify-start animate-in fade-in duration-200">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-hover shadow-md ring-2 ring-background">
                         <Image
                           src="/gcclab-icon.png"
                           alt="GCC LAB"
-                          width={18}
-                          height={18}
-                          className="h-[18px] w-[18px] shrink-0 object-contain rounded-full"
+                          width={20}
+                          height={20}
+                          className="h-5 w-5 shrink-0 object-contain rounded-full"
                         />
                       </div>
-                    )}
-                    <div
-                      className={cn(
-                        "px-4 py-2.5 text-sm whitespace-pre-wrap break-words",
-                        msg.role === "user"
-                          ? "bg-primary text-primary-foreground rounded-2xl rounded-br-md shadow-sm max-w-[80%]"
-                          : "bg-muted rounded-2xl rounded-bl-md max-w-[80%]"
-                      )}
-                    >
-                      {msg.content}
-                    </div>
-                  </div>
-
-                  {/* Phase 2: Action Preview Card (only when preview is ready
-                      and the user hasn't yet confirmed/cancelled). */}
-                  {msg.role === "assistant"
-                    && msg.preview
-                    && msg.previewToken
-                    && !msg.actionResolved
-                    && (
-                      <div className="ps-10">
-                        <ActionPreviewCard
-                          preview={msg.preview}
-                          previewToken={msg.previewToken}
-                          locale={locale as "en" | "ar"}
-                          onDismiss={() => handleActionResolved(idx, null)}
-                          onExecuted={(result) => handleActionResolved(idx, result)}
-                        />
-                      </div>
-                    )}
-
-                  {/* Phase 2: while the preview is being fetched (actionPlan
-                      set, but no preview yet), show a small loading hint. */}
-                  {msg.role === "assistant"
-                    && msg.actionPlan
-                    && !msg.preview
-                    && !msg.actionResolved
-                    && (
-                      <div className="ps-10">
-                        <div className="rounded-xl border bg-card p-3 text-xs text-muted-foreground flex items-center gap-2">
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                          {L.preparingAction}
+                      <div className="bg-card rounded-2xl rounded-bl-md px-5 py-4 shadow-sm ring-1 ring-border/50">
+                        <div className="flex items-center gap-1.5">
+                          <span className="h-2 w-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "1s" }} />
+                          <span className="h-2 w-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: "150ms", animationDuration: "1s" }} />
+                          <span className="h-2 w-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: "300ms", animationDuration: "1s" }} />
                         </div>
                       </div>
-                    )}
-                </div>
-              ))}
-
-              {/* ─── Loading indicator (typing animation) ───────────────────── */}
-              {loading && (
-                <div className="flex gap-2 items-end justify-start">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-hover shadow-sm ring-1 ring-primary/20">
-                    <Image
-                      src="/gcclab-icon.png"
-                      alt="GCC LAB"
-                      width={18}
-                      height={18}
-                      className="h-[18px] w-[18px] shrink-0 object-contain rounded-full"
-                    />
-                  </div>
-                  <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-3">
-                    {/* Three-dot typing animation */}
-                    <div className="flex items-center gap-1">
-                      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "1s" }} />
-                      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "150ms", animationDuration: "1s" }} />
-                      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "300ms", animationDuration: "1s" }} />
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
             </div>
 
-            {/* ─── Input Area ──────────────────────────────────────────────── */}
-            <div className="border-t bg-background p-3 shrink-0">
-              <div className="flex gap-2 items-end">
-                <Input
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      void send();
-                    }
-                  }}
-                  placeholder={L.typeMessage}
-                  disabled={loading}
-                  className="flex-1 rounded-xl"
-                />
-                <Button
-                  size="icon"
+            {/* ─── Input Area ─────────────────────────────────────────────── */}
+            <div className="shrink-0 border-t bg-background p-3">
+              <div className="flex items-end gap-2">
+                <div className="relative flex-1">
+                  <Input
+                    ref={inputRef}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void send();
+                      }
+                    }}
+                    placeholder={L.typeMessage}
+                    disabled={loading}
+                    className="h-11 rounded-2xl pe-3 ps-4 text-sm bg-muted/50 border-border/50 focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-primary/20"
+                  />
+                </div>
+                <button
                   onClick={() => void send()}
                   disabled={loading || !input.trim()}
-                  className="rounded-xl shrink-0"
-                  aria-label={isAr ? "إرسال" : "Send"}
+                  className={cn(
+                    "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl",
+                    "bg-gradient-to-br from-primary to-primary-hover text-primary-foreground",
+                    "shadow-md transition-all duration-200",
+                    "hover:scale-105 hover:shadow-lg",
+                    "active:scale-95",
+                    "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
+                  )}
+                  aria-label={L.send}
                 >
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                </Button>
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4 rtl:-scale-x-100" />
+                  )}
+                </button>
               </div>
-              <p className="mt-2 text-[10px] text-muted-foreground text-center">
+              <p className="mt-2 text-[10px] text-muted-foreground text-center font-medium">
                 {L.aiPowered}
               </p>
             </div>
