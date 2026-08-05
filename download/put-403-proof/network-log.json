@@ -1,0 +1,453 @@
+[
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/"
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/",
+    "status": 200
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/280fac012b00b901-s.p.9709d1fd.woff2"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/3347fc7792f0b5ea-s.p.4e0b272c.woff2"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/441492499fc86682-s.p.b0de9e14.woff2"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/5ad8fdb5805e9b4a-s.p.a7af9cce.woff2"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/5d6231e6818a3930-s.p.b30c7eb5.woff2"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/84cd8d504984ae62-s.p.df776b69.woff2"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/c24ca030dfcb5061-s.p.011ba70b.woff2"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/c412b9dae757a56d-s.p.a7353df5.woff2"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/c9a0d344f313d307-s.p.2e3b0be0.woff2"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/ceec3e50f42c26e3-s.p.d48d1167.woff2"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/image?url=%2Fgcclab-logo-white.png&w=384&q=75"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/1c6cc1a38d794683.css"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/fd4bcdeedf9f35bf.css"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/f1b4d49aa9e249c5.js"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/1d213962fe989c2b.js"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/ee40bf07a09d2a01.js"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/6abb999730c35bba.js"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/82abf2d65f5428ae.js"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/turbopack-9c885578d5559e80.js"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/ff1a16fafef87110.js"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/202b956bc838ef27.js"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/5934cb32e375c748.js"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/92bd73dcf150a71d.js"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/bddfe56e344bc124.js"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/f7577899e98e9785.js"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/fe5b861a7fe84527.js"
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/280fac012b00b901-s.p.9709d1fd.woff2",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/3347fc7792f0b5ea-s.p.4e0b272c.woff2",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/441492499fc86682-s.p.b0de9e14.woff2",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/1c6cc1a38d794683.css",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/5d6231e6818a3930-s.p.b30c7eb5.woff2",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/84cd8d504984ae62-s.p.df776b69.woff2",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/c24ca030dfcb5061-s.p.011ba70b.woff2",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/fd4bcdeedf9f35bf.css",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/5ad8fdb5805e9b4a-s.p.a7af9cce.woff2",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/c412b9dae757a56d-s.p.a7353df5.woff2",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/c9a0d344f313d307-s.p.2e3b0be0.woff2",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/media/ceec3e50f42c26e3-s.p.d48d1167.woff2",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/image?url=%2Fgcclab-logo-white.png&w=384&q=75",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/f1b4d49aa9e249c5.js",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/1d213962fe989c2b.js",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/6abb999730c35bba.js",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/ff1a16fafef87110.js",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/turbopack-9c885578d5559e80.js",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/82abf2d65f5428ae.js",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/202b956bc838ef27.js",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/5934cb32e375c748.js",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/ee40bf07a09d2a01.js",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/92bd73dcf150a71d.js",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/bddfe56e344bc124.js",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/fe5b861a7fe84527.js",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/static/chunks/f7577899e98e9785.js",
+    "status": 200
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/api/auth/me"
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/api/auth/me",
+    "status": 401
+  },
+  {
+    "type": "request",
+    "method": "POST",
+    "url": "http://localhost:3000/api/auth/login"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/image?url=%2Fgcclab-icon.png&w=64&q=75"
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/image?url=%2Fgcclab-icon.png&w=64&q=75",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://localhost:3000/api/auth/login",
+    "status": 200
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/image?url=%2Fgcclab-icon.png&w=48&q=75"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/api/import-export-logs"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/api/import-export-logs"
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/api/requests?page=1&pageSize=10"
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/_next/image?url=%2Fgcclab-icon.png&w=48&q=75",
+    "status": 200
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/api/notifications?pageSize=5"
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/api/import-export-logs",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/api/import-export-logs",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/api/requests?page=1&pageSize=10",
+    "status": 200
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/api/notifications?pageSize=5",
+    "status": 200
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/api/courses?pageSize=100"
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/api/courses?pageSize=100",
+    "status": 200
+  },
+  {
+    "type": "request",
+    "method": "POST",
+    "url": "http://localhost:3000/api/requests"
+  },
+  {
+    "type": "response",
+    "method": "POST",
+    "url": "http://localhost:3000/api/requests",
+    "status": 201
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/api/requests?page=1&pageSize=10"
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/api/requests?page=1&pageSize=10",
+    "status": 200
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/api/requests/7c5dc894-4f79-4837-86f5-0c6650936433"
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/api/requests/7c5dc894-4f79-4837-86f5-0c6650936433",
+    "status": 200
+  },
+  {
+    "type": "request",
+    "method": "PUT",
+    "url": "http://localhost:3000/api/requests/7c5dc894-4f79-4837-86f5-0c6650936433"
+  },
+  {
+    "type": "response",
+    "method": "PUT",
+    "url": "http://localhost:3000/api/requests/7c5dc894-4f79-4837-86f5-0c6650936433",
+    "status": 200
+  },
+  {
+    "type": "request",
+    "method": "GET",
+    "url": "http://localhost:3000/api/requests?page=1&pageSize=10"
+  },
+  {
+    "type": "response",
+    "method": "GET",
+    "url": "http://localhost:3000/api/requests?page=1&pageSize=10",
+    "status": 200
+  }
+]
