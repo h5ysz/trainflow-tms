@@ -25,8 +25,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
-      {/* Desktop sidebar — 1px divider, no gutter */}
-      <div className="hidden lg:block w-52 shrink-0 border-e border-border/60">
+      {/* Desktop sidebar — no visible gutter, natural separation */}
+      <div className="hidden lg:block w-52 shrink-0">
         <Sidebar />
       </div>
 
