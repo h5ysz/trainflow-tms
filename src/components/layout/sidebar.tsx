@@ -101,7 +101,7 @@ export function Sidebar() {
                     <button
                       onClick={() => navigate(item.key)}
                       className={cn(
-                        "group relative flex items-center gap-2.5 w-full rounded-lg px-2.5 py-[7px] text-[12.5px] transition-all duration-150",
+                        "group relative flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-[13px] transition-all duration-150",
                         active
                           ? "bg-primary/10 text-primary font-semibold"
                           : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground font-medium"
@@ -109,10 +109,10 @@ export function Sidebar() {
                     >
                       {/* Active indicator bar */}
                       {active && (
-                        <span className="absolute inset-inline-start-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-primary" />
+                        <span className="absolute inset-inline-start-0 top-2 bottom-2 w-[3px] rounded-full bg-primary" />
                       )}
                       <Icon
-                        className={cn("h-4 w-4 shrink-0 transition-colors", active ? "text-primary" : "text-muted-foreground group-hover:text-sidebar-foreground")}
+                        className={cn("h-[18px] w-[18px] shrink-0 transition-colors", active ? "text-primary" : "text-muted-foreground group-hover:text-sidebar-foreground")}
                         strokeWidth={active ? 2.2 : 1.8}
                       />
                       <span className="truncate">{t(item.labelKey as never)}</span>

@@ -233,7 +233,7 @@ export function Topbar() {
 
       <div className="flex-1" />
 
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1.5">
         <Button variant="ghost" size="sm" className="gap-1.5 hidden sm:flex" onClick={() => setLocale(locale === "en" ? "ar" : "en")}>
           <Languages className="h-4 w-4" />
           <span className="text-xs font-medium">{locale === "en" ? "EN" : "ع"}</span>

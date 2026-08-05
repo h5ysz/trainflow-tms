@@ -107,7 +107,7 @@ export function DataTable<T>({
                 {columns.map((col) => (
                   <TableHead
                     key={col.key}
-                    className={cn("text-xs font-semibold uppercase tracking-wide text-muted-foreground", col.headerClassName)}
+                    className={cn("text-[11px] font-bold uppercase tracking-wide text-muted-foreground", col.headerClassName)}
                     style={col.width ? { width: col.width } : undefined}
                   >
                     {col.header}
