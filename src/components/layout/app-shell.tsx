@@ -9,10 +9,11 @@ import { CopilotPanel } from "@/components/common/copilot-panel";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@/components/ui/visually-hidden";
 import { useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { dir, t } = useI18n();
-  const { sidebarOpen, setSidebarOpen, theme } = useAppStore();
+  const { sidebarOpen, setSidebarOpen, theme, currentRoute } = useAppStore();
 
   // Apply theme + direction to <html>
   useEffect(() => {
@@ -45,9 +46,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex flex-1 flex-col min-w-0">
         <Topbar />
         <main className="flex-1 overflow-y-auto tf-scroll">
-          <div className="w-full p-4 lg:p-5">
-            {children}
-          </div>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={currentRoute}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+              className="w-full p-4 lg:p-5"
+            >
+              {children}
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
 

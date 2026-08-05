@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { canAccessModule, type UserRole, type RouteKey } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
+import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
@@ -248,9 +249,15 @@ export function Topbar() {
             <Button variant="ghost" size="icon" className="relative">
               <Bell className="h-4 w-4" />
               {unreadCount > 0 && (
-                <span className="absolute top-1 end-1.5 inline-flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[9px] font-semibold h-3.5 min-w-3.5 px-1">
+                <motion.span
+                  key={unreadCount}
+                  initial={{ scale: 0.5, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 25 }}
+                  className="absolute top-1 end-1.5 inline-flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[9px] font-semibold h-3.5 min-w-3.5 px-1"
+                >
                   {unreadCount > 9 ? "9+" : unreadCount}
-                </span>
+                </motion.span>
               )}
             </Button>
           </PopoverTrigger>

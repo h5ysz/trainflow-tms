@@ -20,6 +20,7 @@ import { useAppStore } from "@/lib/store/app-store";
 import { getNavForRole, canAccessModule, type NavItem } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
+import { motion } from "framer-motion";
 import {
   LayoutDashboard, Building2, Contact, Users, Award, UserSquare, BookOpen,
   ClipboardList, CalendarDays, CalendarRange, CalendarClock, UserCheck, QrCode,
@@ -98,25 +99,31 @@ export function Sidebar() {
                 const active = currentRoute === item.key;
                 return (
                   <li key={item.key}>
-                    <button
+                    <motion.button
                       onClick={() => navigate(item.key)}
+                      whileTap={{ scale: 0.98 }}
+                      transition={{ duration: 0.15 }}
                       className={cn(
-                        "group relative flex items-center gap-2.5 w-full rounded-lg px-2.5 py-2 text-[13px] transition-all duration-150",
+                        "group relative flex items-center gap-2.5 w-full rounded-lg px-2.5 py-2 text-[13px] transition-colors duration-150",
                         active
                           ? "bg-primary/10 text-primary font-semibold"
                           : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground font-medium"
                       )}
                     >
-                      {/* Active indicator bar */}
+                      {/* Active indicator bar — animated slide via layoutId */}
                       {active && (
-                        <span className="absolute inset-inline-start-0 top-2 bottom-2 w-[3px] rounded-full bg-primary" />
+                        <motion.span
+                          layoutId="sidebar-active-indicator"
+                          className="absolute inset-inline-start-0 top-2 bottom-2 w-[3px] rounded-full bg-primary"
+                          transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                        />
                       )}
                       <Icon
-                        className={cn("h-[18px] w-[18px] shrink-0 transition-colors", active ? "text-primary" : "text-muted-foreground group-hover:text-sidebar-foreground")}
+                        className={cn("h-[18px] w-[18px] shrink-0 transition-all duration-150", active ? "text-primary" : "text-muted-foreground group-hover:text-sidebar-foreground group-hover:scale-105")}
                         strokeWidth={active ? 2.2 : 1.8}
                       />
-                      <span className="truncate">{t(item.labelKey as never)}</span>
-                    </button>
+                      <span className="truncate transition-colors duration-150">{t(item.labelKey as never)}</span>
+                    </motion.button>
                   </li>
                 );
               })}
