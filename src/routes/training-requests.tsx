@@ -301,7 +301,11 @@ export function TrainingRequestsRoute() {
 
   useEffect(() => {
     if (dialogOpen) {
-      if (companies.length === 0) {
+      // Contractors don't see the Company selector (their companyId is set
+      // server-side from their session). Skip the /api/companies fetch
+      // entirely — it returns 403 for contractors and pollutes the console
+      // with a forbidden-error.
+      if (user?.role !== "CONTRACTOR" && companies.length === 0) {
         api.getList<CompanyOption>("/companies", { pageSize: 100 }).then((r) => {
           setCompanies(r.rows.map((c) => ({ id: c.id, name: c.name, refNumber: c.refNumber })));
         }).catch(() => {});
@@ -312,7 +316,7 @@ export function TrainingRequestsRoute() {
         }).catch(() => {});
       }
     }
-  }, [dialogOpen, companies.length, courses.length]);
+  }, [dialogOpen, companies.length, courses.length, user?.role]);
 
   const handleTransition = async (req: Request, newStatus: string) => {
     if (newStatus === "REJECTED") {
