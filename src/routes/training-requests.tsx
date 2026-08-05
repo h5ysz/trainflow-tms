@@ -1393,13 +1393,20 @@ export function TrainingRequestsRoute() {
                   </div>
                   <div className="rounded-md border divide-y">
                     {reqDocs.map((d, i) => (
-                      <div key={i} className="flex items-center justify-between p-2 text-xs">
+                      <a
+                        key={i}
+                        href={d.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-between p-2 text-xs hover:bg-muted/40 transition-colors"
+                      >
                         <div className="flex items-center gap-2 min-w-0">
-                          <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                          <span className="truncate">{d.filename ?? d.url ?? `Attachment ${i + 1}`}</span>
+                          <FileText className="h-3.5 w-3.5 text-info shrink-0" />
+                          <span className="truncate text-info hover:underline">{d.filename ?? d.url ?? `Attachment ${i + 1}`}</span>
                           {d.type && <span className="text-[10px] text-muted-foreground">({d.type})</span>}
                         </div>
-                      </div>
+                        <Eye className="h-3 w-3 text-muted-foreground shrink-0" />
+                      </a>
                     ))}
                   </div>
                 </div>
@@ -1518,10 +1525,10 @@ export function TrainingRequestsRoute() {
                         {drawerDetail.requestCourses.flatMap((rc, rcIdx) =>
                           (rc.trainees ?? []).map((tr, idx) => {
                             const tn = tr.trainee;
-                            let docCount = 0;
+                            let traineeDocs: Array<{ url?: string; filename?: string; type?: string }> = [];
                             try {
-                              const docs = tn.documents ? JSON.parse(tn.documents) : [];
-                              docCount = Array.isArray(docs) ? docs.length : 0;
+                              const parsed = tn.documents ? JSON.parse(tn.documents) : [];
+                              if (Array.isArray(parsed)) traineeDocs = parsed;
                             } catch { /* ignore */ }
                             return (
                               <tr key={`${rcIdx}-${idx}`} className="border-t">
@@ -1531,10 +1538,22 @@ export function TrainingRequestsRoute() {
                                 <td className="p-2">{tn.nationality ?? "—"}</td>
                                 <td className="p-2">{tn.jobTitle ?? "—"}</td>
                                 <td className="p-2">
-                                  {docCount > 0 ? (
-                                    <span className="inline-flex items-center gap-1 text-info">
-                                      <FileText className="h-3 w-3" /> {docCount}
-                                    </span>
+                                  {traineeDocs.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {traineeDocs.map((d, di) => (
+                                        <a
+                                          key={di}
+                                          href={d.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="inline-flex items-center gap-1 text-info hover:underline"
+                                          title={d.filename ?? d.url}
+                                        >
+                                          <FileText className="h-3 w-3" />
+                                          <span className="text-[10px]">{d.type ?? "doc"} {di + 1}</span>
+                                        </a>
+                                      ))}
+                                    </div>
                                   ) : (
                                     <span className="text-muted-foreground">—</span>
                                   )}
@@ -1567,12 +1586,19 @@ export function TrainingRequestsRoute() {
                     </div>
                     <div className="rounded-md border divide-y">
                       {reqDocs.map((d, i) => (
-                        <div key={i} className="flex items-center justify-between p-2 text-xs">
+                        <a
+                          key={i}
+                          href={d.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-between p-2 text-xs hover:bg-muted/40 transition-colors"
+                        >
                           <div className="flex items-center gap-2 min-w-0">
-                            <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <span className="truncate">{d.filename ?? d.url ?? `Attachment ${i + 1}`}</span>
+                            <FileText className="h-3.5 w-3.5 text-info shrink-0" />
+                            <span className="truncate text-info hover:underline">{d.filename ?? d.url ?? `Attachment ${i + 1}`}</span>
                           </div>
-                        </div>
+                          <Eye className="h-3 w-3 text-muted-foreground shrink-0" />
+                        </a>
                       ))}
                     </div>
                   </div>
