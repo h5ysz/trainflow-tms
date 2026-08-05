@@ -18,6 +18,10 @@ export interface FormDialogProps {
   children: React.ReactNode;
   onSubmit?: () => void;
   submitLabel?: string;
+  /** Secondary action button (e.g. "Submit" alongside "Save"). When provided,
+   * renders a primary button to the right of the main submit button. */
+  onSubmitSecondary?: () => void;
+  submitSecondaryLabel?: string;
   size?: "sm" | "md" | "lg" | "xl" | "xxl" | "3xl";
   isSubmitting?: boolean;
   /** Optional footer rendered on the LEFT of the standard Cancel/Save buttons. */
@@ -41,7 +45,8 @@ const SIZES: Record<NonNullable<FormDialogProps["size"]>, string> = {
 
 export function FormDialog({
   open, onOpenChange, title, description, icon: Icon, children,
-  onSubmit, submitLabel, size = "md", isSubmitting, footerExtra,
+  onSubmit, submitLabel, onSubmitSecondary, submitSecondaryLabel,
+  size = "md", isSubmitting, footerExtra,
   allowFullscreen = false,
 }: FormDialogProps) {
   const { t } = useI18n();
@@ -121,6 +126,11 @@ export function FormDialog({
               {onSubmit && (
                 <Button onClick={onSubmit} disabled={isSubmitting}>
                   {isSubmitting ? t("misc.saving") : (submitLabel ?? t("action.save"))}
+                </Button>
+              )}
+              {onSubmitSecondary && (
+                <Button variant="default" onClick={onSubmitSecondary} disabled={isSubmitting}>
+                  {isSubmitting ? t("misc.saving") : (submitSecondaryLabel ?? "Submit")}
                 </Button>
               )}
             </div>

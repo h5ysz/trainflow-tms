@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge, PriorityBadge } from "@/components/common/status-badge";
-import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Check, X, RotateCcw, ArrowRight, FileText, Download, Upload, Eye, Pencil, Printer, MoreVertical, FileSpreadsheet, FileText as FileTextIcon } from "lucide-react";
+import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Check, X, RotateCcw, ArrowRight, FileText, Download, Upload, Eye, Pencil, Printer, MoreVertical, FileSpreadsheet, FileText as FileTextIcon, Send } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription, DrawerClose } from "@/components/ui/drawer";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -626,9 +626,21 @@ export function TrainingRequestsRoute() {
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
                 )}
-                {actions.length === 0 && !canEditRequest && (
+                {actions.length === 0 && !canEditRequest && r.status !== "DRAFT" && (
                   <Button variant="ghost" size="sm" className="h-8" onClick={() => setDetailsTarget(r)}>
                     {t("action.details")}
+                  </Button>
+                )}
+                {/* ── Submit button for DRAFT requests (contractor) ── */}
+                {r.status === "DRAFT" && canEditRequest && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="h-8 text-white"
+                    onClick={() => handleTransition(r, "SUBMITTED")}
+                  >
+                    <Send className="h-3.5 w-3.5 me-1" />
+                    {locale === "ar" ? "إرسال" : "Submit"}
                   </Button>
                 )}
                 {actions.map((a) => (
@@ -668,27 +680,9 @@ export function TrainingRequestsRoute() {
       toast({ title: t("misc.error"), description: t("requests.course") + " — " + t("misc.required"), variant: "destructive" });
       return;
     }
-    // Allow saving a DRAFT with no trainees (the user can come back later to
-    // add them). But block SUBMITTED requests with zero trainees — that's a
-    // coordinator-facing request that must have real trainees attached.
-    const isSubmitted = (formData.status as string) === "SUBMITTED";
-    if (isSubmitted && trainees.filter((t) => t.fullName && t.nationalId).length === 0) {
-      toast({
-        title: t("misc.error"),
-        description: t("requests.errors.noTraineesOnSubmit") || "Add at least one trainee before submitting.",
-        variant: "destructive",
-      });
-      return;
-    }
+    // "Save" always saves as DRAFT — no trainees required, no coordinator notification.
     setSubmitting(true);
     try {
-      // Strip client-only fields from each trainee before sending — the API
-      // doesn't need valid/errors/id; it computes its own validation.
-      //
-      // Phase 1: documents[] is the single source of truth. We do NOT send
-      // `idAttachmentUrl` — the server-side handler folds any legacy value
-      // into documents[] if needed, but new uploads always arrive in
-      // documents[] directly from the client.
       const payloadTrainees = trainees
         .filter((tr) => tr.fullName && tr.nationalId)
         .map((tr) => ({
@@ -700,12 +694,57 @@ export function TrainingRequestsRoute() {
         }));
       await api.post("/requests", {
         ...formData,
+        status: "DRAFT",
         trainees: payloadTrainees,
         additionalDocuments: additionalDocs,
       });
-      toast({ title: t("misc.success"), description: t("misc.createSuccess") });
+      toast({ title: t("misc.success"), description: locale === "ar" ? "تم حفظ الطلب" : t("misc.createSuccess") });
       setDialogOpen(false);
-      // Reset all form state — trainees + additionalDocs + formData.
+      setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: locale, status: "DRAFT" });
+      setTrainees([]);
+      setAdditionalDocs([]);
+      refetch();
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // "Submit" — saves the request AND immediately sends it to the coordinator.
+  // Requires at least one trainee. Triggers the full review workflow.
+  const handleSubmitAndSend = async () => {
+    if (!formData.courseId) {
+      toast({ title: t("misc.error"), description: t("requests.course") + " — " + t("misc.required"), variant: "destructive" });
+      return;
+    }
+    if (trainees.filter((t) => t.fullName && t.nationalId).length === 0) {
+      toast({
+        title: t("misc.error"),
+        description: t("requests.errors.noTraineesOnSubmit") || "Add at least one trainee before submitting.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const payloadTrainees = trainees
+        .filter((tr) => tr.fullName && tr.nationalId)
+        .map((tr) => ({
+          fullName: tr.fullName,
+          nationalId: tr.nationalId,
+          nationality: tr.nationality || null,
+          jobTitle: tr.jobTitle || null,
+          documents: Array.isArray(tr.documents) ? tr.documents : [],
+        }));
+      await api.post("/requests", {
+        ...formData,
+        status: "SUBMITTED",
+        trainees: payloadTrainees,
+        additionalDocuments: additionalDocs,
+      });
+      toast({ title: t("misc.success"), description: locale === "ar" ? "تم إرسال الطلب للمراجعة" : t("misc.createSuccess") });
+      setDialogOpen(false);
       setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: locale, status: "DRAFT" });
       setTrainees([]);
       setAdditionalDocs([]);
@@ -1021,6 +1060,9 @@ export function TrainingRequestsRoute() {
         icon={ClipboardList}
         size="3xl"
         onSubmit={editTarget ? handleEditSave : handleSubmit}
+        submitLabel={editTarget ? undefined : (locale === "ar" ? "حفظ" : "Save")}
+        onSubmitSecondary={editTarget ? undefined : handleSubmitAndSend}
+        submitSecondaryLabel={locale === "ar" ? "إرسال" : "Submit"}
         isSubmitting={submitting}
         allowFullscreen
         footerExtra={
@@ -1036,17 +1078,6 @@ export function TrainingRequestsRoute() {
         }
       >
         <div className="space-y-5">
-          {/* Status selector: Draft or Submit immediately */}
-          <Field label={t("requests.status")}>
-            <Select value={(formData.status as string) === "REQUIRES_MODIFICATION" ? "DRAFT" : (formData.status as string) ?? "DRAFT"} onValueChange={(v) => setField("status", v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="DRAFT">{t("status.DRAFT")}</SelectItem>
-                <SelectItem value="SUBMITTED">{t("status.SUBMITTED")}</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-
           <FormGrid>
             {user?.role !== "CONTRACTOR" && (
               <Field label={t("requests.company")} required>
