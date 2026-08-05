@@ -70,15 +70,15 @@ export function Sidebar() {
         <Image
           src="/gcclab-icon.png"
           alt="GCC Lab"
-          width={42}
-          height={42}
+          width={46}
+          height={46}
           className="shrink-0 object-contain rounded-lg"
         />
         <div className="min-w-0 flex flex-col justify-center gap-1">
-          <div className="text-[22px] font-bold leading-none tracking-tight text-foreground">
+          <div className="text-[24px] font-bold leading-none tracking-tight text-foreground">
             {locale === "en" ? "GCC Lab" : "المختبر الخليجي"}
           </div>
-          <div className="text-[14px] text-muted-foreground/80 leading-none font-medium">
+          <div className="text-[13px] text-muted-foreground/80 leading-none font-medium">
             {locale === "en" ? "Training Management" : "إدارة التدريب"}
           </div>
         </div>
@@ -102,9 +102,9 @@ export function Sidebar() {
                     <motion.button
                       onClick={() => navigate(item.key)}
                       whileTap={{ scale: 0.98 }}
-                      transition={{ duration: 0.15 }}
+                      transition={{ duration: 0.18, ease: "easeOut" }}
                       className={cn(
-                        "group relative flex items-center gap-2.5 w-full rounded-lg px-2.5 py-2 text-[13px] transition-colors duration-150",
+                        "group relative flex items-center gap-2.5 w-full rounded-lg px-2.5 py-2 text-[14px] transition-colors duration-150",
                         active
                           ? "bg-primary/10 text-primary font-semibold"
                           : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground font-medium"
@@ -119,7 +119,7 @@ export function Sidebar() {
                         />
                       )}
                       <Icon
-                        className={cn("h-[18px] w-[18px] shrink-0 transition-all duration-150", active ? "text-primary" : "text-muted-foreground group-hover:text-sidebar-foreground group-hover:scale-105")}
+                        className={cn("h-[20px] w-[20px] shrink-0 transition-all duration-150", active ? "text-primary" : "text-muted-foreground group-hover:text-sidebar-foreground group-hover:scale-105")}
                         strokeWidth={active ? 2.2 : 1.8}
                       />
                       <span className="truncate transition-colors duration-150">{t(item.labelKey as never)}</span>
