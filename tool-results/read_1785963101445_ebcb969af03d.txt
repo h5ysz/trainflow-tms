@@ -1,0 +1,1723 @@
+     1→     1→"use client";
+     2→     2→
+     3→     3→// GCCLAB TMS — TraineeEntrySection
+     4→     4→// =====================================================================
+     5→     5→// The trainee-entry surface embedded inside the New Training Request form.
+     6→     6→// Replaces the old fixed `traineeCount` integer input with a real editor
+     7→     7→// backed by a `TraineeEntry[]` array the parent owns.
+     8→     8→//
+     9→     9→// Three tabs:
+    10→    10→//   • Excel Import   — drop a registration-sheet .xlsx, preview the mapping,
+    11→    11→//                       then load the parsed rows into the live table.
+    12→    12→//   • Manual Entry   — virtualized table with per-row editing, bulk ID
+    13→    13→//                       attachment upload (auto-matched by filename → national
+    14→    14→//                       ID), search, filters, validation summary, and click-
+    15→    15→//                       to-jump-to-row navigation.
+    16→    16→//   • Copy & Paste   — paste a TSV/CSV block; we detect the delimiter, parse
+    17→    17→//                       the header row, and append to the trainee list.
+    18→    18→//
+    19→    19→// Submission safety: the parent form is expected to gate its submit on
+    20→    20→// `canSubmit` (no rows / invalid rows / duplicate national IDs all block).
+    21→    21→//
+    22→    22→// Performance: the table is windowed (ROW_HEIGHT = 48px) so 500+ row sheets
+    23→    23→// stay smooth — only the visible slice is in the DOM.
+    24→    24→
+    25→    25→import * as React from "react";
+    26→    26→import { useI18n, type DictKey } from "@/lib/i18n/context";
+    27→    27→import { useToast } from "@/hooks/use-toast";
+    28→    28→import { api } from "@/lib/api/client";
+    29→    29→import { cn } from "@/lib/utils";
+    30→    30→import { Button } from "@/components/ui/button";
+    31→    31→import { Input } from "@/components/ui/input";
+    32→    32→import { Textarea } from "@/components/ui/textarea";
+    33→    33→import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+    34→    34→import { Checkbox } from "@/components/ui/checkbox";
+    35→    35→import { Progress } from "@/components/ui/progress";
+    36→    36→import { Badge } from "@/components/ui/badge";
+    37→    37→import {
+    38→    38→  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+    39→    39→} from "@/components/ui/dialog";
+    40→    40→import {
+    41→    41→  Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
+    42→    42→} from "@/components/ui/table";
+    43→    43→import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+    44→    44→import {
+    45→    45→  Upload, FileSpreadsheet, Copy, ClipboardPaste, Plus, Trash2, Search,
+    46→    46→  AlertCircle, CheckCircle2, Users, FileWarning, CopyPlus, X, Paperclip,
+    47→    47→  Save, ArrowRight, RotateCcw, Loader2,
+    48→    48→  Maximize2, Minimize2,
+    49→    49→  FileText, FileImage, FileCheck, FileX, FolderUp, Eye,
+    50→    50→} from "lucide-react";
+    51→    51→
+    52→    52→// ─── Types ─────────────────────────────────────────────────────────────────
+    53→    53→
+    54→    54→export interface TraineeDocument {
+    55→    55→  url: string;
+    56→    56→  filename: string;
+    57→    57→  type: "iqama" | "id" | "passport" | "certificate" | "medical" | "other";
+    58→    58→  uploadedAt: string;
+    59→    59→}
+    60→    60→
+    61→    61→export interface TraineeEntry {
+    62→    62→  id: string;
+    63→    63→  fullName: string;
+    64→    64→  nationalId: string;
+    65→    65→  nationality: string;
+    66→    66→  jobTitle: string;
+    67→    67→  idAttachmentUrl: string | null;
+    68→    68→  idAttachmentName: string | null;
+    69→    69→  // ── Multi-document support ──
+    70→    70→  documents: TraineeDocument[];
+    71→    71→  valid: boolean;
+    72→    72→  errors: string[];
+    73→    73→}
+    74→    74→
+    75→    75→export interface ImportPreviewColumnMatch {
+    76→    76→  field: string;
+    77→    77→  header: string;
+    78→    78→}
+    79→    79→
+    80→    80→export interface ImportPreviewRow {
+    81→    81→  rowNumber: number;
+    82→    82→  name: string;
+    83→    83→  nationalId: string;
+    84→    84→  nationality: string | null;
+    85→    85→  jobTitle: string | null;
+    86→    86→  companyName: string;
+    87→    87→  courseTitle: string;
+    88→    88→  phone: string | null;
+    89→    89→  email: string | null;
+    90→    90→  valid: boolean;
+    91→    91→  errors: string[];
+    92→    92→}
+    93→    93→
+    94→    94→export interface ImportPreview {
+    95→    95→  totalRows: number;
+    96→    96→  validRows: number;
+    97→    97→  invalidRows: number;
+    98→    98→  traineeCount: number;
+    99→    99→  matchedColumns: ImportPreviewColumnMatch[];
+   100→   100→  unmatchedHeaders: string[];
+   101→   101→  missingRequiredColumns: { field: string; canonicalAlias: string }[];
+   102→   102→  rows: ImportPreviewRow[];
+   103→   103→  duplicateNationalIds: { nationalId: string; rows: number[] }[];
+   104→   104→  // 1-indexed row number where the header row was detected. When the Excel
+   105→   105→  // file has instructional rows above the headers, this will be > 1.
+   106→   106→  detectedHeaderRow?: number;
+   107→   107→}
+   108→   108→
+   109→   109→// Translate row-error codes returned by the API into the current locale.
+   110→   110→// The API returns stable machine codes (MISSING_NAME, DUPLICATE_NATIONAL_ID,
+   111→   111→// etc.) so the frontend can localize them — instead of returning pre-baked
+   112→   112→// English strings that would leak into the Arabic UI.
+   113→   113→function translateRowError(code: string, t: (k: DictKey) => string): string {
+   114→   114→  switch (code) {
+   115→   115→    case "MISSING_REQUIRED_COLUMNS":
+   116→   116→      return t("requests.import.errMissingRequiredColumns");
+   117→   117→    case "MISSING_NAME":
+   118→   118→      return t("requests.import.errMissingName");
+   119→   119→    case "MISSING_NATIONAL_ID":
+   120→   120→      return t("requests.import.errMissingNationalId");
+   121→   121→    case "DUPLICATE_NATIONAL_ID":
+   122→   122→      return t("requests.import.errDuplicateId");
+   123→   123→    default:
+   124→   124→      // Unknown code — show it verbatim so the user sees something.
+   125→   125→      return code;
+   126→   126→  }
+   127→   127→}
+   128→   128→
+   129→   129→interface UploadIdResponse {
+   130→   130→  url: string;
+   131→   131→  filename: string;
+   132→   132→  size: number;
+   133→   133→  mime: string;
+   134→   134→}
+   135→   135→
+   136→   136→export interface TraineeEntrySectionProps {
+   137→   137→  trainees: TraineeEntry[];
+   138→   138→  onChange: (next: TraineeEntry[]) => void;
+   139→   139→  onSaveDraft?: () => void;
+   140→   140→  /** Optional className passthrough so the parent form can size the section. */
+   141→   141→  className?: string;
+   142→   142→}
+   143→   143→
+   144→   144→// ─── Constants ─────────────────────────────────────────────────────────────
+   145→   145→
+   146→   146→const ROW_HEIGHT = 48;
+   147→   147→const VISIBLE_TABLE_HEIGHT = 480; // ~10 rows visible before scrolling
+   148→   148→// In Full Screen mode we want the table to fill the viewport, not a fixed
+   149→   149→// 600 px. The parent dialog already reserves ~120 px of chrome (header,
+   150→   150→// buttons, stat cards). We compute the live height in a layout effect below
+   151→   151→// using `window.innerHeight`, but keep this as a sensible initial value for
+   152→   152→// the first paint (the layout effect overrides it once mounted).
+   153→   153→const VISIBLE_TABLE_HEIGHT_FULLSCREEN_INITIAL = 600;
+   154→   154→const STAT_HIGHLIGHT_MS = 3000;
+   155→   155→
+   156→   156→// ─── Smart Column Aliases (Arabic + English) ──────────────────────────────
+   157→   157→// Expanded aliases for smart Excel import — recognizes any column naming
+   158→   158→// convention without depending on column order or file formatting.
+   159→   159→const COLUMN_ALIASES = {
+   160→   160→  fullName: [
+   161→   161→    "name", "fullname", "full name", "trainee name", "traineename",
+   162→   162→    "employee name", "employeename", "worker name", "workername",
+   163→   163→    "participant name", "participant", "candidate name",
+   164→   164→    "الاسم", "اسم", "اسم المتدرب", "المتدرب", "اسم الموظف", "اسم العامل",
+   165→   165→    "الاسم الكامل", "اسم المشارك",
+   166→   166→  ],
+   167→   167→  nationalId: [
+   168→   168→    "nationalid", "national id", "id", "idnumber", "id number",
+   169→   169→    "iqama", "iqamaid", "iqama id", "iqama number",
+   170→   170→    "resident id", "residentid", "identity", "identitynumber",
+   171→   171→    "civil id", "civilid", "passport", "passportnumber",
+   172→   172→    "رقم الهوية", "هوية", "الاقامة", "إقامة", "رقم الاقامة",
+   173→   173→    "رقم الإقامة", "الهوية الوطنية", "رقم الهوية الوطنية",
+   174→   174→  ],
+   175→   175→  nationality: [
+   176→   176→    "nationality", "country", "citizenship", "origin",
+   177→   177→    "country of origin", "nationalitycode",
+   178→   178→    "جنسية", "الجنسية", "الدولة", "بلد", "الوطن",
+   179→   179→  ],
+   180→   180→  jobTitle: [
+   181→   181→    "job", "jobtitle", "job title", "position", "role", "occupation",
+   182→   182→    "designation", "profession", "title",
+   183→   183→    "وظيفة", "الوظيفة", "المهنة", "المنصب", "العمل", "المسمى الوظيفي",
+   184→   184→  ],
+   185→   185→  phone: [
+   186→   186→    "phone", "mobile", "phonenumber", "phone number", "tel", "telephone",
+   187→   187→    "contact", "contactnumber", "cellphone", "cell",
+   188→   188→    "هاتف", "الجوال", "رقم الهاتف", "الجوال", "الموبايل",
+   189→   189→  ],
+   190→   190→  email: [
+   191→   191→    "email", "emailaddress", "email address", "mail", "e-mail",
+   192→   192→    "البريد", "البريد الالكتروني", "البريد الإلكتروني",
+   193→   193→  ],
+   194→   194→};
+   195→   195→
+   196→   196→type StatFilter = "all" | "valid" | "invalid" | "duplicates" | "missing-attachment";
+   197→   197→
+   198→   198→type BulkUploadPhase = "idle" | "uploading" | "matching" | "completed";
+   199→   199→
+   200→   200→interface BulkUploadState {
+   201→   201→  phase: BulkUploadPhase;
+   202→   202→  total: number;
+   203→   203→  done: number;
+   204→   204→  matched: number;
+   205→   205→  unmatched: { filename: string; url: string }[];
+   206→   206→}
+   207→   207→
+   208→   208→// ─── Utilities ─────────────────────────────────────────────────────────────
+   209→   209→
+   210→   210→function makeId(): string {
+   211→   211→  // crypto.randomUUID is available in all evergreen browsers + Node 19+.
+   212→   212→  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+   213→   213→    return crypto.randomUUID();
+   214→   214→  }
+   215→   215→  return `t-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+   216→   216→}
+   217→   217→
+   218→   218→function emptyRow(partial?: Partial<TraineeEntry>): TraineeEntry {
+   219→   219→  return {
+   220→   220→    id: makeId(),
+   221→   221→    fullName: "",
+   222→   222→    nationalId: "",
+   223→   223→    nationality: "",
+   224→   224→    jobTitle: "",
+   225→   225→    idAttachmentUrl: null,
+   226→   226→    idAttachmentName: null,
+   227→   227→    documents: [],
+   228→   228→    valid: false,
+   229→   229→    errors: [],
+   230→   230→    ...partial,
+   231→   231→  };
+   232→   232→}
+   233→   233→
+   234→   234→// ── Phase 1: documents[] is the single source of truth ────────────────────
+   235→   235→// The legacy `idAttachmentUrl` field is no longer written by any client
+   236→   236→// callback. All ID uploads go into `documents[]` as `{type:"id"}` entries.
+   237→   237→// These helpers locate the ID-type document within documents[] for display,
+   238→   238→// stats, and filtering — they never read `idAttachmentUrl`.
+   239→   239→const ID_DOC_TYPES: TraineeDocument["type"][] = ["id", "iqama"];
+   240→   240→
+   241→   241→function getIdDocument(row: TraineeEntry): TraineeDocument | undefined {
+   242→   242→  return row.documents.find((d) => ID_DOC_TYPES.includes(d.type));
+   243→   243→}
+   244→   244→
+   245→   245→function hasIdDocument(row: TraineeEntry): boolean {
+   246→   246→  return getIdDocument(row) !== undefined;
+   247→   247→}
+   248→   248→
+   249→   249→// Phase 1 — normalize legacy `idAttachmentUrl` into documents[] on load.
+   250→   250→//
+   251→   251→// When loading existing trainee data from the API (which still returns the
+   252→   252→// legacy column for backward compat), fold any `idAttachmentUrl` value into
+   253→   253→// `documents[]` as a `{type:"id"}` entry IF that URL is not already
+   254→   254→// represented. This ensures the in-memory TraineeEntry state is always
+   255→   255→// consistent with the new single-source-of-truth model, regardless of
+   256→   256→// whether the DB row has been backfilled yet (Phase 2).
+   257→   257→//
+   258→   258→// After Phase 2 backfill completes, this becomes a no-op for all rows
+   259→   259→// (the URL will already be in documents[]).
+   260→   260→export function normalizeIdAttachmentIntoDocuments(
+   261→   261→  idAttachmentUrl: string | null | undefined,
+   262→   262→  documents: TraineeDocument[],
+   263→   263→): TraineeDocument[] {
+   264→   264→  if (!idAttachmentUrl) return documents;
+   265→   265→  const alreadyPresent = documents.some((d) => d.url === idAttachmentUrl);
+   266→   266→  if (alreadyPresent) return documents;
+   267→   267→  const syntheticDoc: TraineeDocument = {
+   268→   268→    url: idAttachmentUrl,
+   269→   269→    filename: idAttachmentUrl.split("/").pop() ?? "id-attachment",
+   270→   270→    type: "id",
+   271→   271→    uploadedAt: new Date().toISOString(),
+   272→   272→  };
+   273→   273→  return [...documents, syntheticDoc];
+   274→   274→}
+   275→   275→
+   276→   276→function validateRow(row: TraineeEntry, allIds: Map<string, number>, selfIndex: number): TraineeEntry {
+   277→   277→  const errors: string[] = [];
+   278→   278→  if (!row.fullName.trim()) errors.push("Missing name");
+   279→   279→  if (!row.nationalId.trim()) errors.push("Missing national ID");
+   280→   280→  if (row.nationalId.trim()) {
+   281→   281→    const firstSeen = allIds.get(row.nationalId.trim());
+   282→   282→    if (firstSeen !== undefined && firstSeen !== selfIndex) {
+   283→   283→      errors.push(`Duplicate national ID (first at row ${firstSeen + 1})`);
+   284→   284→    }
+   285→   285→  }
+   286→   286→  return { ...row, valid: errors.length === 0, errors };
+   287→   287→}
+   288→   288→
+   289→   289→function recomputeValidity(rows: TraineeEntry[]): TraineeEntry[] {
+   290→   290→  // Build a nationalId → first-index map, then re-run validation per row.
+   291→   291→  const idMap = new Map<string, number>();
+   292→   292→  rows.forEach((r, i) => {
+   293→   293→    const id = r.nationalId.trim();
+   294→   294→    if (id && !idMap.has(id)) idMap.set(id, i);
+   295→   295→  });
+   296→   296→  return rows.map((r, i) => validateRow(r, idMap, i));
+   297→   297→}
+   298→   298→
+   299→   299→// ─── Component ─────────────────────────────────────────────────────────────
+   300→   300→
+   301→   301→export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className }: TraineeEntrySectionProps) {
+   302→   302→  const { t } = useI18n();
+   303→   303→  const { toast } = useToast();
+   304→   304→
+   305→   305→  // Local UI state — none of this needs to leak to the parent. The source of
+   306→   306→  // truth for the rows themselves lives in `trainees` (props).
+   307→   307→  const [activeTab, setActiveTab] = React.useState<"manual" | "excel" | "paste">("manual");
+   308→   308→  const [search, setSearch] = React.useState("");
+   309→   309→  const [filter, setFilter] = React.useState<StatFilter>("all");
+   310→   310→  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+   311→   311→  const [highlightedId, setHighlightedId] = React.useState<string | null>(null);
+   312→   312→  const [preview, setPreview] = React.useState<ImportPreview | null>(null);
+   313→   313→  const [previewOpen, setPreviewOpen] = React.useState(false);
+   314→   314→  const [previewLoading, setPreviewLoading] = React.useState(false);
+   315→   315→  // Maximize toggle for the Excel preview dialog. When true the dialog grows
+   316→   316→  // to 95vw so the user can see all preview rows + matched columns without
+   317→   317→  // scrolling inside the dialog itself.
+   318→   318→  const [previewFullscreen, setPreviewFullscreen] = React.useState(false);
+   319→   319→  const [bulkUpload, setBulkUpload] = React.useState<BulkUploadState>({
+   320→   320→    phase: "idle", total: 0, done: 0, matched: 0, unmatched: [],
+   321→   321→  });
+   322→   322→  const [pasteText, setPasteText] = React.useState("");
+   323→   323→
+   324→   324→  // Refs for the virtualized scroll container.
+   325→   325→  const scrollRef = React.useRef<HTMLDivElement | null>(null);
+   326→   326→  const [scrollTop, setScrollTop] = React.useState(0);
+   327→   327→
+   328→   328→  // ── BUG-009/011 fix: force re-render after mount ─────────────────────
+   329→   329→  // The virtualization calculates visibleSlice from scrollTop (0) and
+   330→   330→  // currentTableHeight (constant). On first render inside a Dialog, the
+   331→   331→  // TabsContent mounts lazily and the scroll container's layout isn't
+   332→   332→  // settled until after paint. This causes the table body to appear empty
+   333→   333→  // until the user interacts (resize, scroll, tab switch).
+   334→   334→  //
+   335→   335→  // Fix: use useLayoutEffect to synchronously set a "mounted" flag BEFORE
+   336→   336→  // the browser paints. This triggers a second render with the correct
+   337→   337→  // layout, so the rows appear immediately.
+   338→   338→  const [mounted, setMounted] = React.useState(false);
+   339→   339→  React.useLayoutEffect(() => {
+   340→   340→    setMounted(true);
+   341→   341→  }, []);
+   342→   342→
+   343→   343→  // Also re-trigger on trainees change (e.g. after Excel import the table
+   344→   344→  // should immediately show the new rows without requiring a scroll).
+   345→   345→  React.useLayoutEffect(() => {
+   346→   346→    if (mounted && scrollRef.current) {
+   347→   347→      // Reset scroll to top when trainees change so the virtualization
+   348→   348→      // re-calculates from scrollTop=0.
+   349→   349→      if (scrollRef.current.scrollTop !== 0) {
+   350→   350→        scrollRef.current.scrollTop = 0;
+   351→   351→      }
+   352→   352→      setScrollTop(0);
+   353→   353→    }
+   354→   354→  }, [trainees, mounted]);
+   355→   355→
+   356→   356→  // ─── Derived stats (memoized) ──────────────────────────────────────────
+   357→   357→  const stats = React.useMemo(() => {
+   358→   358→    const idCounts = new Map<string, number>();
+   359→   359→    for (const r of trainees) {
+   360→   360→      const id = r.nationalId.trim();
+   361→   361→      if (id) idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
+   362→   362→    }
+   363→   363→    const total = trainees.length;
+   364→   364→    const valid = trainees.filter((r) => r.valid).length;
+   365→   365→    const invalid = total - valid;
+   366→   366→    const duplicates = trainees.filter((r) => {
+   367→   367→      const id = r.nationalId.trim();
+   368→   368→      return id && (idCounts.get(id) ?? 0) > 1;
+   369→   369→    }).length;
+   370→   370→    const missingAttachment = trainees.filter(
+   371→   371→      (r) => r.fullName.trim() && r.nationalId.trim() && !hasIdDocument(r)
+   372→   372→    ).length;
+   373→   373→    return { total, valid, invalid, duplicates, missingAttachment };
+   374→   374→  }, [trainees]);
+   375→   375→
+   376→   376→  // ─── Filtered + searched view of the table (memoized) ──────────────────
+   377→   377→  const filtered = React.useMemo(() => {
+   378→   378→    const q = search.trim().toLowerCase();
+   379→   379→    const idCounts = new Map<string, number>();
+   380→   380→    for (const r of trainees) {
+   381→   381→      const id = r.nationalId.trim();
+   382→   382→      if (id) idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
+   383→   383→    }
+   384→   384→    return trainees.filter((r) => {
+   385→   385→      if (q) {
+   386→   386→        const hay = `${r.fullName} ${r.nationalId} ${r.jobTitle} ${r.nationality}`.toLowerCase();
+   387→   387→        if (!hay.includes(q)) return false;
+   388→   388→      }
+   389→   389→      switch (filter) {
+   390→   390→        case "valid": return r.valid;
+   391→   391→        case "invalid": return !r.valid;
+   392→   392→        case "duplicates": {
+   393→   393→          const id = r.nationalId.trim();
+   394→   394→          return id ? (idCounts.get(id) ?? 0) > 1 : false;
+   395→   395→        }
+   396→   396→        case "missing-attachment":
+   397→   397→          return r.fullName.trim() !== "" && r.nationalId.trim() !== "" && !hasIdDocument(r);
+   398→   398→        default: return true;
+   399→   399→      }
+   400→   400→    });
+   401→   401→  }, [trainees, search, filter]);
+   402→   402→
+   403→   403→  // ─── Virtualization window ─────────────────────────────────────────────
+   404→   404→  // In Full Screen mode the table should fill the viewport. We reserve:
+   405→   405→  //   - ~64 px for the section padding (top + bottom of fixed inset-0)
+   406→   406→  //   - ~48 px for the tabs row (tabs + Full Screen button)
+   407→   407→  // ── BUG-009 fix: measure the actual scroll container height ───────────
+   408→   408→  // The constant VISIBLE_TABLE_HEIGHT (480) is a fallback. The real height
+   409→   409→  // might differ if the dialog hasn't been laid out yet. We measure the
+   410→   410→  // scrollRef's clientHeight on mount and when the window resizes, then use
+   411→   411→  // whichever is larger (the measured value or the constant). This ensures
+   412→   412→  // visibleCount is never 0 on first render.
+   413→   413→  const [measuredHeight, setMeasuredHeight] = React.useState(0);
+   414→   414→  React.useLayoutEffect(() => {
+   415→   415→    if (!scrollRef.current) return;
+   416→   416→    const measure = () => {
+   417→   417→      if (scrollRef.current) {
+   418→   418→        const h = scrollRef.current.clientHeight;
+   419→   419→        if (h > 0) setMeasuredHeight(h);
+   420→   420→      }
+   421→   421→    };
+   422→   422→    measure();
+   423→   423→    // Re-measure after a short delay to catch post-paint layout.
+   424→   424→    const t = setTimeout(measure, 50);
+   425→   425→    window.addEventListener("resize", measure);
+   426→   426→    return () => {
+   427→   427→      clearTimeout(t);
+   428→   428→      window.removeEventListener("resize", measure);
+   429→   429→    };
+   430→   430→  }, [mounted]);
+   431→   431→
+   432→   432→  // Use the measured height if available (and larger than the constant),
+   433→   433→  // otherwise fall back to the constant. This fixes the empty-table-on-
+   434→   434→  // first-render bug where the virtualization calculated 0 visible rows.
+   435→   435→  // When there are no trainees, use a small height so the Additional Documents
+   436→   436→  // section below is visible without scrolling.
+   437→   437→  const currentTableHeight = filtered.length === 0
+   438→   438→    ? Math.min(120, VISIBLE_TABLE_HEIGHT)
+   439→   439→    : Math.max(VISIBLE_TABLE_HEIGHT, measuredHeight);
+   440→   440→  const totalHeight = filtered.length * ROW_HEIGHT;
+   441→   441→  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 2);
+   442→   442→  const visibleCount = Math.ceil(currentTableHeight / ROW_HEIGHT) + 4;
+   443→   443→  const endIndex = Math.min(filtered.length, startIndex + visibleCount);
+   444→   444→  const visibleSlice = filtered.slice(startIndex, endIndex);
+   445→   445→
+   446→   446→  // ─── Mutators (all useCallback — stable identities) ────────────────────
+   447→   447→  const updateTrainees = React.useCallback((next: TraineeEntry[]) => {
+   448→   448→    onChange(recomputeValidity(next));
+   449→   449→  }, [onChange]);
+   450→   450→
+   451→   451→  const updateField = React.useCallback((id: string, field: keyof TraineeEntry, value: string) => {
+   452→   452→    const next = trainees.map((r) => (r.id === id ? { ...r, [field]: value } : r));
+   453→   453→    updateTrainees(next);
+   454→   454→  }, [trainees, updateTrainees]);
+   455→   455→
+   456→   456→  const addRows = React.useCallback((count: number) => {
+   457→   457→    const additions: TraineeEntry[] = Array.from({ length: count }, () => emptyRow());
+   458→   458→    updateTrainees([...trainees, ...additions]);
+   459→   459→    setActiveTab("manual");
+   460→   460→  }, [trainees, updateTrainees]);
+   461→   461→
+   462→   462→  const deleteRow = React.useCallback((id: string) => {
+   463→   463→    updateTrainees(trainees.filter((r) => r.id !== id));
+   464→   464→    setSelected((prev) => {
+   465→   465→      const next = new Set(prev);
+   466→   466→      next.delete(id);
+   467→   467→      return next;
+   468→   468→    });
+   469→   469→  }, [trainees, updateTrainees]);
+   470→   470→
+   471→   471→  const deleteSelected = React.useCallback(() => {
+   472→   472→    if (selected.size === 0) return;
+   473→   473→    updateTrainees(trainees.filter((r) => !selected.has(r.id)));
+   474→   474→    setSelected(new Set());
+   475→   475→    toast({ title: t("misc.success"), description: t("requests.rowsRemoved", { count: selected.size }) });
+   476→   476→  }, [selected, trainees, updateTrainees, toast, t]);
+   477→   477→
+   478→   478→  const toggleSelect = React.useCallback((id: string, checked: boolean) => {
+   479→   479→    setSelected((prev) => {
+   480→   480→      const next = new Set(prev);
+   481→   481→      if (checked) next.add(id); else next.delete(id);
+   482→   482→      return next;
+   483→   483→    });
+   484→   484→  }, []);
+   485→   485→
+   486→   486→  const toggleSelectAll = React.useCallback((checked: boolean) => {
+   487→   487→    if (checked) {
+   488→   488→      setSelected(new Set(filtered.map((r) => r.id)));
+   489→   489→    } else {
+   490→   490→      setSelected(new Set());
+   491→   491→    }
+   492→   492→  }, [filtered]);
+   493→   493→
+   494→   494→  const jumpToRow = React.useCallback((id: string) => {
+   495→   495→    const idxInFiltered = filtered.findIndex((r) => r.id === id);
+   496→   496→    if (idxInFiltered === -1) return;
+   497→   497→    // Reset filter so the row is actually visible in the full list.
+   498→   498→    setFilter("all");
+   499→   499→    setSearch("");
+   500→   500→    // Defer the scroll until after the filter clears and filtered is recomputed.
+   501→   501→    queueMicrotask(() => {
+   502→   502→      const targetTop = idxInFiltered * ROW_HEIGHT;
+   503→   503→      scrollRef.current?.scrollTo({ top: targetTop, behavior: "smooth" });
+   504→   504→      setHighlightedId(id);
+   505→   505→      window.setTimeout(() => setHighlightedId((cur) => (cur === id ? null : cur)), STAT_HIGHLIGHT_MS);
+   506→   506→    });
+   507→   507→  }, [filtered]);
+   508→   508→
+   509→   509→  // ─── Per-row ID upload ────────────────────────────────────────────────
+   510→   510→  // Phase 1: writes ONLY to documents[] as a `{type:"id"}` entry. The
+   511→   511→  // legacy `idAttachmentUrl` field is never touched. Uploading a new ID
+   512→   512→  // replaces any existing "id"/"iqama" document in documents[] so the
+   513→   513→  // per-type uniqueness rule is preserved on the client side (the server
+   514→   514→  // endpoint /api/trainees/[id]/documents enforces the same rule).
+   515→   515→  const uploadIdForRow = React.useCallback(async (rowId: string, file: File) => {
+   516→   516→    try {
+   517→   517→      const res = await api.postFile<UploadIdResponse>("/trainees/upload-id", file);
+   518→   518→      const newDoc: TraineeDocument = {
+   519→   519→        url: res.url,
+   520→   520→        filename: file.name,
+   521→   521→        type: "id",
+   522→   522→        uploadedAt: new Date().toISOString(),
+   523→   523→      };
+   524→   524→      updateTrainees(trainees.map((r) => {
+   525→   525→        if (r.id !== rowId) return r;
+   526→   526→        // Replace any existing ID-type doc (id/iqama) — keep the rest.
+   527→   527→        const others = r.documents.filter((d) => !ID_DOC_TYPES.includes(d.type));
+   528→   528→        return { ...r, documents: [...others, newDoc] };
+   529→   529→      }));
+   530→   530→      toast({ title: t("misc.success"), description: t("requests.idAttached", { name: file.name }) });
+   531→   531→    } catch (e) {
+   532→   532→      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+   533→   533→    }
+   534→   534→  }, [trainees, updateTrainees, toast, t]);
+   535→   535→
+   536→   536→  // ─── Multi-document upload per row ──────────────────────────────────
+   537→   537→  const uploadDocumentForRow = React.useCallback(async (rowId: string, file: File, docType: TraineeDocument["type"]) => {
+   538→   538→    try {
+   539→   539→      const res = await api.postFile<UploadIdResponse>("/trainees/upload-id", file);
+   540→   540→      const newDoc: TraineeDocument = {
+   541→   541→        url: res.url,
+   542→   542→        filename: file.name,
+   543→   543→        type: docType,
+   544→   544→        uploadedAt: new Date().toISOString(),
+   545→   545→      };
+   546→   546→      updateTrainees(trainees.map((r) => (
+   547→   547→        r.id === rowId
+   548→   548→          ? { ...r, documents: [...r.documents, newDoc] }
+   549→   549→          : r
+   550→   550→      )));
+   551→   551→      toast({ title: t("misc.success"), description: t("requests.documentUploaded", { name: file.name }) });
+   552→   552→    } catch (e) {
+   553→   553→      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+   554→   554→    }
+   555→   555→  }, [trainees, updateTrainees, toast, t]);
+   556→   556→
+   557→   557→  const removeDocumentForRow = React.useCallback((rowId: string, docIndex: number) => {
+   558→   558→    updateTrainees(trainees.map((r) => (
+   559→   559→      r.id === rowId
+   560→   560→        ? { ...r, documents: r.documents.filter((_, i) => i !== docIndex) }
+   561→   561→        : r
+   562→   562→    )));
+   563→   563→  }, [trainees, updateTrainees]);
+   564→   564→
+   565→   565→  // ─── Document status helper ─────────────────────────────────────────
+   566→   566→  const getDocStatus = React.useCallback((row: TraineeEntry): "uploaded" | "missing" | "needs_update" => {
+   567→   567→    // Phase 1: documents[] is the only source — any document (ID or other
+   568→   568→    // type) counts as "uploaded".
+   569→   569→    if (row.documents.length > 0) return "uploaded";
+   570→   570→    if (row.fullName.trim() && row.nationalId.trim()) return "missing";
+   571→   571→    return "needs_update";
+   572→   572→  }, []);
+   573→   573→
+   574→   574→  const replaceIdForRow = React.useCallback(async (rowId: string, file: File) => {
+   575→   575→    // Same endpoint — server overwrites with a new random hex name. The old
+   576→   576→    // file is orphaned on disk; that's acceptable for an internal TMS.
+   577→   577→    return uploadIdForRow(rowId, file);
+   578→   578→  }, [uploadIdForRow]);
+   579→   579→
+   580→   580→  const removeIdForRow = React.useCallback((rowId: string) => {
+   581→   581→    // Phase 1: remove any ID-type document from documents[]. Do NOT touch
+   582→   582→    // the legacy `idAttachmentUrl` field (it's no longer the source of truth).
+   583→   583→    updateTrainees(trainees.map((r) => (
+   584→   584→      r.id === rowId
+   585→   585→        ? { ...r, documents: r.documents.filter((d) => !ID_DOC_TYPES.includes(d.type)) }
+   586→   586→        : r
+   587→   587→    )));
+   588→   588→  }, [trainees, updateTrainees]);
+   589→   589→
+   590→   590→  // ─── Bulk ID upload (auto-match by filename → national ID) ────────────
+   591→   591→  const onBulkIdFiles = React.useCallback(async (files: FileList | File[]) => {
+   592→   592→    const list = Array.from(files);
+   593→   593→    if (list.length === 0) return;
+   594→   594→    setBulkUpload({ phase: "uploading", total: list.length, done: 0, matched: 0, unmatched: [] });
+   595→   595→
+   596→   596→    const uploaded: { file: File; url: string; filename: string }[] = [];
+   597→   597→    for (let i = 0; i < list.length; i++) {
+   598→   598→      const file = list[i];
+   599→   599→      try {
+   600→   600→        const res = await api.postFile<UploadIdResponse>("/trainees/upload-id", file);
+   601→   601→        uploaded.push({ file, url: res.url, filename: res.filename });
+   602→   602→      } catch (e) {
+   603→   603→        // Keep going — partial success is better than bailing. Track the
+   604→   604→        // failed file as "unmatched" with no URL so the summary shows it.
+   605→   605→        uploaded.push({ file, url: "", filename: "" });
+   606→   606→        console.error("[bulk-id] upload failed", file.name, e);
+   607→   607→      }
+   608→   608→      setBulkUpload((s) => ({ ...s, done: i + 1 }));
+   609→   609→    }
+   610→   610→
+   611→   611→    setBulkUpload((s) => ({ ...s, phase: "matching" }));
+   612→   612→
+   613→   613→    // Match: strip the extension and any non-alphanumeric chars from the
+   614→   614→    // filename, then compare to each trainee's nationalId (also normalized).
+   615→   615→    const normalizeForMatch = (s: string) => s.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+   616→   616→    const next = trainees.map((r) => ({ ...r }));
+   617→   617→    let matched = 0;
+   618→   618→    const unmatched: { filename: string; url: string }[] = [];
+   619→   619→
+   620→   620→    for (const u of uploaded) {
+   621→   621→      if (!u.url) { unmatched.push({ filename: u.file.name, url: "" }); continue; }
+   622→   622→      const needle = normalizeForMatch(u.file.name);
+   623→   623→      if (!needle) { unmatched.push({ filename: u.file.name, url: u.url }); continue; }
+   624→   624→      const idx = next.findIndex((r) => {
+   625→   625→        const id = normalizeForMatch(r.nationalId);
+   626→   626→        return id && (id === needle || needle.includes(id) || id.includes(needle));
+   627→   627→      });
+   628→   628→      if (idx >= 0) {
+   629→   629→        // Phase 1: store the matched ID file in documents[] as `{type:"id"}`.
+   630→   630→        // Replace any existing ID-type doc on that row.
+   631→   631→        const newDoc: TraineeDocument = {
+   632→   632→          url: u.url,
+   633→   633→          filename: u.file.name,
+   634→   634→          type: "id",
+   635→   635→          uploadedAt: new Date().toISOString(),
+   636→   636→        };
+   637→   637→        const others = next[idx].documents.filter((d) => !ID_DOC_TYPES.includes(d.type));
+   638→   638→        next[idx] = { ...next[idx], documents: [...others, newDoc] };
+   639→   639→        matched++;
+   640→   640→      } else {
+   641→   641→        unmatched.push({ filename: u.file.name, url: u.url });
+   642→   642→      }
+   643→   643→    }
+   644→   644→
+   645→   645→    updateTrainees(next);
+   646→   646→    setBulkUpload({ phase: "completed", total: list.length, done: list.length, matched, unmatched });
+   647→   647→    toast({
+   648→   648→      title: t("misc.success"),
+   649→   649→      description: `Bulk upload complete: ${matched}/${list.length} matched to trainees`,
+   650→   650→      variant: unmatched.length > 0 ? "destructive" : "default",
+   651→   651→    });
+   652→   652→  }, [trainees, updateTrainees, toast, t]);
+   653→   653→
+   654→   654→  // ─── Excel Import tab ────────────────────────────────────────────────
+   655→   655→  const excelInputRef = React.useRef<HTMLInputElement | null>(null);
+   656→   656→  const [excelPendingFile, setExcelPendingFile] = React.useState<File | null>(null);
+   657→   657→
+   658→   658→  const onExcelFile = React.useCallback(async (file: File) => {
+   659→   659→    setPreviewLoading(true);
+   660→   660→    setPreviewOpen(true);
+   661→   661→    setExcelPendingFile(file);
+   662→   662→    try {
+   663→   663→      const result = await api.postFile<ImportPreview>("/requests/import/preview", file);
+   664→   664→      setPreview(result);
+   665→   665→    } catch (e) {
+   666→   666→      setPreviewOpen(false);
+   667→   667→      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+   668→   668→    } finally {
+   669→   669→      setPreviewLoading(false);
+   670→   670→    }
+   671→   671→  }, [toast, t, setExcelPendingFile]);
+   672→   672→
+   673→   673→  const confirmExcelImport = React.useCallback(() => {
+   674→   674→    if (!preview || !excelPendingFile) return;
+   675→   675→    // Translate preview rows → TraineeEntry rows. companyName / courseTitle /
+   676→   676→    // region etc. live on the parent request, not the trainee, so we only
+   677→   677→    // carry the trainee-relevant fields forward.
+   678→   678→    //
+   679→   679→    // IMPORTANT: we do NOT filter by (r.name && r.nationalId) here. The
+   680→   680→    // preview might have rows where the columns didn't map (e.g. the user's
+   681→   681→    // Excel file uses unusual headers we didn't recognize). Those rows still
+   682→   682→    // represent real trainees the user wants to import — they just need to
+   683→   683→    // fill the missing fields manually in the editable table afterwards.
+   684→   684→    // Dropping them silently would lose data the user explicitly uploaded.
+   685→   685→    //
+   686→   686→    // We DO skip rows that are completely empty (no name AND no nationalId
+   687→   687→    // AND no jobTitle AND no nationality — clearly a blank row in the sheet).
+   688→   688→    const additions: TraineeEntry[] = preview.rows
+   689→   689→      .filter((r) => r.name || r.nationalId || r.jobTitle || r.nationality)
+   690→   690→      .map((r) => ({
+   691→   691→        id: makeId(),
+   692→   692→        fullName: r.name || "",
+   693→   693→        nationalId: r.nationalId || "",
+   694→   694→        nationality: r.nationality ?? "",
+   695→   695→        jobTitle: r.jobTitle ?? "",
+   696→   696→        idAttachmentUrl: null,
+   697→   697→        idAttachmentName: null,
+   698→   698→        documents: [],
+   699→   699→        valid: false, // will be recomputed by the table's validation
+   700→   700→        errors: [],
+   701→   701→      }));
+   702→   702→    if (additions.length === 0) {
+   703→   703→      toast({
+   704→   704→        title: t("misc.error"),
+   705→   705→        description: t("requests.import.noValidRows") || "No rows to import — check the column mapping.",
+   706→   706→        variant: "destructive",
+   707→   707→      });
+   708→   708→      return;
+   709→   709→    }
+   710→   710→    updateTrainees([...trainees, ...additions]);
+   711→   711→    setPreviewOpen(false);
+   712→   712→    setPreview(null);
+   713→   713→    setExcelPendingFile(null);
+   714→   714→    setPreviewFullscreen(false);
+   715→   715→    setActiveTab("manual");
+   716→   716→    toast({
+   717→   717→      title: t("misc.success"),
+   718→   718→      description: t("requests.import.success", { requests: 1, trainees: additions.length }),
+   719→   719→    });
+   720→   720→  }, [preview, excelPendingFile, trainees, updateTrainees, toast, t, setPreviewOpen, setPreview, setExcelPendingFile, setPreviewFullscreen, setActiveTab]);
+   721→   721→
+   722→   722→  // ─── Copy & Paste tab ────────────────────────────────────────────────
+   723→   723→  const parsePasted = React.useCallback(() => {
+   724→   724→    const text = pasteText.trim();
+   725→   725→    if (!text) return;
+   726→   726→    // Detect delimiter: tab wins if there's any tab, otherwise comma.
+   727→   727→    const delimiter = text.includes("\t") ? "\t" : ",";
+   728→   728→    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+   729→   729→    if (lines.length === 0) return;
+   730→   730→
+   731→   731→    // Header auto-mapping — normalize each header (lowercase, strip symbols)
+   732→   732→    // and check known aliases using the expanded COLUMN_ALIASES.
+   733→   733→    const headerCells = lines[0].split(delimiter).map((h) => h.trim().toLowerCase().replace(/[^a-z0-9\u0600-\u06FF]/gi, ""));
+   734→   734→    const findCol = (field: keyof typeof COLUMN_ALIASES): number => {
+   735→   735→      const aliases = COLUMN_ALIASES[field];
+   736→   736→      return headerCells.findIndex((h) => aliases.some((a) => {
+   737→   737→        const normalizedAlias = a.toLowerCase().replace(/[^a-z0-9\u0600-\u06FF]/gi, "");
+   738→   738→        return h === normalizedAlias || h.includes(normalizedAlias) || normalizedAlias.includes(h);
+   739→   739→      }));
+   740→   740→    };
+   741→   741→
+   742→   742→    const nameCol = findCol("fullName");
+   743→   743→    const idCol = findCol("nationalId");
+   744→   744→    const natCol = findCol("nationality");
+   745→   745→    const jobCol = findCol("jobTitle");
+   746→   746→    const phoneCol = findCol("phone");
+   747→   747→    const emailCol = findCol("email");
+   748→   748→
+   749→   749→    // If no recognizable header, treat as name,id pairs.
+   750→   750→    const hasHeader = nameCol !== -1 || idCol !== -1;
+   751→   751→    const dataStart = hasHeader ? 1 : 0;
+   752→   752→    const nameIdx = hasHeader && nameCol !== -1 ? nameCol : 0;
+   753→   753→    const idIdx = hasHeader && idCol !== -1 ? idCol : 1;
+   754→   754→
+   755→   755→    const additions: TraineeEntry[] = [];
+   756→   756→    for (let i = dataStart; i < lines.length; i++) {
+   757→   757→      const cells = lines[i].split(delimiter).map((c) => c.trim());
+   758→   758→      const fullName = cells[nameIdx] ?? "";
+   759→   759→      const nationalId = cells[idIdx] ?? "";
+   760→   760→      if (!fullName && !nationalId) continue;
+   761→   761→      additions.push({
+   762→   762→        id: makeId(),
+   763→   763→        fullName,
+   764→   764→        nationalId,
+   765→   765→        nationality: hasHeader && natCol !== -1 ? (cells[natCol] ?? "") : "",
+   766→   766→        jobTitle: hasHeader && jobCol !== -1 ? (cells[jobCol] ?? "") : "",
+   767→   767→        idAttachmentUrl: null,
+   768→   768→        idAttachmentName: null,
+   769→   769→        documents: [],
+   770→   770→        valid: false,
+   771→   771→        errors: [],
+   772→   772→      });
+   773→   773→    }
+   774→   774→    if (additions.length === 0) {
+   775→   775→      toast({ title: t("misc.error"), description: "No rows detected", variant: "destructive" });
+   776→   776→      return;
+   777→   777→    }
+   778→   778→    updateTrainees([...trainees, ...additions]);
+   779→   779→    setPasteText("");
+   780→   780→    setActiveTab("manual");
+   781→   781→    toast({ title: t("misc.success"), description: t("requests.rowsImported", { count: additions.length }) });
+   782→   782→  }, [pasteText, trainees, updateTrainees, toast, t]);
+   783→   783→
+   784→   784→  // ─── Submission safety ───────────────────────────────────────────────
+   785→   785→  const canSubmit = stats.total > 0 && stats.invalid === 0 && stats.duplicates === 0;
+   786→   786→
+   787→   787→  // ─── Scroll handler (throttled via rAF) ───────────────────────────────
+   788→   788→  const onScroll = React.useCallback((e: React.UIEvent<HTMLDivElement>) => {
+   789→   789→    setScrollTop(e.currentTarget.scrollTop);
+   790→   790→  }, []);
+   791→   791→
+   792→   792→  // ─── Bulk-upload file input (hidden) ──────────────────────────────────
+   793→   793→  const bulkIdInputRef = React.useRef<HTMLInputElement | null>(null);
+   794→   794→
+   795→   795→  return (
+   796→   796→    <div className={cn("space-y-4", className)}>
+   797→   797→      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
+   798→   798→        <div className="flex items-center justify-between gap-2">
+   799→   799→          <TabsList className="w-full sm:w-auto">
+   800→   800→            <TabsTrigger value="manual" className="flex-1 sm:flex-initial"><Users className="h-4 w-4 me-1.5" />{t("requests.trainees")}</TabsTrigger>
+   801→   801→            <TabsTrigger value="excel" className="flex-1 sm:flex-initial"><FileSpreadsheet className="h-4 w-4 me-1.5" />{t("requests.excelImport")}</TabsTrigger>
+   802→   802→            <TabsTrigger value="paste" className="flex-1 sm:flex-initial"><ClipboardPaste className="h-4 w-4 me-1.5" />{t("requests.copyPaste")}</TabsTrigger>
+   803→   803→          </TabsList>
+   804→   804→        </div>
+   805→   805→
+   806→   806→        {/* ─── Manual Entry ─────────────────────────────────────────────── */}
+   807→   807→        <TabsContent value="manual" className="space-y-4 mt-4">
+   808→   808→          {/* Stat cards (click to filter) */}
+   809→   809→          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+   810→   810→            <StatCard
+   811→   811→              icon={<Users className="h-4 w-4" />}
+   812→   812→              label={t("requests.stats.total")}
+   813→   813→              value={stats.total}
+   814→   814→              active={filter === "all"}
+   815→   815→              onClick={() => setFilter("all")}
+   816→   816→              onJump={null}
+   817→   817→            />
+   818→   818→            <StatCard
+   819→   819→              icon={<CheckCircle2 className="h-4 w-4 text-emerald-600" />}
+   820→   820→              label={t("requests.stats.valid")}
+   821→   821→              value={stats.valid}
+   822→   822→              active={filter === "valid"}
+   823→   823→              tone="success"
+   824→   824→              onClick={() => setFilter("valid")}
+   825→   825→              onJump={null}
+   826→   826→            />
+   827→   827→            <StatCard
+   828→   828→              icon={<AlertCircle className="h-4 w-4 text-destructive" />}
+   829→   829→              label={t("requests.stats.invalid")}
+   830→   830→              value={stats.invalid}
+   831→   831→              active={filter === "invalid"}
+   832→   832→              tone="destructive"
+   833→   833→              onClick={() => setFilter("invalid")}
+   834→   834→              onJump={stats.invalid > 0 ? () => {
+   835→   835→                const firstInvalid = trainees.find((r) => !r.valid);
+   836→   836→                if (firstInvalid) jumpToRow(firstInvalid.id);
+   837→   837→              } : null}
+   838→   838→            />
+   839→   839→            <StatCard
+   840→   840→              icon={<Copy className="h-4 w-4 text-amber-600" />}
+   841→   841→              label={t("requests.stats.duplicates")}
+   842→   842→              value={stats.duplicates}
+   843→   843→              active={filter === "duplicates"}
+   844→   844→              tone="warning"
+   845→   845→              onClick={() => setFilter("duplicates")}
+   846→   846→              onJump={stats.duplicates > 0 ? () => {
+   847→   847→                const idCounts = new Map<string, number>();
+   848→   848→                for (const r of trainees) {
+   849→   849→                  const id = r.nationalId.trim();
+   850→   850→                  if (id) idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
+   851→   851→                }
+   852→   852→                const firstDup = trainees.find((r) => (idCounts.get(r.nationalId.trim()) ?? 0) > 1);
+   853→   853→                if (firstDup) jumpToRow(firstDup.id);
+   854→   854→              } : null}
+   855→   855→            />
+   856→   856→            <StatCard
+   857→   857→              icon={<Paperclip className="h-4 w-4 text-muted-foreground" />}
+   858→   858→              label={t("requests.stats.missingAttachments")}
+   859→   859→              value={stats.missingAttachment}
+   860→   860→              active={filter === "missing-attachment"}
+   861→   861→              onClick={() => setFilter("missing-attachment")}
+   862→   862→              onJump={stats.missingAttachment > 0 ? () => {
+   863→   863→                const first = trainees.find((r) => r.fullName.trim() && r.nationalId.trim() && !hasIdDocument(r));
+   864→   864→                if (first) jumpToRow(first.id);
+   865→   865→              } : null}
+   866→   866→            />
+   867→   867→          </div>
+   868→   868→
+   869→   869→          {/* Toolbar */}
+   870→   870→          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+   871→   871→            <div className="flex items-center gap-2 flex-wrap">
+   872→   872→              <Button type="button" variant="outline" size="sm" onClick={() => addRows(1)}>
+   873→   873→                <Plus className="h-3.5 w-3.5 me-1" />{t("requests.addRow")}
+   874→   874→              </Button>
+   875→   875→              <Button type="button" variant="outline" size="sm" onClick={() => addRows(10)} title={t("requests.addRow10")}>+10</Button>
+   876→   876→              <Button type="button" variant="outline" size="sm" onClick={() => addRows(50)} title={t("requests.addRow50")}>+50</Button>
+   877→   877→              <Button type="button" variant="outline" size="sm" onClick={() => addRows(100)} title={t("requests.addRow100")}>+100</Button>
+   878→   878→              <Button
+   879→   879→                type="button"
+   880→   880→                variant="outline"
+   881→   881→                size="sm"
+   882→   882→                onClick={() => bulkIdInputRef.current?.click()}
+   883→   883→                disabled={trainees.length === 0}
+   884→   884→              >
+   885→   885→                <Upload className="h-3.5 w-3.5 me-1" />{t("requests.bulkUploadIds")}
+   886→   886→              </Button>
+   887→   887→              <input
+   888→   888→                ref={bulkIdInputRef}
+   889→   889→                type="file"
+   890→   890→                multiple
+   891→   891→                accept="image/jpeg,image/png,image/webp,application/pdf"
+   892→   892→                className="hidden"
+   893→   893→                onChange={(e) => {
+   894→   894→                  if (e.target.files && e.target.files.length > 0) {
+   895→   895→                    void onBulkIdFiles(e.target.files);
+   896→   896→                  }
+   897→   897→                  e.target.value = "";
+   898→   898→                }}
+   899→   899→              />
+   900→   900→            </div>
+   901→   901→
+   902→   902→            <div className="flex items-center gap-2 flex-wrap">
+   903→   903→              <div className="relative">
+   904→   904→                <Search className="absolute top-1/2 -translate-y-1/2 start-2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+   905→   905→                <Input
+   906→   906→                  type="text"
+   907→   907→                  placeholder={t("requests.searchTrainees")}
+   908→   908→                  value={search}
+   909→   909→                  onChange={(e) => setSearch(e.target.value)}
+   910→   910→                  className="ps-7 h-8 w-44 sm:w-56"
+   911→   911→                />
+   912→   912→              </div>
+   913→   913→              {selected.size > 0 && (
+   914→   914→                <Button type="button" variant="destructive" size="sm" onClick={deleteSelected}>
+   915→   915→                  <Trash2 className="h-3.5 w-3.5 me-1" />{t("requests.deleteSelected")} ({selected.size})
+   916→   916→                </Button>
+   917→   917→              )}
+   918→   918→            </div>
+   919→   919→          </div>
+   920→   920→
+   921→   921→          {/* Bulk upload progress */}
+   922→   922→          {bulkUpload.phase !== "idle" && (
+   923→   923→            <BulkUploadPanel state={bulkUpload} onDismiss={() => setBulkUpload({ phase: "idle", total: 0, done: 0, matched: 0, unmatched: [] })} />
+   924→   924→          )}
+   925→   925→
+   926→   926→          {/* Table — virtualized, with horizontal + vertical scroll inside the table */}
+   927→   927→          <div
+   928→   928→            className="rounded-md border"
+   929→   929→            style={{
+   930→   930→              overflowX: "auto",
+   931→   931→              overflowY: "auto",
+   932→   932→            }}
+   933→   933→          >
+   934→   934→            <div style={{ minWidth: 1300, width: "max-content" }}>
+   935→   935→            {/* Header row — sticky at top */}
+   936→   936→            <div className="flex items-center bg-muted/80 backdrop-blur-sm border-b text-xs font-medium text-muted-foreground sticky top-0 z-20" style={{ height: ROW_HEIGHT }}>
+   937→   937→              <div className="w-10 shrink-0 flex items-center justify-center">
+   938→   938→                <Checkbox
+   939→   939→                  checked={filtered.length > 0 && selected.size === filtered.length}
+   940→   940→                  onCheckedChange={(v) => toggleSelectAll(Boolean(v))}
+   941→   941→                  aria-label={t("requests.selectAllVisible")}
+   942→   942→                />
+   943→   943→              </div>
+   944→   944→              <div className="w-10 shrink-0 text-center">#</div>
+   945→   945→              <div className="flex-1 min-w-[160px] px-2">{t("requests.traineeName")}</div>
+   946→   946→              <div className="w-40 shrink-0 px-2">{t("requests.nationalId")}</div>
+   947→   947→              <div className="w-32 shrink-0 px-2">{t("requests.nationality")}</div>
+   948→   948→              <div className="w-32 shrink-0 px-2">{t("requests.jobTitle")}</div>
+   949→   949→              <div className="w-56 shrink-0 px-2">{t("requests.idAndDocuments")}</div>
+   950→   950→              <div className="w-12 shrink-0" />
+   951→   951→            </div>
+   952→   952→
+   953→   953→            {/* Body — virtualized */}
+   954→   954→            <div
+   955→   955→              ref={scrollRef}
+   956→   956→              onScroll={onScroll}
+   957→   957→              className="overflow-y-auto"
+   958→   958→              style={{ height: currentTableHeight, maxHeight: currentTableHeight }}
+   959→   959→            >
+   960→   960→              {filtered.length === 0 ? (
+   961→   961→                <div className="flex flex-col items-center justify-center text-center text-sm text-muted-foreground py-12 gap-2">
+   962→   962→                  <Users className="h-8 w-8 opacity-40" />
+   963→   963→                  <div>{trainees.length === 0 ? t("requests.noTraineesYet") : t("requests.noRowsMatchFilters")}</div>
+   964→   964→                </div>
+   965→   965→              ) : (
+   966→   966→                <div style={{ height: totalHeight, position: "relative" }}>
+   967→   967→                  {visibleSlice.map((row, i) => {
+   968→   968→                    const absoluteIndex = startIndex + i;
+   969→   969→                    const isHighlighted = highlightedId === row.id;
+   970→   970→                    return (
+   971→   971→                      <div
+   972→   972→                        key={row.id}
+   973→   973→                        className={cn(
+   974→   974→                          "flex items-center border-b last:border-b-0 transition-colors",
+   975→   975→                          row.valid ? "" : "bg-destructive/5",
+   976→   976→                          isHighlighted && "ring-2 ring-inset ring-primary"
+   977→   977→                        )}
+   978→   978→                        style={{ height: ROW_HEIGHT, position: "absolute", top: absoluteIndex * ROW_HEIGHT, left: 0, right: 0, minWidth: 1300 }}
+   979→   979→                      >
+   980→   980→                        <div className="w-10 shrink-0 flex items-center justify-center">
+   981→   981→                          <Checkbox
+   982→   982→                            checked={selected.has(row.id)}
+   983→   983→                            onCheckedChange={(v) => toggleSelect(row.id, Boolean(v))}
+   984→   984→                            aria-label={`Select row ${absoluteIndex + 1}`}
+   985→   985→                          />
+   986→   986→                        </div>
+   987→   987→                        <div className="w-10 shrink-0 text-center text-xs text-muted-foreground">{absoluteIndex + 1}</div>
+   988→   988→                        <div className="flex-1 min-w-[160px] px-1">
+   989→   989→                          <input
+   990→   990→                            type="text"
+   991→   991→                            value={row.fullName}
+   992→   992→                            onChange={(e) => updateField(row.id, "fullName", e.target.value)}
+   993→   993→                            placeholder={t("requests.placeholderFullName")}
+   994→   994→                            className="w-full h-7 rounded border border-transparent bg-transparent px-1.5 text-sm outline-none focus:border-input focus:bg-background"
+   995→   995→                            aria-invalid={!row.valid && !row.fullName.trim()}
+   996→   996→                          />
+   997→   997→                        </div>
+   998→   998→                        <div className="w-40 shrink-0 px-1">
+   999→   999→                          <input
+  1000→  1000→                            type="text"
+  1001→  1001→                            value={row.nationalId}
+  1002→  1002→                            onChange={(e) => updateField(row.id, "nationalId", e.target.value)}
+  1003→  1003→                            placeholder={t("requests.placeholderNationalId")}
+  1004→  1004→                            className="w-full h-7 rounded border border-transparent bg-transparent px-1.5 text-sm font-mono outline-none focus:border-input focus:bg-background"
+  1005→  1005→                            aria-invalid={!row.valid && !row.nationalId.trim()}
+  1006→  1006→                          />
+  1007→  1007→                        </div>
+  1008→  1008→                        <div className="w-32 shrink-0 px-1">
+  1009→  1009→                          <input
+  1010→  1010→                            type="text"
+  1011→  1011→                            value={row.nationality}
+  1012→  1012→                            onChange={(e) => updateField(row.id, "nationality", e.target.value)}
+  1013→  1013→                            placeholder="—"
+  1014→  1014→                            className="w-full h-7 rounded border border-transparent bg-transparent px-1.5 text-sm outline-none focus:border-input focus:bg-background"
+  1015→  1015→                          />
+  1016→  1016→                        </div>
+  1017→  1017→                        <div className="w-32 shrink-0 px-1">
+  1018→  1018→                          <input
+  1019→  1019→                            type="text"
+  1020→  1020→                            value={row.jobTitle}
+  1021→  1021→                            onChange={(e) => updateField(row.id, "jobTitle", e.target.value)}
+  1022→  1022→                            placeholder="—"
+  1023→  1023→                            className="w-full h-7 rounded border border-transparent bg-transparent px-1.5 text-sm outline-none focus:border-input focus:bg-background"
+  1024→  1024→                          />
+  1025→  1025→                        </div>
+  1026→  1026→                        <div className="w-56 shrink-0 px-2 flex items-center gap-1">
+  1027→  1027→                          {/* ID/Iqama attachment — Phase 1: read from documents[] */}
+  1028→  1028→                          {(() => {
+  1029→  1029→                            const idDoc = getIdDocument(row);
+  1030→  1030→                            if (idDoc) {
+  1031→  1031→                              return (
+  1032→  1032→                                <>
+  1033→  1033→                                  <a
+  1034→  1034→                                    href={idDoc.url}
+  1035→  1035→                                    target="_blank"
+  1036→  1036→                                    rel="noopener noreferrer"
+  1037→  1037→                                    className="flex items-center gap-1 text-xs text-primary truncate max-w-[80px]"
+  1038→  1038→                                    title={idDoc.filename ?? "View ID attachment"}
+  1039→  1039→                                  >
+  1040→  1040→                                    <FileCheck className="h-3 w-3 shrink-0 text-emerald-600" />
+  1041→  1041→                                    <span className="truncate">{idDoc.filename ?? "ID"}</span>
+  1042→  1042→                                  </a>
+  1043→  1043→                                  <RowIdReplace onPick={(f) => void replaceIdForRow(row.id, f)} />
+  1044→  1044→                                  <Button
+  1045→  1045→                                    type="button"
+  1046→  1046→                                    variant="ghost"
+  1047→  1047→                                    size="icon"
+  1048→  1048→                                    className="h-6 w-6"
+  1049→  1049→                                    onClick={() => removeIdForRow(row.id)}
+  1050→  1050→                                    aria-label={t("requests.removeIdAttachment")}
+  1051→  1051→                                  >
+  1052→  1052→                                    <X className="h-3 w-3" />
+  1053→  1053→                                  </Button>
+  1054→  1054→                                </>
+  1055→  1055→                              );
+  1056→  1056→                            }
+  1057→  1057→                            return <RowIdUpload onPick={(f) => void uploadIdForRow(row.id, f)} />;
+  1058→  1058→                          })()}
+  1059→  1059→                          {/* Multi-document upload */}
+  1060→  1060→                          <RowDocUpload
+  1061→  1061→                            rowId={row.id}
+  1062→  1062→                            documents={row.documents}
+  1063→  1063→                            onUpload={(file, docType) => void uploadDocumentForRow(row.id, file, docType)}
+  1064→  1064→                            onRemove={(docIndex) => removeDocumentForRow(row.id, docIndex)}
+  1065→  1065→                          />
+  1066→  1066→                        </div>
+  1067→  1067→                        <div className="w-12 shrink-0 flex items-center justify-center">
+  1068→  1068→                          {!row.valid && (
+  1069→  1069→                            <span
+  1070→  1070→                              title={row.errors.join(", ")}
+  1071→  1071→                              className="text-destructive"
+  1072→  1072→                              aria-label={`Row ${absoluteIndex + 1} has errors: ${row.errors.join(", ")}`}
+  1073→  1073→                            >
+  1074→  1074→                              <AlertCircle className="h-3.5 w-3.5" />
+  1075→  1075→                            </span>
+  1076→  1076→                          )}
+  1077→  1077→                        </div>
+  1078→  1078→                      </div>
+  1079→  1079→                    );
+  1080→  1080→                  })}
+  1081→  1081→                </div>
+  1082→  1082→              )}
+  1083→  1083→            </div>
+  1084→  1084→
+  1085→  1085→            {/* Footer */}
+  1086→  1086→            <div className="flex items-center justify-between border-t px-3 py-2 text-xs text-muted-foreground">
+  1087→  1087→              <span>{t("requests.showingOf", { shown: filtered.length, total: trainees.length })}</span>
+  1088→  1088→              {filtered.length > 0 && (
+  1089→  1089→                <span>{t("requests.windowedRange", { start: startIndex + 1, end: endIndex, total: filtered.length })}</span>
+  1090→  1090→              )}
+  1091→  1091→            </div>
+  1092→  1092→            </div>
+  1093→  1093→          </div>
+  1094→  1094→
+  1095→  1095→          {/* Submission safety + actions */}
+  1096→  1096→          <SubmissionSafetyBar
+  1097→  1097→            canSubmit={canSubmit}
+  1098→  1098→            total={stats.total}
+  1099→  1099→            invalid={stats.invalid}
+  1100→  1100→            duplicates={stats.duplicates}
+  1101→  1101→            onSaveDraft={onSaveDraft}
+  1102→  1102→          />
+  1103→  1103→        </TabsContent>
+  1104→  1104→
+  1105→  1105→        {/* ─── Excel Import ────────────────────────────────────────────── */}
+  1106→  1106→        <TabsContent value="excel" className="space-y-4 mt-4">
+  1107→  1107→          <Alert variant="default">
+  1108→  1108→            <FileSpreadsheet className="h-4 w-4" />
+  1109→  1109→            <AlertTitle>{t("requests.excelImport")}</AlertTitle>
+  1110→  1110→            <AlertDescription>
+  1111→  1111→              {t("requests.excelImportDesc")}
+  1112→  1112→            </AlertDescription>
+  1113→  1113→          </Alert>
+  1114→  1114→          <div
+  1115→  1115→            className="flex flex-col items-center justify-center gap-3 rounded-md border-2 border-dashed border-muted-foreground/30 p-10 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/20 transition-colors"
+  1116→  1116→            onClick={() => excelInputRef.current?.click()}
+  1117→  1117→            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+  1118→  1118→            onDrop={(e) => {
+  1119→  1119→              e.preventDefault();
+  1120→  1120→              const file = e.dataTransfer.files?.[0];
+  1121→  1121→              if (file) void onExcelFile(file);
+  1122→  1122→            }}
+  1123→  1123→          >
+  1124→  1124→            <FileSpreadsheet className="h-10 w-10 text-muted-foreground" />
+  1125→  1125→            <div>
+  1126→  1126→              <div className="text-sm font-medium">{t("requests.dropExcelOrBrowse")}</div>
+  1127→  1127→              <div className="text-xs text-muted-foreground mt-1">{t("requests.excelFormatHint")}</div>
+  1128→  1128→              <div className="text-xs text-muted-foreground mt-2">
+  1129→  1129→                {t("requests.recognizedColumns")}
+  1130→  1130→              </div>
+  1131→  1131→            </div>
+  1132→  1132→            <input
+  1133→  1133→              ref={excelInputRef}
+  1134→  1134→              type="file"
+  1135→  1135→              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  1136→  1136→              className="hidden"
+  1137→  1137→              onChange={(e) => {
+  1138→  1138→                const file = e.target.files?.[0];
+  1139→  1139→                if (file) void onExcelFile(file);
+  1140→  1140→                e.target.value = "";
+  1141→  1141→              }}
+  1142→  1142→            />
+  1143→  1143→          </div>
+  1144→  1144→
+  1145→  1145→          {trainees.length > 0 && (
+  1146→  1146→            <Alert variant="default">
+  1147→  1147→              <FileWarning className="h-4 w-4" />
+  1148→  1148→              <AlertTitle>{trainees.length} trainee(s) already in the list</AlertTitle>
+  1149→  1149→              <AlertDescription>
+  1150→  1150→                Importing from Excel will <strong>append</strong> to the existing list, not replace it.
+  1151→  1151→              </AlertDescription>
+  1152→  1152→            </Alert>
+  1153→  1153→          )}
+  1154→  1154→        </TabsContent>
+  1155→  1155→
+  1156→  1156→        {/* ─── Copy & Paste ────────────────────────────────────────────── */}
+  1157→  1157→        <TabsContent value="paste" className="space-y-4 mt-4">
+  1158→  1158→          <Alert variant="default">
+  1159→  1159→            <ClipboardPaste className="h-4 w-4" />
+  1160→  1160→            <AlertTitle>{t("requests.copyPaste")}</AlertTitle>
+  1161→  1161→            <AlertDescription>
+  1162→  1162→              {t("requests.copyPasteDesc")}
+  1163→  1163→            </AlertDescription>
+  1164→  1164→          </Alert>
+  1165→  1165→          <Textarea
+  1166→  1166→            rows={10}
+  1167→  1167→            value={pasteText}
+  1168→  1168→            onChange={(e) => setPasteText(e.target.value)}
+  1169→  1169→            placeholder={t("requests.copyPastePlaceholder")}
+  1170→  1170→            className="font-mono text-xs"
+  1171→  1171→          />
+  1172→  1172→          <div className="flex justify-end gap-2">
+  1173→  1173→            <Button type="button" variant="outline" size="sm" onClick={() => setPasteText("")} disabled={!pasteText}>
+  1174→  1174→              <RotateCcw className="h-3.5 w-3.5 me-1" />{t("requests.clear")}
+  1175→  1175→            </Button>
+  1176→  1176→            <Button type="button" size="sm" onClick={parsePasted} disabled={!pasteText.trim()}>
+  1177→  1177→              <CopyPlus className="h-3.5 w-3.5 me-1" />{t("requests.importRows")}
+  1178→  1178→            </Button>
+  1179→  1179→          </div>
+  1180→  1180→        </TabsContent>
+  1181→  1181→      </Tabs>
+  1182→  1182→
+  1183→  1183→      {/* ─── Preview Dialog ───────────────────────────────────────────── */}
+  1184→  1184→      <Dialog open={previewOpen} onOpenChange={(o) => { setPreviewOpen(o); if (!o) { setPreview(null); setExcelPendingFile(null); setPreviewFullscreen(false); } }}>
+  1185→  1185→        <DialogContent
+  1186→  1186→          className={cn(
+  1187→  1187→            "p-0 gap-0",
+  1188→  1188→            previewFullscreen
+  1189→  1189→              ? "max-w-[98vw] w-[98vw] max-h-[96vh] h-[96vh]"
+  1190→  1190→              : "max-w-4xl max-h-[90vh]"
+  1191→  1191→          )}
+  1192→  1192→        >
+  1193→  1193→          <DialogHeader className="p-5 border-b shrink-0">
+  1194→  1194→            <DialogTitle className="flex items-center gap-2">
+  1195→  1195→              <FileSpreadsheet className="h-5 w-5 text-primary" />
+  1196→  1196→              {t("requests.import.preview")}
+  1197→  1197→              <Button
+  1198→  1198→                type="button"
+  1199→  1199→                variant="ghost"
+  1200→  1200→                size="sm"
+  1201→  1201→                className="ms-auto h-7 px-2"
+  1202→  1202→                onClick={() => setPreviewFullscreen((v) => !v)}
+  1203→  1203→                title={previewFullscreen ? t("requests.fullscreenExit") : t("requests.fullscreen")}
+  1204→  1204→              >
+  1205→  1205→                {previewFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+  1206→  1206→                {previewFullscreen ? t("requests.fullscreenExit") : t("requests.fullscreen")}
+  1207→  1207→              </Button>
+  1208→  1208→            </DialogTitle>
+  1209→  1209→            <DialogDescription>
+  1210→  1210→              {excelPendingFile?.name ?? t("requests.import.spreadsheet")} — {t("requests.import.reviewMapping")}
+  1211→  1211→            </DialogDescription>
+  1212→  1212→          </DialogHeader>
+  1213→  1213→
+  1214→  1214→          <div className={cn(
+  1215→  1215→            "p-5 space-y-4 overflow-y-auto",
+  1216→  1216→            previewFullscreen ? "flex-1 min-h-0" : "max-h-[60vh]"
+  1217→  1217→          )}>
+  1218→  1218→            {previewLoading ? (
+  1219→  1219→              <div className="flex flex-col items-center justify-center py-12 gap-2">
+  1220→  1220→                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+  1221→  1221→                <div className="text-sm text-muted-foreground">{t("requests.import.previewing")}</div>
+  1222→  1222→              </div>
+  1223→  1223→            ) : preview ? (
+  1224→  1224→              <>
+  1225→  1225→                {/* Missing required */}
+  1226→  1226→                {preview.missingRequiredColumns.length > 0 ? (
+  1227→  1227→                  <Alert variant="destructive">
+  1228→  1228→                    <AlertCircle className="h-4 w-4" />
+  1229→  1229→                    <AlertTitle>{t("requests.import.missingColumns")}</AlertTitle>
+  1230→  1230→                    <AlertDescription>
+  1231→  1231→                      <div className="flex flex-wrap gap-1 mt-1">
+  1232→  1232→                        {preview.missingRequiredColumns.map((f, i) => (
+  1233→  1233→                          <Badge key={i} variant="destructive">{f.canonicalAlias}</Badge>
+  1234→  1234→                        ))}
+  1235→  1235→                      </div>
+  1236→  1236→                    </AlertDescription>
+  1237→  1237→                  </Alert>
+  1238→  1238→                ) : (
+  1239→  1239→                  <Alert variant="default">
+  1240→  1240→                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+  1241→  1241→                    <AlertTitle>{t("requests.import.allColumnsMatched")}</AlertTitle>
+  1242→  1242→                    <AlertDescription>
+  1243→  1243→                      {t("requests.import.columnsRecognized", {
+  1244→  1244→                        matched: preview.matchedColumns.length,
+  1245→  1245→                        total: preview.matchedColumns.length + preview.unmatchedHeaders.length,
+  1246→  1246→                      })}
+  1247→  1247→                    </AlertDescription>
+  1248→  1248→                  </Alert>
+  1249→  1249→                )}
+  1250→  1250→
+  1251→  1251→                {/* Detected header row notice */}
+  1252→  1252→                {preview.detectedHeaderRow && preview.detectedHeaderRow > 1 && (
+  1253→  1253→                  <Alert>
+  1254→  1254→                    <CheckCircle2 className="h-4 w-4 text-primary" />
+  1255→  1255→                    <AlertTitle>{t("requests.import.headerDetected")}</AlertTitle>
+  1256→  1256→                    <AlertDescription>
+  1257→  1257→                      {t("requests.import.headerDetectedDesc", { row: preview.detectedHeaderRow })}
+  1258→  1258→                    </AlertDescription>
+  1259→  1259→                  </Alert>
+  1260→  1260→                )}
+  1261→  1261→
+  1262→  1262→                {/* Stats */}
+  1263→  1263→                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+  1264→  1264→                  <PreviewStat label={t("requests.import.totalRows")} value={preview.totalRows} />
+  1265→  1265→                  <PreviewStat label={t("requests.import.validRows")} value={preview.validRows} tone="success" />
+  1266→  1266→                  <PreviewStat label={t("requests.import.invalidRows")} value={preview.invalidRows} tone={preview.invalidRows > 0 ? "destructive" : undefined} />
+  1267→  1267→                  <PreviewStat label={t("requests.import.traineeCount")} value={preview.traineeCount} />
+  1268→  1268→                </div>
+  1269→  1269→
+  1270→  1270→                {/* Matched columns */}
+  1271→  1271→                <div>
+  1272→  1272→                  <div className="text-xs font-semibold mb-2">{t("requests.import.matchedColumns")}</div>
+  1273→  1273→                  <div className="rounded-md border overflow-hidden">
+  1274→  1274→                    <Table>
+  1275→  1275→                      <TableHeader>
+  1276→  1276→                        <TableRow>
+  1277→  1277→                          <TableHead>{t("requests.import.field")}</TableHead>
+  1278→  1278→                          <TableHead>{t("requests.import.columnHeader")}</TableHead>
+  1279→  1279→                        </TableRow>
+  1280→  1280→                      </TableHeader>
+  1281→  1281→                      <TableBody>
+  1282→  1282→                        {preview.matchedColumns.map((c) => (
+  1283→  1283→                          <TableRow key={c.field + "-" + c.header}>
+  1284→  1284→                            <TableCell className="font-mono text-xs">{t(`requests.import.fields.${c.field}` as never) || c.field}</TableCell>
+  1285→  1285→                            <TableCell className="text-xs whitespace-pre-line">{c.header}</TableCell>
+  1286→  1286→                          </TableRow>
+  1287→  1287→                        ))}
+  1288→  1288→                      </TableBody>
+  1289→  1289→                    </Table>
+  1290→  1290→                  </div>
+  1291→  1291→                </div>
+  1292→  1292→
+  1293→  1293→                {/* Unmatched headers */}
+  1294→  1294→                {preview.unmatchedHeaders.length > 0 && (
+  1295→  1295→                  <div>
+  1296→  1296→                    <div className="text-xs font-semibold mb-2">{t("requests.import.unmatchedHeaders")}</div>
+  1297→  1297→                    <div className="flex flex-wrap gap-1">
+  1298→  1298→                      {preview.unmatchedHeaders.map((h, i) => (
+  1299→  1299→                        <Badge key={`${h}-${i}`} variant="outline" className="text-xs whitespace-pre-line">{h}</Badge>
+  1300→  1300→                      ))}
+  1301→  1301→                    </div>
+  1302→  1302→                  </div>
+  1303→  1303→                )}
+  1304→  1304→
+  1305→  1305→                {/* Duplicate IDs */}
+  1306→  1306→                {preview.duplicateNationalIds.length > 0 && (
+  1307→  1307→                  <Alert variant="destructive">
+  1308→  1308→                    <FileWarning className="h-4 w-4" />
+  1309→  1309→                    <AlertTitle>{t("requests.import.duplicateIds")}</AlertTitle>
+  1310→  1310→                    <AlertDescription>
+  1311→  1311→                      <div className="flex flex-wrap gap-1 mt-1">
+  1312→  1312→                        {preview.duplicateNationalIds.map((d, i) => (
+  1313→  1313→                          <Badge key={i} variant="destructive" className="font-mono text-xs">{d.nationalId}</Badge>
+  1314→  1314→                        ))}
+  1315→  1315→                      </div>
+  1316→  1316→                    </AlertDescription>
+  1317→  1317→                  </Alert>
+  1318→  1318→                )}
+  1319→  1319→
+  1320→  1320→                {/* Sample rows */}
+  1321→  1321→                <div className={cn(previewFullscreen && "flex flex-col min-h-0 flex-1")}>
+  1322→  1322→                  <div className="text-xs font-semibold mb-2">{t("requests.import.rowPreview")}</div>
+  1323→  1323→                  <div className={cn(
+  1324→  1324→                    "rounded-md border overflow-x-auto overflow-y-auto",
+  1325→  1325→                    previewFullscreen ? "flex-1 min-h-0" : "max-h-72"
+  1326→  1326→                  )}>
+  1327→  1327→                    <Table>
+  1328→  1328→                      <TableHeader className="sticky top-0 bg-background">
+  1329→  1329→                        <TableRow>
+  1330→  1330→                          <TableHead className="w-16">{t("requests.import.rowNum")}</TableHead>
+  1331→  1331→                          <TableHead>{t("requests.traineeName")}</TableHead>
+  1332→  1332→                          <TableHead>{t("requests.nationalId")}</TableHead>
+  1333→  1333→                          <TableHead>{t("requests.import.status")}</TableHead>
+  1334→  1334→                        </TableRow>
+  1335→  1335→                      </TableHeader>
+  1336→  1336→                      <TableBody>
+  1337→  1337→                        {preview.rows.map((r) => (
+  1338→  1338→                          <TableRow key={r.rowNumber} className={r.valid ? "" : "bg-destructive/5"}>
+  1339→  1339→                            <TableCell className="text-xs text-muted-foreground">{r.rowNumber}</TableCell>
+  1340→  1340→                            <TableCell className="text-sm">{r.name || "—"}</TableCell>
+  1341→  1341→                            <TableCell className="text-xs font-mono">{r.nationalId || "—"}</TableCell>
+  1342→  1342→                            <TableCell>
+  1343→  1343→                              {r.valid
+  1344→  1344→                                ? <Badge className="text-emerald-600 border-emerald-200 bg-emerald-50" variant="outline">{t("requests.import.ok")}</Badge>
+  1345→  1345→                                : <Badge variant="destructive" className="text-xs">{r.errors.map((e) => translateRowError(e, t)).join(" · ")}</Badge>}
+  1346→  1346→                            </TableCell>
+  1347→  1347→                          </TableRow>
+  1348→  1348→                        ))}
+  1349→  1349→                      </TableBody>
+  1350→  1350→                    </Table>
+  1351→  1351→                  </div>
+  1352→  1352→                </div>
+  1353→  1353→              </>
+  1354→  1354→            ) : null}
+  1355→  1355→          </div>
+  1356→  1356→
+  1357→  1357→          <DialogFooter className="p-4 border-t bg-muted/30 flex items-center justify-between gap-2 flex-wrap">
+  1358→  1358→            {/* Status hint on the left — explains WHY the button is disabled
+  1359→  1359→                when it is. If columns are missing we still allow Confirm so
+  1360→  1360→                the user can import whatever fields WERE matched and fill the
+  1361→  1361→                rest manually in the editable table. */}
+  1362→  1362→            <div className="text-xs text-muted-foreground">
+  1363→  1363→              {previewLoading ? (
+  1364→  1364→                <span className="inline-flex items-center gap-1.5">
+  1365→  1365→                  <Loader2 className="h-3 w-3 animate-spin" />
+  1366→  1366→                  {t("requests.import.previewing")}
+  1367→  1367→                </span>
+  1368→  1368→              ) : preview ? (
+  1369→  1369→                <span>
+  1370→  1370→                  {preview.validRows > 0 ? (
+  1371→  1371→                    <>{preview.validRows} {t("requests.import.validRows")} · {preview.totalRows} {t("requests.import.totalRows")}</>
+  1372→  1372→                  ) : preview.totalRows > 0 ? (
+  1373→  1373→                    <span className="text-amber-600 inline-flex items-center gap-1">
+  1374→  1374→                      <AlertCircle className="h-3 w-3" />
+  1375→  1375→                      {t("requests.import.noValidRows") || "No valid rows — check column mapping."}
+  1376→  1376→                    </span>
+  1377→  1377→                  ) : null}
+  1378→  1378→                </span>
+  1379→  1379→              ) : null}
+  1380→  1380→            </div>
+  1381→  1381→            <div className="flex items-center gap-2 ms-auto">
+  1382→  1382→              <Button variant="outline" onClick={() => { setPreviewOpen(false); setPreview(null); setExcelPendingFile(null); setPreviewFullscreen(false); }}>
+  1383→  1383→                {t("misc.cancel")}
+  1384→  1384→              </Button>
+  1385→  1385→              <Button
+  1386→  1386→                onClick={confirmExcelImport}
+  1387→  1387→                disabled={
+  1388→  1388→                  !preview ||
+  1389→  1389→                  previewLoading ||
+  1390→  1390→                  preview?.totalRows === 0 ||
+  1391→  1391→                  // Allow import even with missing required columns — the user
+  1392→  1392→                  // can fill the missing fields manually in the editable table.
+  1393→  1393→                  // We only block when literally no rows were parsed.
+  1394→  1394→                  (preview?.rows?.length ?? 0) === 0
+  1395→  1395→                }
+  1396→  1396→              >
+  1397→  1397→                <ArrowRight className="h-4 w-4 me-1.5" />{t("requests.import.confirm")}
+  1398→  1398→              </Button>
+  1399→  1399→            </div>
+  1400→  1400→          </DialogFooter>
+  1401→  1401→        </DialogContent>
+  1402→  1402→      </Dialog>
+  1403→  1403→    </div>
+  1404→  1404→  );
+  1405→  1405→}
+  1406→  1406→
+  1407→  1407→// ─── Sub-components ────────────────────────────────────────────────────────
+  1408→  1408→
+  1409→  1409→function StatCard({
+  1410→  1410→  icon, label, value, active, tone, onClick, onJump,
+  1411→  1411→}: {
+  1412→  1412→  icon: React.ReactNode;
+  1413→  1413→  label: string;
+  1414→  1414→  value: number;
+  1415→  1415→  active: boolean;
+  1416→  1416→  tone?: "success" | "destructive" | "warning";
+  1417→  1417→  onClick: () => void;
+  1418→  1418→  onJump: (() => void) | null;
+  1419→  1419→}) {
+  1420→  1420→  const { t } = useI18n();
+  1421→  1421→  const toneClass =
+  1422→  1422→    tone === "success" ? "border-emerald-200 bg-emerald-50/50"
+  1423→  1423→    : tone === "destructive" ? "border-destructive/30 bg-destructive/5"
+  1424→  1424→    : tone === "warning" ? "border-amber-200 bg-amber-50/50"
+  1425→  1425→    : "";
+  1426→  1426→
+  1427→  1427→  return (
+  1428→  1428→    <div
+  1429→  1429→      className={cn(
+  1430→  1430→        "rounded-md border p-3 cursor-pointer transition-all flex flex-col gap-1",
+  1431→  1431→        active ? "ring-2 ring-primary border-primary" : "hover:bg-muted/30",
+  1432→  1432→        toneClass
+  1433→  1433→      )}
+  1434→  1434→      onClick={onClick}
+  1435→  1435→      role="button"
+  1436→  1436→      tabIndex={0}
+  1437→  1437→      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
+  1438→  1438→    >
+  1439→  1439→      <div className="flex items-center justify-between">
+  1440→  1440→        <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
+  1441→  1441→        {icon}
+  1442→  1442→      </div>
+  1443→  1443→      <div className="text-2xl font-semibold tabular-nums">{value}</div>
+  1444→  1444→      {onJump && value > 0 && (
+  1445→  1445→        <button
+  1446→  1446→          type="button"
+  1447→  1447→          className="text-[10px] text-primary hover:underline self-start"
+  1448→  1448→          onClick={(e) => { e.stopPropagation(); onJump(); }}
+  1449→  1449→        >
+  1450→  1450→          {t("requests.jumpToFirst")}
+  1451→  1451→        </button>
+  1452→  1452→      )}
+  1453→  1453→    </div>
+  1454→  1454→  );
+  1455→  1455→}
+  1456→  1456→
+  1457→  1457→function PreviewStat({ label, value, tone }: { label: string; value: number; tone?: "success" | "destructive" }) {
+  1458→  1458→  const cls = tone === "success" ? "text-emerald-600" : tone === "destructive" ? "text-destructive" : "text-foreground";
+  1459→  1459→  return (
+  1460→  1460→    <div className="rounded-md border p-3">
+  1461→  1461→      <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{label}</div>
+  1462→  1462→      <div className={cn("text-xl font-semibold tabular-nums", cls)}>{value}</div>
+  1463→  1463→    </div>
+  1464→  1464→  );
+  1465→  1465→}
+  1466→  1466→
+  1467→  1467→function BulkUploadPanel({ state, onDismiss }: { state: BulkUploadState; onDismiss: () => void }) {
+  1468→  1468→  const { t } = useI18n();
+  1469→  1469→  const pct = state.total > 0 ? Math.round((state.done / state.total) * 100) : 0;
+  1470→  1470→  const label =
+  1471→  1471→    state.phase === "uploading" ? t("requests.bulkUploading", { done: state.done, total: state.total })
+  1472→  1472→    : state.phase === "matching" ? t("requests.bulkMatching")
+  1473→  1473→    : state.phase === "completed" ? t("requests.bulkDone", { matched: state.matched, unmatched: state.unmatched.length })
+  1474→  1474→    : "";
+  1475→  1475→  return (
+  1476→  1476→    <div className="rounded-md border bg-muted/20 p-3 space-y-2">
+  1477→  1477→      <div className="flex items-center justify-between gap-2">
+  1478→  1478→        <div className="flex items-center gap-2 text-sm">
+  1479→  1479→          {state.phase === "completed"
+  1480→  1480→            ? <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+  1481→  1481→            : <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+  1482→  1482→          <span>{label}</span>
+  1483→  1483→        </div>
+  1484→  1484→        {state.phase === "completed" && (
+  1485→  1485→          <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={onDismiss}>
+  1486→  1486→            <X className="h-3.5 w-3.5" />
+  1487→  1487→          </Button>
+  1488→  1488→        )}
+  1489→  1489→      </div>
+  1490→  1490→      <Progress value={state.phase === "matching" ? 100 : pct} />
+  1491→  1491→      {state.phase === "completed" && state.unmatched.length > 0 && (
+  1492→  1492→        <div className="text-xs text-muted-foreground">
+  1493→  1493→          <div className="font-medium mb-1">{t("requests.bulkUnmatchedFiles")}</div>
+  1494→  1494→          <ul className="list-disc ms-4 space-y-0.5 max-h-24 overflow-y-auto">
+  1495→  1495→            {state.unmatched.map((u) => (
+  1496→  1496→              <li key={u.filename} className="font-mono truncate">{u.filename}</li>
+  1497→  1497→            ))}
+  1498→  1498→          </ul>
+  1499→  1499→        </div>
+  1500→  1500→      )}
+  1501→  1501→    </div>
+  1502→  1502→  );
+  1503→  1503→}
+  1504→  1504→
+  1505→  1505→function SubmissionSafetyBar({
+  1506→  1506→  canSubmit, total, invalid, duplicates, onSaveDraft,
+  1507→  1507→}: {
+  1508→  1508→  canSubmit: boolean;
+  1509→  1509→  total: number;
+  1510→  1510→  invalid: number;
+  1511→  1511→  duplicates: number;
+  1512→  1512→  onSaveDraft?: () => void;
+  1513→  1513→}) {
+  1514→  1514→  const { t } = useI18n();
+  1515→  1515→  return (
+  1516→  1516→    <div className="rounded-md border bg-muted/20 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+  1517→  1517→      <div className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
+  1518→  1518→        {total === 0 ? (
+  1519→  1519→          <><AlertCircle className="h-3.5 w-3.5" />{t("requests.addAtLeastOneTrainee")}</>
+  1520→  1520→        ) : !canSubmit ? (
+  1521→  1521→          <>
+  1522→  1522→            <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+  1523→  1523→            <span>{t("requests.submissionBlocked")}</span>
+  1524→  1524→            {invalid > 0 && <Badge variant="destructive" className="text-xs">{t("requests.invalidRowsCount", { count: invalid })}</Badge>}
+  1525→  1525→            {duplicates > 0 && <Badge variant="destructive" className="text-xs">{t("requests.duplicateIdsCount", { count: duplicates })}</Badge>}
+  1526→  1526→          </>
+  1527→  1527→        ) : (
+  1528→  1528→          <><CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />{t("requests.readyToSubmit", { count: total })}</>
+  1529→  1529→        )}
+  1530→  1530→      </div>
+  1531→  1531→      {onSaveDraft && (
+  1532→  1532→        <Button type="button" variant="outline" size="sm" onClick={onSaveDraft}>
+  1533→  1533→          <Save className="h-3.5 w-3.5 me-1" />{t("requests.saveDraft")}
+  1534→  1534→        </Button>
+  1535→  1535→      )}
+  1536→  1536→    </div>
+  1537→  1537→  );
+  1538→  1538→}
+  1539→  1539→
+  1540→  1540→// Per-row ID upload buttons — kept tiny so the 44px row height is respected.
+  1541→  1541→
+  1542→  1542→function RowIdUpload({ onPick }: { onPick: (file: File) => void }) {
+  1543→  1543→  const ref = React.useRef<HTMLInputElement | null>(null);
+  1544→  1544→  return (
+  1545→  1545→    <>
+  1546→  1546→      <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => ref.current?.click()}>
+  1547→  1547→        <Upload className="h-3 w-3 me-1" />Upload
+  1548→  1548→      </Button>
+  1549→  1549→      <input
+  1550→  1550→        ref={ref}
+  1551→  1551→        type="file"
+  1552→  1552→        accept="image/jpeg,image/png,image/webp,application/pdf"
+  1553→  1553→        className="hidden"
+  1554→  1554→        onChange={(e) => {
+  1555→  1555→          const f = e.target.files?.[0];
+  1556→  1556→          if (f) onPick(f);
+  1557→  1557→          e.target.value = "";
+  1558→  1558→        }}
+  1559→  1559→      />
+  1560→  1560→    </>
+  1561→  1561→  );
+  1562→  1562→}
+  1563→  1563→
+  1564→  1564→function RowIdReplace({ onPick }: { onPick: (file: File) => void }) {
+  1565→  1565→  const { t } = useI18n();
+  1566→  1566→  const ref = React.useRef<HTMLInputElement | null>(null);
+  1567→  1567→  return (
+  1568→  1568→    <>
+  1569→  1569→      <Button
+  1570→  1570→        type="button"
+  1571→  1571→        variant="ghost"
+  1572→  1572→        size="icon"
+  1573→  1573→        className="h-6 w-6"
+  1574→  1574→        onClick={() => ref.current?.click()}
+  1575→  1575→        aria-label={t("requests.replaceAttachment")}
+  1576→  1576→      >
+  1577→  1577→        <RotateCcw className="h-3 w-3" />
+  1578→  1578→      </Button>
+  1579→  1579→      <input
+  1580→  1580→        ref={ref}
+  1581→  1581→        type="file"
+  1582→  1582→        accept="image/jpeg,image/png,image/webp,application/pdf"
+  1583→  1583→        className="hidden"
+  1584→  1584→        onChange={(e) => {
+  1585→  1585→          const f = e.target.files?.[0];
+  1586→  1586→          if (f) onPick(f);
+  1587→  1587→          e.target.value = "";
+  1588→  1588→        }}
+  1589→  1589→      />
+  1590→  1590→    </>
+  1591→  1591→  );
+  1592→  1592→}
+  1593→  1593→
+  1594→  1594→// Local re-exports to keep the JSX above free of long import lines.
+  1595→  1595→// (Table + Alert imports moved to the top of the file.)
+  1596→  1596→
+  1597→  1597→// Re-export so callers can build submission payloads without re-declaring
+  1598→  1598→// the type. Both the parent route and the API client can import this.
+  1599→  1599→export type { UploadIdResponse };
+  1600→  1600→
+  1601→  1601→// ─── Multi-document row component ─────────────────────────────────────────
+  1602→  1602→// Allows uploading additional documents (PDF, JPG, PNG) per trainee row.
+  1603→  1603→// Supports document types: Iqama, ID, Passport, Certificate, Medical, Other.
+  1604→  1604→function RowDocUpload({
+  1605→  1605→  rowId,
+  1606→  1606→  documents,
+  1607→  1607→  onUpload,
+  1608→  1608→  onRemove,
+  1609→  1609→}: {
+  1610→  1610→  rowId: string;
+  1611→  1611→  documents: TraineeDocument[];
+  1612→  1612→  onUpload: (file: File, docType: TraineeDocument["type"]) => void;
+  1613→  1613→  onRemove: (docIndex: number) => void;
+  1614→  1614→}) {
+  1615→  1615→  const { t } = useI18n();
+  1616→  1616→  const [showMenu, setShowMenu] = React.useState(false);
+  1617→  1617→  const fileRef = React.useRef<HTMLInputElement | null>(null);
+  1618→  1618→  const [pendingType, setPendingType] = React.useState<TraineeDocument["type"]>("other");
+  1619→  1619→
+  1620→  1620→  const handleFilePick = (docType: TraineeDocument["type"]) => {
+  1621→  1621→    setPendingType(docType);
+  1622→  1622→    fileRef.current?.click();
+  1623→  1623→    setShowMenu(false);
+  1624→  1624→  };
+  1625→  1625→
+  1626→  1626→  return (
+  1627→  1627→    <div className="relative flex items-center gap-1">
+  1628→  1628→      {/* Show document count badge */}
+  1629→  1629→      {documents.length > 0 && (
+  1630→  1630→        <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1 py-0.5 rounded bg-blue-50 text-blue-700" title={t("requests.documentsCount", { count: documents.length })}>
+  1631→  1631→          <FileText className="h-2.5 w-2.5" />
+  1632→  1632→          {documents.length}
+  1633→  1633→        </span>
+  1634→  1634→      )}
+  1635→  1635→
+  1636→  1636→      {/* Upload button with dropdown */}
+  1637→  1637→      <Button
+  1638→  1638→        type="button"
+  1639→  1639→        variant="ghost"
+  1640→  1640→        size="sm"
+  1641→  1641→        className="h-7 px-2 text-xs"
+  1642→  1642→        onClick={() => setShowMenu(!showMenu)}
+  1643→  1643→        title={t("requests.uploadAdditionalDocuments")}
+  1644→  1644→      >
+  1645→  1645→        <FolderUp className="h-3 w-3" />
+  1646→  1646→      </Button>
+  1647→  1647→
+  1648→  1648→      {showMenu && (
+  1649→  1649→        <>
+  1650→  1650→          <div className="fixed inset-0 z-30" onClick={() => setShowMenu(false)} />
+  1651→  1651→          <div className="absolute top-full mt-1 end-0 z-40 w-44 rounded-md border bg-background shadow-lg p-1 text-xs">
+  1652→  1652→            <div className="px-2 py-1 font-medium text-muted-foreground">{t("requests.uploadDocument")}</div>
+  1653→  1653→            {([
+  1654→  1654→              { type: "iqama" as const, label: t("requests.docTypes.iqama") },
+  1655→  1655→              { type: "id" as const, label: t("requests.docTypes.id") },
+  1656→  1656→              { type: "passport" as const, label: t("requests.docTypes.passport") },
+  1657→  1657→              { type: "certificate" as const, label: t("requests.docTypes.certificate") },
+  1658→  1658→              { type: "medical" as const, label: t("requests.docTypes.medical") },
+  1659→  1659→              { type: "other" as const, label: t("requests.docTypes.other") },
+  1660→  1660→            ]).map((opt) => (
+  1661→  1661→              <button
+  1662→  1662→                key={opt.type}
+  1663→  1663→                type="button"
+  1664→  1664→                className="w-full text-start px-2 py-1.5 rounded hover:bg-muted transition-colors"
+  1665→  1665→                onClick={() => handleFilePick(opt.type)}
+  1666→  1666→              >
+  1667→  1667→                {opt.label}
+  1668→  1668→              </button>
+  1669→  1669→            ))}
+  1670→  1670→          </div>
+  1671→  1671→        </>
+  1672→  1672→      )}
+  1673→  1673→
+  1674→  1674→      <input
+  1675→  1675→        ref={fileRef}
+  1676→  1676→        type="file"
+  1677→  1677→        accept="application/pdf,image/jpeg,image/png,image/webp"
+  1678→  1678→        className="hidden"
+  1679→  1679→        onChange={(e) => {
+  1680→  1680→          const f = e.target.files?.[0];
+  1681→  1681→          if (f) onUpload(f, pendingType);
+  1682→  1682→          e.target.value = "";
+  1683→  1683→        }}
+  1684→  1684→      />
+  1685→  1685→
+  1686→  1686→      {/* Document list popover (shown on hover of count badge) */}
+  1687→  1687→      {documents.length > 0 && (
+  1688→  1688→        <div className="group relative">
+  1689→  1689→          <div className="hidden group-hover:block absolute top-full mt-1 end-0 z-40 w-56 rounded-md border bg-background shadow-lg p-2 text-xs max-h-48 overflow-y-auto">
+  1690→  1690→            <div className="font-medium mb-1 text-muted-foreground">Documents ({documents.length})</div>
+  1691→  1691→            {documents.map((doc, idx) => (
+  1692→  1692→              <div key={idx} className="flex items-center gap-1 py-1 border-b last:border-b-0">
+  1693→  1693→                <a
+  1694→  1694→                  href={doc.url}
+  1695→  1695→                  target="_blank"
+  1696→  1696→                  rel="noopener noreferrer"
+  1697→  1697→                  className="flex items-center gap-1 text-primary truncate flex-1"
+  1698→  1698→                  title={doc.filename}
+  1699→  1699→                >
+  1700→  1700→                  {doc.type === "iqama" || doc.type === "id" ? <FileCheck className="h-3 w-3 shrink-0 text-emerald-600" /> :
+  1701→  1701→                   doc.filename.endsWith(".pdf") ? <FileText className="h-3 w-3 shrink-0" /> :
+  1702→  1702→                   <FileImage className="h-3 w-3 shrink-0" />}
+  1703→  1703→                  <span className="truncate">{doc.filename}</span>
+  1704→  1704→                </a>
+  1705→  1705→                <span className="text-[9px] text-muted-foreground uppercase">{doc.type}</span>
+  1706→  1706→                <Button
+  1707→  1707→                  type="button"
+  1708→  1708→                  variant="ghost"
+  1709→  1709→                  size="icon"
+  1710→  1710→                  className="h-5 w-5 shrink-0"
+  1711→  1711→                  onClick={() => onRemove(idx)}
+  1712→  1712→                >
+  1713→  1713→                  <X className="h-2.5 w-2.5" />
+  1714→  1714→                </Button>
+  1715→  1715→              </div>
+  1716→  1716→            ))}
+  1717→  1717→          </div>
+  1718→  1718→        </div>
+  1719→  1719→      )}
+  1720→  1720→    </div>
+  1721→  1721→  );
+  1722→  1722→}
+  1723→  1723→

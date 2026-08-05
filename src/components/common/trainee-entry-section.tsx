@@ -523,7 +523,6 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
       };
       updateTrainees(trainees.map((r) => {
         if (r.id !== rowId) return r;
-        // Replace any existing ID-type doc (id/iqama) — keep the rest.
         const others = r.documents.filter((d) => !ID_DOC_TYPES.includes(d.type));
         return { ...r, documents: [...others, newDoc] };
       }));
@@ -1056,13 +1055,6 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
                             }
                             return <RowIdUpload onPick={(f) => void uploadIdForRow(row.id, f)} />;
                           })()}
-                          {/* Multi-document upload */}
-                          <RowDocUpload
-                            rowId={row.id}
-                            documents={row.documents}
-                            onUpload={(file, docType) => void uploadDocumentForRow(row.id, file, docType)}
-                            onRemove={(docIndex) => removeDocumentForRow(row.id, docIndex)}
-                          />
                         </div>
                         <div className="w-12 shrink-0 flex items-center justify-center">
                           {!row.valid && (

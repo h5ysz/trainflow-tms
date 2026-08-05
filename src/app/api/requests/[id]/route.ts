@@ -3,7 +3,8 @@ import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { canPerformAction } from "@/lib/auth/permissions";
 import { recordStatusChange } from "@/lib/auth/audit";
-import { canTransition } from "../route";
+import { canTransition, mergeIdAttachmentIntoDocuments, parseDocsSafe } from "../route";
+import { nextRefNumber } from "@/lib/api/ref-number";
 import { validateRequestForApproval, MIN_TRAINEES_PER_COURSE, MAX_TRAINEES_PER_COURSE } from "@/lib/api/request-validation";
 import type { TrainingRequestStatus } from "@prisma/client";
 
@@ -99,6 +100,8 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
     traineeCount, preferredDateFrom, preferredDateTo,
     preferredLocation, preferredLanguage, notes, priority,
     status: newStatus, rejectionReason,
+    trainees: submittedTrainees,
+    additionalDocuments,
   } = body;
 
   // Workflow enforcement — self-service allowlist for non-edit roles.
@@ -187,6 +190,96 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
     where: { id },
     data: updates,
   });
+
+  // ── Persist additional documents (request-level) ──
+  // Mirrors the POST handler: store as JSON string on TrainingRequest.documents.
+  if (Array.isArray(additionalDocuments)) {
+    await db.trainingRequest.update({
+      where: { id },
+      data: {
+        documents: additionalDocuments.length > 0
+          ? JSON.stringify(additionalDocuments)
+          : null,
+      },
+    });
+  }
+
+  // ── Persist trainees + their documents ──
+  // Mirrors the POST handler's merge logic: reuse existing Trainee rows by
+  // (companyId, nationalId), merge documents by URL, update scalar fields.
+  if (Array.isArray(submittedTrainees) && submittedTrainees.length > 0) {
+    // Ensure a TrainingRequestCourse row exists for this request
+    let rc = await db.trainingRequestCourse.findFirst({
+      where: { requestId: id, deletedAt: null },
+    });
+    if (!rc) {
+      rc = await db.trainingRequestCourse.create({
+        data: {
+          id: crypto.randomUUID(),
+          requestId: id,
+          courseId: existing.courseId ?? "",
+          traineeCount: submittedTrainees.length,
+          createdBy: user.id,
+          updatedBy: user.id,
+          updatedAt: now,
+        },
+      });
+    }
+
+    for (const t of submittedTrainees) {
+      if (!t.fullName || !t.nationalId) continue;
+      const existing_tn = await db.trainee.findFirst({
+        where: { companyId: existing.companyId, nationalId: t.nationalId, deletedAt: null },
+      });
+      const incomingDocs = Array.isArray(t.documents) ? t.documents : [];
+      const existingDocs = existing_tn ? parseDocsSafe(existing_tn.documents) : [];
+      const mergedDocs = mergeIdAttachmentIntoDocuments(
+        incomingDocs,
+        existingDocs,
+        (t.idAttachmentUrl as string) ?? null,
+      );
+      const documentsJson = mergedDocs.length > 0 ? JSON.stringify(mergedDocs) : (existing_tn ? existing_tn.documents : null);
+
+      const trainee = existing_tn
+        ? await db.trainee.update({
+            where: { id: existing_tn.id },
+            data: {
+              fullName: t.fullName,
+              nationality: t.nationality ?? existing_tn.nationality,
+              jobTitle: t.jobTitle ?? existing_tn.jobTitle,
+              documents: documentsJson,
+              updatedAt: now,
+              updatedBy: user.id,
+            },
+          })
+        : await db.trainee.create({
+            data: {
+              id: crypto.randomUUID(),
+              refNumber: await nextRefNumber("TRAINEE"),
+              fullName: t.fullName,
+              nationalId: t.nationalId,
+              nationality: t.nationality ?? null,
+              jobTitle: t.jobTitle ?? null,
+              companyId: existing.companyId,
+              documents: documentsJson,
+              createdBy: user.id,
+              updatedBy: user.id,
+              updatedAt: now,
+            },
+          });
+
+      await db.trainingRequestCourseTrainee.create({
+        data: {
+          id: crypto.randomUUID(),
+          requestCourseId: rc.id,
+          traineeId: trainee.id,
+          createdBy: user.id,
+          updatedBy: user.id,
+          updatedAt: now,
+        },
+      }).catch(() => { /* unique constraint — link already exists */ });
+    }
+  }
 
   // Status change audit
   if (newStatus && newStatus !== existing.status) {

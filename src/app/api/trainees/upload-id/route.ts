@@ -10,7 +10,7 @@ import crypto from "node:crypto";
 import { withModuleAction, ok, fail } from "@/lib/auth/api";
 
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads", "trainee-docs");
-const PUBLIC_PREFIX = "/uploads/trainee-docs";
+const PUBLIC_PREFIX = "/api/uploads/trainee-docs";
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
 // Extensions/MIME we accept — images of the ID card plus PDF scans. Anything

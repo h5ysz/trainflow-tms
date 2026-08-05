@@ -9,7 +9,7 @@ import crypto from "node:crypto";
 import { ok, fail, withModuleAction } from "@/lib/auth/api";
 
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads", "request-docs");
-const PUBLIC_PREFIX = "/uploads/request-docs";
+const PUBLIC_PREFIX = "/api/uploads/request-docs";
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB — additional docs are often multi-page PDFs
 
 const ALLOWED: Record<string, string> = {

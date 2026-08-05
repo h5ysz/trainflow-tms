@@ -312,7 +312,7 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
 
 // ── Helpers for the trainees[] merge logic ───────────────────────────────────
 
-function parseDocsSafe(raw: string | null | undefined): unknown[] {
+export function parseDocsSafe(raw: string | null | undefined): unknown[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
@@ -347,7 +347,7 @@ function mergeDocuments(existing: unknown[], incoming: unknown[]): unknown[] {
 //
 // This is the ONLY place where idAttachmentUrl is converted — every other
 // code path treats documents[] as the source of truth.
-function mergeIdAttachmentIntoDocuments(
+export function mergeIdAttachmentIntoDocuments(
   incomingDocs: unknown[],
   existingDocs: unknown[],
   idAttachmentUrl: string | null,
