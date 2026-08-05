@@ -296,47 +296,49 @@ export function Topbar() {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="gap-2 h-9 px-1.5 sm:px-2">
-              <Avatar className="h-7 w-7">
-                <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{initials}</AvatarFallback>
+            <Button variant="ghost" className="gap-2.5 h-12 px-2 sm:px-3 rounded-xl">
+              <Avatar className="h-10 w-10 ring-2 ring-primary/15">
+                <AvatarFallback className="bg-primary/10 text-primary text-[13px] font-bold">{initials}</AvatarFallback>
               </Avatar>
-              <div className="hidden sm:flex flex-col items-start leading-tight">
-                <span className="text-xs font-medium">{user.fullName}</span>
-                <span className="text-[10px] text-muted-foreground">{t(`role.${user.role}` as const)}</span>
+              <div className="hidden sm:flex flex-col items-start leading-tight gap-0.5">
+                <span className="text-[16px] font-semibold text-foreground truncate max-w-[140px]">{user.fullName}</span>
+                <span className="text-[13px] text-muted-foreground/80 truncate max-w-[140px]">
+                  {user.companyName || t(`role.${user.role}` as const)}
+                </span>
               </div>
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground hidden sm:block" />
+              <ChevronDown className="h-4 w-4 text-muted-foreground hidden sm:block shrink-0" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align={dir === "rtl" ? "start" : "end"} className="w-64">
-            <DropdownMenuLabel className="flex flex-col gap-1">
-              <div className="flex items-center gap-2">
-                <Avatar className="h-9 w-9">
-                  <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{initials}</AvatarFallback>
+          <DropdownMenuContent align={dir === "rtl" ? "start" : "end"} className="w-72">
+            <DropdownMenuLabel className="flex flex-col gap-2 p-3">
+              <div className="flex items-center gap-3">
+                <Avatar className="h-11 w-11 ring-2 ring-primary/15">
+                  <AvatarFallback className="bg-primary/10 text-primary text-[14px] font-bold">{initials}</AvatarFallback>
                 </Avatar>
-                <div className="min-w-0">
-                  <div className="text-sm font-medium truncate">{user.fullName}</div>
-                  <div className="text-xs text-muted-foreground truncate">{user.email}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[15px] font-semibold text-foreground truncate">{user.fullName}</div>
+                  <div className="text-[13px] text-muted-foreground/80 truncate">{user.email}</div>
                 </div>
               </div>
-              <div className="pt-1">
+              <div className="flex items-center justify-between pt-1.5 border-t">
                 <RoleBadge role={user.role} icon={RoleIcon} />
+                {user.companyName && (
+                  <span className="text-[11px] text-muted-foreground/60 truncate max-w-[120px]">{user.companyName}</span>
+                )}
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="gap-2" onSelect={() => setProfileOpen(true)}>
-              <UserCircle className="h-4 w-4" /> {t("action.details")}
+            <DropdownMenuItem className="gap-2.5 py-2" onSelect={() => setProfileOpen(true)}>
+              <UserCircle className="h-[18px] w-[18px]" /> {t("action.details")}
             </DropdownMenuItem>
-            {/* Gated the same way profile-dialog.tsx already does it — offering this
-                to everyone sent non-admins to the lock screen, and the route then stuck
-                in the persisted store so a refresh reloaded it. */}
             {canAccessModule(user?.permissions ?? [], "settings") && (
-              <DropdownMenuItem className="gap-2" onSelect={() => navigate("settings")}>
-                <Settings className="h-4 w-4" /> {t("nav.settings")}
+              <DropdownMenuItem className="gap-2.5 py-2" onSelect={() => navigate("settings")}>
+                <Settings className="h-[18px] w-[18px]" /> {t("nav.settings")}
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="gap-2 text-destructive focus:text-destructive" onClick={() => signOut()}>
-              <LogOut className="h-4 w-4" /> {t("auth.signOut")}
+            <DropdownMenuItem className="gap-2.5 py-2 text-destructive focus:text-destructive" onClick={() => signOut()}>
+              <LogOut className="h-[18px] w-[18px]" /> {t("auth.signOut")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
