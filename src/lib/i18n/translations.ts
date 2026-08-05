@@ -1443,7 +1443,7 @@ export const dict = {
     "status.REGISTERED": "مسجل",
 
     // Workflow actions
-    "workflow.submit": "تقديم",
+    "workflow.submit": "إرسال",
     "workflow.review": "بدء المراجعة",
     "workflow.approve": "اعتماد",
     "workflow.schedule": "تحديد كمجدول",
@@ -1452,7 +1452,7 @@ export const dict = {
     "workflow.cancel": "إلغاء",
     "workflow.reject": "رفض",
     "workflow.returnRevision": "إرجاع للتعديل",
-    "workflow.resubmit": "إعادة التقديم",
+    "workflow.resubmit": "إعادة إرسال",
 
     // Trainees module
     "trainees.title": "المتدربون",

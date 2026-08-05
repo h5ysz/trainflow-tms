@@ -647,18 +647,6 @@ export function TrainingRequestsRoute() {
                     {t("action.details")}
                   </Button>
                 )}
-                {/* ── Submit button for DRAFT requests (contractor) ── */}
-                {r.status === "DRAFT" && canEditRequest && (
-                  <Button
-                    variant="default"
-                    size="sm"
-                    className="h-8 text-white"
-                    onClick={() => handleTransition(r, "SUBMITTED")}
-                  >
-                    <Send className="h-3.5 w-3.5 me-1" />
-                    {locale === "ar" ? "إرسال" : "Submit"}
-                  </Button>
-                )}
                 {actions.map((a) => (
                   <Button
                     key={a.status}
@@ -677,7 +665,9 @@ export function TrainingRequestsRoute() {
                     }`}
                     onClick={() => handleTransition(r, a.status)}
                   >
+                    {a.status === "SUBMITTED" && r.status === "DRAFT" && <Send className="h-3.5 w-3.5 me-1" />}
                     {a.status === "SUBMITTED" && r.status === "REJECTED" && <RotateCcw className="h-3.5 w-3.5 me-1" />}
+                    {a.status === "SUBMITTED" && r.status === "REQUIRES_MODIFICATION" && <RotateCcw className="h-3.5 w-3.5 me-1" />}
                     {a.status === "APPROVED" && <Check className="h-3.5 w-3.5 me-1" />}
                     {a.status === "REJECTED" && <X className="h-3.5 w-3.5 me-1" />}
                     {t(a.labelKey as never)}
