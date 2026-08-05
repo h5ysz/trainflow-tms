@@ -229,3 +229,60 @@ Stage Summary:
   - src/lib/i18n/translations.ts — 90+ new EN + AR keys
 - Workflow implemented: Create Course → Register Trainees → Conduct Training → Attendance Complete → Exam Complete → Invoice Fully Paid → Profession Verified (if required) → Coordinator Reviews Checklist → Coordinator Presses Release Certificates → Contractor Can Print/Download Certificates
 - All existing functionality preserved: attendance, invoices, payments, certificate generation, QR verification, existing APIs, existing permissions — only extended, not broken.
+
+---
+Task ID: universal-excel-export
+Agent: main
+Task: Make the "Export Excel" action universal across all roles permitted to view a request (Admin, Coordinator, Contractor, and any future view-permitted role). Reuse the existing Excel export service — do NOT duplicate API/template/business logic. Respect existing RBAC: each user may export only the requests they are already authorized to view.
+
+Work Log:
+- Explored the codebase to map the existing Excel export surface area:
+  - `/api/export/company-data` (the modern, multi-sheet, role-aware endpoint — already universal via `requireAuth()` + `user.companyId` auto-scoping at line 372).
+  - `/api/requests/export` (legacy flat endpoint — not touched).
+  - `ExportDialog` (page-header "Export" button — already shown to all roles).
+  - Inline toolbar "Export Excel" button at `training-requests.tsx:1015` — was gated behind `isCoordinator` AND used a hardcoded English literal "Export Excel" (AR localization bug).
+  - Read-only `Preview` dialog (the contractor's main view of a request) — had Cancel / Print / Edit but NO Export Excel button.
+  - Coordinator `Drawer` (right-side panel) — had workflow actions but NO direct Export Excel button.
+- Created ONE reusable component: `src/components/common/export-excel-button.tsx`
+  - Same icon (`FileSpreadsheet`), variant (`outline`), tooltip (`title`), loading state (`Loader2 animate-spin`), success behavior (toast `requests.exportStarted` + `window.open`) everywhere.
+  - Uses existing i18n key `reports.exportExcel` ("Export Excel" / "تصدير Excel") for the label.
+  - Builds the same query string as the previous `directExport("excel")` helper: `scope=specific_request`, `specificId=<id>`, `items=requests,trainees,attendance,results,evaluations,certificates,invoices,attachments`, `format=excel`, `locale=<en|ar>`.
+  - Hits the SAME existing API endpoint (`/api/export/company-data`) — zero API/template/business-logic duplication.
+- Added new i18n key `requests.exportExcelTooltip` (EN + AR) for the button tooltip — describes exactly what gets exported.
+- Integrated `<ExportExcelButton />` in 3 places inside `src/routes/training-requests.tsx`:
+  1. Inline toolbar (replaced the hardcoded button — coordinator experience unchanged, now properly localized).
+  2. Read-only Preview dialog footer (NEW for contractors + any view-permitted role — sits between Cancel and Print).
+  3. Coordinator Drawer header (NEW convenience — coordinators can export directly from the drawer without needing the checkbox+toolbar flow).
+- Removed the now-unused `FileSpreadsheet` import from `training-requests.tsx` (cleanup).
+- Verified RBAC enforcement in `/api/export/company-data/route.ts`:
+  - Line 342: `requireAuth()` — blocks unauthenticated users (401).
+  - Lines 346–349: users without `companyId` AND not in the global-role list get 403 "No company linked".
+  - Line 372: `if (companyId) reqWhere.companyId = companyId;` — THE CRITICAL LINE. Contractors get this filter on EVERY query, including `specific_request`. If a contractor passes another company's request ID, the where-clause becomes `{ id: 'other-id', companyId: 'my-company', deletedAt: null }` → no matching row → empty Excel. No data exfiltration possible.
+- Ran `npx tsc --noEmit` → 0 errors.
+- Ran `npx eslint` on all 3 modified files → 0 errors.
+- Ran `npx next build` → ✓ Compiled successfully in 29.6s, ✓ Generating static pages (92/92). No regressions.
+
+Stage Summary:
+- Files created (1):
+  - src/components/common/export-excel-button.tsx — the single reusable Export Excel button.
+- Files modified (2):
+  - src/routes/training-requests.tsx — imported the new component; replaced the hardcoded toolbar button; added the button to the Preview dialog footer and the Drawer header; removed unused `FileSpreadsheet` import.
+  - src/lib/i18n/translations.ts — added `requests.exportExcelTooltip` key (EN + AR).
+- Files NOT modified (confirmed no changes needed):
+  - src/app/api/export/company-data/route.ts — RBAC was already universal.
+  - src/app/api/requests/export/route.ts — legacy endpoint, untouched.
+  - src/components/common/import-export-dialogs.tsx — ExportDialog was already universal.
+  - src/lib/auth/permissions.ts — permission matrix unchanged.
+  - prisma/schema.prisma — no schema changes.
+- Permissions verified (server-side, in `/api/export/company-data`):
+  - Contractor → `reqWhere.companyId = user.companyId` on every query (own company only).
+  - Coordinator → no companyId filter (all companies).
+  - Admin → wildcard `"*"` permission (everything).
+  - Unauthenticated → 401. Authenticated-but-no-company → 403.
+- Roles tested (by code-path analysis):
+  - Contractor → clicks ref number → Preview dialog → Export Excel button (NEW). Server scopes to own company.
+  - Coordinator → clicks ref number → Drawer → Export Excel button (NEW). Server returns all data.
+  - Coordinator → selects row via checkbox → inline toolbar → Export Excel button (replaced, now localized). Server returns all data.
+  - Admin → same paths as Coordinator.
+  - Any future role with `requests.view` → routed to either Preview or Drawer depending on `requests.edit` grant → Export Excel button visible in both. Server enforces the appropriate scope.
+- Excel template confirmation: ALL exports go through the SAME `/api/export/company-data?format=excel` endpoint with the SAME `items=requests,trainees,attendance,results,evaluations,certificates,invoices,attachments` parameter. The Excel template (9 sheets: Summary, Training Requests, Trainees, Attendance, Assessment Results, Evaluations, Certificates, Invoices, Attachments; navy header `FF1F3A5F`; zebra striping `FFF6F8FA`; frozen header; auto-filter; RTL view for AR; text-formatted IDs; date-formatted dates) is identical for every role. No second template exists.

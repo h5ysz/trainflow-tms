@@ -1,0 +1,720 @@
+     1→"use client";
+     2→
+     3→import * as React from "react";
+     4→import { useI18n } from "@/lib/i18n/context";
+     5→import { useToast } from "@/hooks/use-toast";
+     6→import { api, ApiError } from "@/lib/api/client";
+     7→import { Button } from "@/components/ui/button";
+     8→import { Input } from "@/components/ui/input";
+     9→import { Badge } from "@/components/ui/badge";
+    10→import { Checkbox } from "@/components/ui/checkbox";
+    11→import { Progress } from "@/components/ui/progress";
+    12→import {
+    13→  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+    14→} from "@/components/ui/dialog";
+    15→import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+    16→import {
+    17→  Upload, Download, FileSpreadsheet, Archive, Eye, Loader2,
+    18→  FileText, FileArchive, FileDown, History,
+    19→} from "lucide-react";
+    20→import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
+    21→
+    22→// ─── Types ──────────────────────────────────────────────────────────────────
+    23→
+    24→interface ArchiveRequest {
+    25→  id: string;
+    26→  refNumber: string;
+    27→  courseTitle: string | null;
+    28→  createdAt: string;
+    29→  traineeCount: number;
+    30→  status: string;
+    31→  hasAttachments: boolean;
+    32→  updatedAt?: string;
+    33→  attachmentCount?: number;
+    34→  courseCount?: number;
+    35→}
+    36→
+    37→interface ImportExportLogEntry {
+    38→  id: string;
+    39→  type: string;
+    40→  source: string;
+    41→  requestRef: string | null;
+    42→  courseName: string | null;
+    43→  itemCount: number;
+    44→  status: string;
+    45→  errorMessage: string | null;
+    46→  createdAt: string;
+    47→}
+    48→
+    49→// ─── Shared: Recent Operations component ────────────────────────────────────
+    50→
+    51→function RecentOperations({ logs, loading }: { logs: ImportExportLogEntry[]; loading: boolean }) {
+    52→  const { t } = useI18n();
+    53→  if (loading) {
+    54→    return (
+    55→      <div className="flex items-center justify-center py-3 gap-2 text-[10px] text-muted-foreground">
+    56→        <Loader2 className="h-3 w-3 animate-spin" /> {t("misc.loading") || "Loading..."}
+    57→      </div>
+    58→    );
+    59→  }
+    60→  if (logs.length === 0) {
+    61→    return (
+    62→      <div className="text-center py-3 text-[10px] text-muted-foreground">
+    63→        {t("requests.noRecentOps")}
+    64→      </div>
+    65→    );
+    66→  }
+    67→  return (
+    68→    <div className="space-y-1 max-h-32 overflow-y-auto">
+    69→      {logs.slice(0, 10).map((log) => (
+    70→        <div key={log.id} className="flex items-center gap-2 text-[10px] py-1 px-2 rounded hover:bg-muted/40">
+    71→          {log.type === "IMPORT" ? (
+    72→            <Upload className="h-3 w-3 text-primary shrink-0" />
+    73→          ) : (
+    74→            <Download className="h-3 w-3 text-primary shrink-0" />
+    75→          )}
+    76→          <span className="font-medium shrink-0">{log.type}</span>
+    77→          {log.requestRef && <span className="font-mono text-muted-foreground">{log.requestRef}</span>}
+    78→          {log.courseName && <span className="text-muted-foreground truncate">· {log.courseName}</span>}
+    79→          <span className="text-muted-foreground ms-auto shrink-0">
+    80→            {new Date(log.createdAt).toLocaleString()}
+    81→          </span>
+    82→          {log.status === "FAILED" ? (
+    83→            <Badge variant="destructive" className="text-[8px] h-3.5 px-1">{t("misc.error") || "Failed"}</Badge>
+    84→          ) : (
+    85→            <Badge variant="outline" className="text-[8px] h-3.5 px-1 text-emerald-600">{t("misc.success") || "OK"}</Badge>
+    86→          )}
+    87→        </div>
+    88→      ))}
+    89→    </div>
+    90→  );
+    91→}
+    92→
+    93→// ─── Hook: load + refresh logs ──────────────────────────────────────────────
+    94→
+    95→function useRecentLogs() {
+    96→  const [logs, setLogs] = React.useState<ImportExportLogEntry[]>([]);
+    97→  const [loading, setLoading] = React.useState(false);
+    98→
+    99→  const refresh = React.useCallback(async () => {
+   100→    setLoading(true);
+   101→    try {
+   102→      const data = await api.get<ImportExportLogEntry[]>("/import-export-logs");
+   103→      setLogs(data);
+   104→    } catch { /* ignore */ } finally {
+   105→      setLoading(false);
+   106→    }
+   107→  }, []);
+   108→
+   109→  const addLog = React.useCallback(async (entry: {
+   110→    type: string; source: string; requestRef?: string; courseName?: string;
+   111→    itemCount?: number; status?: string; errorMessage?: string;
+   112→  }) => {
+   113→    try {
+   114→      await api.post("/import-export-logs", entry);
+   115→      await refresh();
+   116→    } catch { /* ignore */ }
+   117→  }, [refresh]);
+   118→
+   119→  React.useEffect(() => { refresh(); }, [refresh]);
+   120→
+   121→  return { logs, loading, refresh, addLog };
+   122→}
+   123→
+   124→// ─── Import Dialog ──────────────────────────────────────────────────────────
+   125→
+   126→export interface ImportDialogProps {
+   127→  open: boolean;
+   128→  onOpenChange: (open: boolean) => void;
+   129→  onDeviceImport: (file: File) => void;
+   130→  companyId?: string | null;
+   131→  onImportFromArchive?: (requestId: string, items: string[]) => Promise<void>;
+   132→}
+   133→
+   134→export function ImportDialog({
+   135→  open, onOpenChange, onDeviceImport, onImportFromArchive,
+   136→}: ImportDialogProps) {
+   137→  const { t } = useI18n();
+   138→  const { toast } = useToast();
+   139→  const { logs, loading: logsLoading, addLog } = useRecentLogs();
+   140→  const [tab, setTab] = React.useState<"device" | "archive">("device");
+   141→  const [archive, setArchive] = React.useState<ArchiveRequest[]>([]);
+   142→  const [loadingArchive, setLoadingArchive] = React.useState(false);
+   143→  const [selectedRequest, setSelectedRequest] = React.useState<string>("");
+   144→  const [importItems, setImportItems] = React.useState<Set<string>>(new Set(["trainees"]));
+   145→  const [importing, setImporting] = React.useState(false);
+   146→  const [previewTarget, setPreviewTarget] = React.useState<ArchiveRequest | null>(null);
+   147→  const fileRef = React.useRef<HTMLInputElement>(null);
+   148→
+   149→  const GRANULAR_ITEMS = [
+   150→    { key: "course_info", label: t("requests.itemCourseInfo") },
+   151→    { key: "trainees", label: t("requests.itemTrainees") },
+   152→    { key: "attachments", label: t("requests.itemAttachments") },
+   153→    { key: "schedule", label: t("requests.itemSchedule") },
+   154→    { key: "notes", label: t("requests.itemNotes") },
+   155→    { key: "trainer", label: t("requests.itemTrainer") },
+   156→    { key: "company_data", label: t("requests.itemCompanyData") },
+   157→  ];
+   158→
+   159→  React.useEffect(() => {
+   160→    if (tab === "archive" && open && archive.length === 0) {
+   161→      setLoadingArchive(true);
+   162→      api.getList<ArchiveRequest>("/requests/company-archive", { pageSize: 100 })
+   163→        .then((r) => setArchive(r.rows))
+   164→        .catch(() => {})
+   165→        .finally(() => setLoadingArchive(false));
+   166→    }
+   167→  }, [tab, open, archive.length]);
+   168→
+   169→  function toggleItem(key: string) {
+   170→    setImportItems((prev) => {
+   171→      const next = new Set(prev);
+   172→      if (next.has(key)) next.delete(key);
+   173→      else next.add(key);
+   174→      return next;
+   175→    });
+   176→  }
+   177→
+   178→  async function handleArchiveImport() {
+   179→    if (!selectedRequest || importItems.size === 0 || !onImportFromArchive) return;
+   180→    const selectedArchive = archive.find(a => a.id === selectedRequest);
+   181→    setImporting(true);
+   182→    try {
+   183→      await onImportFromArchive(selectedRequest, Array.from(importItems));
+   184→      toast({ title: t("misc.success"), description: t("requests.importedFromArchive") });
+   185→      await addLog({
+   186→        type: "IMPORT", source: "ARCHIVE",
+   187→        requestRef: selectedArchive?.refNumber,
+   188→        courseName: selectedArchive?.courseTitle ?? undefined,
+   189→        itemCount: selectedArchive?.traineeCount ?? 0,
+   190→        status: "SUCCESS",
+   191→      });
+   192→      onOpenChange(false);
+   193→      setSelectedRequest("");
+   194→      setImportItems(new Set(["trainees"]));
+   195→    } catch (e) {
+   196→      const msg = e instanceof ApiError ? e.message : t("requests.importFailed");
+   197→      toast({ title: t("misc.error"), description: msg, variant: "destructive" });
+   198→      await addLog({
+   199→        type: "IMPORT", source: "ARCHIVE",
+   200→        requestRef: selectedArchive?.refNumber,
+   201→        courseName: selectedArchive?.courseTitle ?? undefined,
+   202→        status: "FAILED", errorMessage: msg,
+   203→      });
+   204→    } finally {
+   205→      setImporting(false);
+   206→    }
+   207→  }
+   208→
+   209→  function handleDeviceFile(e: React.ChangeEvent<HTMLInputElement>) {
+   210→    const file = e.target.files?.[0];
+   211→    if (file) {
+   212→      onDeviceImport(file);
+   213→      addLog({ type: "IMPORT", source: "DEVICE", itemCount: 1, status: "SUCCESS" });
+   214→      onOpenChange(false);
+   215→    }
+   216→    e.target.value = "";
+   217→  }
+   218→
+   219→  const selectedArchive = archive.find(a => a.id === selectedRequest);
+   220→  const previewSummary = selectedArchive ? {
+   221→    trainees: selectedArchive.traineeCount,
+   222→    attachments: selectedArchive.attachmentCount ?? (selectedArchive.hasAttachments ? 1 : 0),
+   223→    courses: selectedArchive.courseCount ?? 1,
+   224→    createdDate: new Date(selectedArchive.createdAt).toLocaleDateString(),
+   225→    updatedDate: selectedArchive.updatedAt ? new Date(selectedArchive.updatedAt).toLocaleDateString() : "—",
+   226→    estSize: `${Math.round((selectedArchive.traineeCount * 0.5 + (selectedArchive.hasAttachments ? 2 : 0)) * 10) / 10} KB`,
+   227→  } : null;
+   228→
+   229→  return (
+   230→    <Dialog open={open} onOpenChange={onOpenChange}>
+   231→      <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden p-0 gap-0 flex flex-col">
+   232→        <DialogHeader className="p-5 border-b shrink-0">
+   233→          <DialogTitle className="flex items-center gap-2">
+   234→            <Upload className="h-5 w-5 text-primary" />
+   235→            {t("requests.import")}
+   236→          </DialogTitle>
+   237→          <DialogDescription className="text-xs">{t("requests.importDesc")}</DialogDescription>
+   238→        </DialogHeader>
+   239→
+   240→        <Tabs value={tab} onValueChange={(v) => setTab(v as "device" | "archive")} className="flex-1 min-h-0 flex flex-col overflow-hidden">
+   241→          <TabsList className="mx-5 mt-4 w-fit shrink-0">
+   242→            <TabsTrigger value="device" className="gap-1.5">
+   243→              <FileSpreadsheet className="h-3.5 w-3.5" />
+   244→              {t("requests.importFromDevice")}
+   245→            </TabsTrigger>
+   246→            <TabsTrigger value="archive" className="gap-1.5">
+   247→              <Archive className="h-3.5 w-3.5" />
+   248→              {t("requests.importFromArchive")}
+   249→            </TabsTrigger>
+   250→          </TabsList>
+   251→
+   252→          {/* ─── Device Tab ─── */}
+   253→          <TabsContent value="device" className="m-0 p-5 overflow-y-auto flex-1 min-h-0">
+   254→            <div
+   255→              className="flex flex-col items-center justify-center gap-3 rounded-md border-2 border-dashed border-muted-foreground/30 p-10 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/20 transition-colors"
+   256→              onClick={() => fileRef.current?.click()}
+   257→            >
+   258→              <FileSpreadsheet className="h-10 w-10 text-muted-foreground" />
+   259→              <div>
+   260→                <div className="text-sm font-medium">{t("requests.dropExcel")}</div>
+   261→                <div className="text-xs text-muted-foreground mt-1">{t("requests.excelFormat")}</div>
+   262→              </div>
+   263→              <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={handleDeviceFile} />
+   264→            </div>
+   265→          </TabsContent>
+   266→
+   267→          {/* ─── Archive Tab ─── */}
+   268→          <TabsContent value="archive" className="m-0 p-5 overflow-y-auto flex-1 min-h-0">
+   269→            {loadingArchive ? (
+   270→              <div className="flex items-center justify-center py-8 gap-2 text-sm text-muted-foreground">
+   271→                <Loader2 className="h-5 w-5 animate-spin" /> {t("misc.loading") || "Loading..."}
+   272→              </div>
+   273→            ) : archive.length === 0 ? (
+   274→              <div className="text-center py-8 text-sm text-muted-foreground">{t("requests.noArchiveRequests")}</div>
+   275→            ) : (
+   276→              <>
+   277→                <div className="space-y-2 mb-4">
+   278→                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+   279→                    {t("requests.selectRequest")}
+   280→                  </div>
+   281→                  {archive.map((req) => (
+   282→                    <label
+   283→                      key={req.id}
+   284→                      className={`flex items-center gap-3 rounded-md border p-3 cursor-pointer transition-colors ${
+   285→                        selectedRequest === req.id ? "border-primary bg-primary/5" : "hover:bg-muted/30"
+   286→                      }`}
+   287→                    >
+   288→                      <input type="radio" name="archive-request" checked={selectedRequest === req.id}
+   289→                        onChange={() => setSelectedRequest(req.id)} className="accent-primary" />
+   290→                      <div className="flex-1 min-w-0">
+   291→                        <div className="flex items-center gap-2">
+   292→                          <span className="font-mono text-xs font-semibold text-primary">{req.refNumber}</span>
+   293→                          <Badge variant="outline" className="text-[9px] h-4">{req.status}</Badge>
+   294→                        </div>
+   295→                        <div className="text-xs text-muted-foreground mt-0.5">
+   296→                          {req.courseTitle ?? "—"} · {new Date(req.createdAt).toLocaleDateString()} · {req.traineeCount} {t("requests.previewTrainees")}
+   297→                        </div>
+   298→                      </div>
+   299→                      {req.hasAttachments && <FileText className="h-3.5 w-3.5 text-muted-foreground" />}
+   300→                      <Button type="button" variant="ghost" size="sm" className="h-7 px-2"
+   301→                        onClick={(e) => { e.preventDefault(); setPreviewTarget(req); }}>
+   302→                        <Eye className="h-3.5 w-3.5" />
+   303→                      </Button>
+   304→                    </label>
+   305→                  ))}
+   306→                </div>
+   307→
+   308→                {/* Preview Summary */}
+   309→                {previewSummary && (
+   310→                  <div className="rounded-md border bg-muted/20 p-3 mb-4">
+   311→                    <div className="text-xs font-semibold mb-2 flex items-center gap-1.5">
+   312→                      <Eye className="h-3.5 w-3.5" /> {t("requests.importPreviewSummary")}
+   313→                    </div>
+   314→                    <div className="grid grid-cols-3 gap-2 text-xs">
+   315→                      <div className="flex flex-col"><span className="text-muted-foreground text-[10px]">{t("requests.previewTrainees")}</span><span className="font-semibold">{previewSummary.trainees}</span></div>
+   316→                      <div className="flex flex-col"><span className="text-muted-foreground text-[10px]">{t("requests.previewAttachments")}</span><span className="font-semibold">{previewSummary.attachments}</span></div>
+   317→                      <div className="flex flex-col"><span className="text-muted-foreground text-[10px]">{t("requests.previewCourses")}</span><span className="font-semibold">{previewSummary.courses}</span></div>
+   318→                      <div className="flex flex-col"><span className="text-muted-foreground text-[10px]">{t("requests.previewEstSize")}</span><span className="font-semibold">{previewSummary.estSize}</span></div>
+   319→                      <div className="flex flex-col"><span className="text-muted-foreground text-[10px]">{t("requests.previewCreated")}</span><span className="font-semibold">{previewSummary.createdDate}</span></div>
+   320→                      <div className="flex flex-col"><span className="text-muted-foreground text-[10px]">{t("requests.previewUpdated")}</span><span className="font-semibold">{previewSummary.updatedDate}</span></div>
+   321→                    </div>
+   322→                  </div>
+   323→                )}
+   324→
+   325→                {/* Granular Options */}
+   326→                {selectedRequest && (
+   327→                  <div className="space-y-2 mb-4">
+   328→                    <div className="flex items-center justify-between">
+   329→                      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t("requests.whatToImport")}</div>
+   330→                      <div className="flex gap-1">
+   331→                        <Button type="button" variant="ghost" size="sm" className="h-6 text-[10px] px-2" onClick={() => setImportItems(new Set(GRANULAR_ITEMS.map(i => i.key)))}>{t("requests.selectAll")}</Button>
+   332→                        <Button type="button" variant="ghost" size="sm" className="h-6 text-[10px] px-2" onClick={() => setImportItems(new Set())}>{t("requests.clear")}</Button>
+   333→                      </div>
+   334→                    </div>
+   335→                    <div className="grid grid-cols-2 gap-2">
+   336→                      {GRANULAR_ITEMS.map((item) => (
+   337→                        <label key={item.key} className="flex items-center gap-2 rounded-md border p-2 cursor-pointer hover:bg-muted/30">
+   338→                          <Checkbox checked={importItems.has(item.key)} onCheckedChange={() => toggleItem(item.key)} />
+   339→                          <span className="text-xs">{item.label}</span>
+   340→                        </label>
+   341→                      ))}
+   342→                    </div>
+   343→                  </div>
+   344→                )}
+   345→              </>
+   346→            )}
+   347→          </TabsContent>
+   348→        </Tabs>
+   349→
+   350→        {/* Recent Operations */}
+   351→        <div className="border-t px-5 py-2 shrink-0">
+   352→          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1 flex items-center gap-1">
+   353→            <History className="h-3 w-3" /> {t("requests.recentOperations")}
+   354→          </div>
+   355→          <RecentOperations logs={logs} loading={logsLoading} />
+   356→        </div>
+   357→
+   358→        <DialogFooter className="p-4 border-t bg-muted/30 shrink-0">
+   359→          <Button variant="outline" onClick={() => onOpenChange(false)}>{t("action.cancel")}</Button>
+   360→          {tab === "archive" && (
+   361→            <Button onClick={handleArchiveImport} disabled={!selectedRequest || importItems.size === 0 || importing}>
+   362→              {importing ? <Loader2 className="h-4 w-4 me-1.5 animate-spin" /> : <Archive className="h-4 w-4 me-1.5" />}
+   363→              {t("requests.importFromArchiveBtn")}
+   364→            </Button>
+   365→          )}
+   366→        </DialogFooter>
+   367→      </DialogContent>
+   368→
+   369→      {/* Preview sub-dialog */}
+   370→      <Dialog open={previewTarget !== null} onOpenChange={(o) => !o && setPreviewTarget(null)}>
+   371→        <DialogContent className="max-w-md">
+   372→          <DialogHeader>
+   373→            <DialogTitle className="flex items-center gap-2"><Eye className="h-4 w-4" /> {t("requests.archivePreview")}</DialogTitle>
+   374→          </DialogHeader>
+   375→          {previewTarget && (
+   376→            <div className="space-y-2 text-sm">
+   377→              <div className="flex justify-between"><span className="text-muted-foreground">{t("requests.requestNumber")}</span><span className="font-mono font-semibold text-primary">{previewTarget.refNumber}</span></div>
+   378→              <div className="flex justify-between"><span className="text-muted-foreground">{t("requests.course")}</span><span>{previewTarget.courseTitle ?? "—"}</span></div>
+   379→              <div className="flex justify-between"><span className="text-muted-foreground">{t("requests.created")}</span><span>{new Date(previewTarget.createdAt).toLocaleDateString()}</span></div>
+   380→              <div className="flex justify-between"><span className="text-muted-foreground">{t("requests.previewTrainees")}</span><span>{previewTarget.traineeCount}</span></div>
+   381→              <div className="flex justify-between"><span className="text-muted-foreground">{t("requests.status")}</span><Badge variant="outline">{previewTarget.status}</Badge></div>
+   382→              <div className="flex justify-between"><span className="text-muted-foreground">{t("requests.attachments")}</span><span>{previewTarget.hasAttachments ? t("requests.yes") : t("requests.no")}</span></div>
+   383→            </div>
+   384→          )}
+   385→        </DialogContent>
+   386→      </Dialog>
+   387→    </Dialog>
+   388→  );
+   389→}
+   390→
+   391→// ─── Export Dialog ──────────────────────────────────────────────────────────
+   392→
+   393→export interface ExportDialogProps {
+   394→  open: boolean;
+   395→  onOpenChange: (open: boolean) => void;
+   396→}
+   397→
+   398→export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
+   399→  const { t, locale } = useI18n();
+   400→  const { toast } = useToast();
+   401→  const { logs, loading: logsLoading, addLog } = useRecentLogs();
+   402→  const [scope, setScope] = React.useState<"last" | "specific_request" | "specific_course" | "date_range" | "all">("last");
+   403→  const [items, setItems] = React.useState<Set<string>>(new Set(["requests", "trainees"]));
+   404→  const [format, setFormat] = React.useState<"excel" | "pdf" | "zip">("excel");
+   405→  const [dateFrom, setDateFrom] = React.useState("");
+   406→  const [dateTo, setDateTo] = React.useState("");
+   407→  const [exporting, setExporting] = React.useState(false);
+   408→  const [progress, setProgress] = React.useState(0);
+   409→
+   410→  // ── Course picker state (for specific_course scope) ──
+   411→  const [courses, setCourses] = React.useState<SearchableSelectOption[]>([]);
+   412→  const [coursesLoading, setCoursesLoading] = React.useState(false);
+   413→  const [selectedCourseId, setSelectedCourseId] = React.useState("");
+   414→
+   415→  // ── Training Request picker state (for specific_request scope) ──
+   416→  const [requests, setRequests] = React.useState<SearchableSelectOption[]>([]);
+   417→  const [requestsLoading, setRequestsLoading] = React.useState(false);
+   418→  const [selectedRequestId, setSelectedRequestId] = React.useState("");
+   419→
+   420→  // Fetch company courses when specific_course scope is selected
+   421→  React.useEffect(() => {
+   422→    if (scope === "specific_course" && courses.length === 0 && !coursesLoading) {
+   423→      setCoursesLoading(true);
+   424→      // /api/courses returns { success, data: Course[] } — api.get unwraps to `data`
+   425→      // which is the array directly (not { items: [...] }).
+   426→      api.get<Array<{ id: string; title: string; titleAr?: string; code?: string; refNumber?: string }>>("/courses?pageSize=200")
+   427→        .then((arr) => {
+   428→          const list = Array.isArray(arr) ? arr : [];
+   429→          setCourses(list.map((c) => ({
+   430→            value: c.id,
+   431→            label: (locale === "ar" && c.titleAr ? c.titleAr : c.title) || c.refNumber || c.id,
+   432→            description: [c.code, c.refNumber].filter(Boolean).join(" · ") || undefined,
+   433→            keywords: `${c.title} ${c.titleAr ?? ""} ${c.code ?? ""} ${c.refNumber ?? ""}`,
+   434→          })));
+   435→        })
+   436→        .catch(() => {
+   437→          // Silent fail — picker will just be empty
+   438→        })
+   439→        .finally(() => setCoursesLoading(false));
+   440→    }
+   441→  }, [scope, courses.length, coursesLoading]);
+   442→
+   443→  // Fetch company training requests when specific_request scope is selected
+   444→  React.useEffect(() => {
+   445→    if (scope === "specific_request" && requests.length === 0 && !requestsLoading) {
+   446→      setRequestsLoading(true);
+   447→      // /api/requests returns { success, data: TrainingRequest[] } — api.get unwraps to `data`.
+   448→      api.get<Array<{
+   449→        id: string; refNumber: string; status: string; courseTitle: string | null;
+   450→        traineeCount: number; createdAt: string;
+   451→      }>>("/requests?pageSize=200")
+   452→        .then((arr) => {
+   453→          const list = Array.isArray(arr) ? arr : [];
+   454→          setRequests(list.map((r) => ({
+   455→            value: r.id,
+   456→            label: r.refNumber,
+   457→            description: [
+   458→              r.courseTitle,
+   459→              `${r.traineeCount} ${locale === "ar" ? "متدرب" : "trainees"}`,
+   460→              r.status,
+   461→            ].filter(Boolean).join(" · "),
+   462→            keywords: `${r.refNumber} ${r.courseTitle ?? ""} ${r.status}`,
+   463→          })));
+   464→        })
+   465→        .catch(() => {
+   466→          // Silent fail — picker will just be empty
+   467→        })
+   468→        .finally(() => setRequestsLoading(false));
+   469→    }
+   470→  }, [scope, requests.length, requestsLoading, locale]);
+   471→
+   472→  // Reset selection when scope changes (so stale IDs don't leak across scopes)
+   473→  React.useEffect(() => {
+   474→    setSelectedCourseId("");
+   475→    setSelectedRequestId("");
+   476→    // Don't reset dateFrom/dateTo — they survive scope switching
+   477→  }, [scope]);
+   478→
+   479→  const EXPORT_ITEMS = [
+   480→    { key: "requests", label: t("requests.itemRequests") },
+   481→    { key: "trainees", label: t("requests.itemTrainees") },
+   482→    { key: "attendance", label: t("requests.itemAttendance") },
+   483→    { key: "results", label: t("requests.itemResults") },
+   484→    { key: "evaluations", label: t("requests.itemEvaluations") },
+   485→    { key: "certificates", label: t("requests.itemCertificates") },
+   486→    { key: "invoices", label: t("requests.itemInvoices") },
+   487→    { key: "attachments", label: t("requests.itemAttachments") },
+   488→  ];
+   489→
+   490→  const scopeOptions = [
+   491→    { value: "last", label: t("requests.scopeLast") },
+   492→    { value: "specific_request", label: t("requests.scopeSpecificRequest") },
+   493→    { value: "specific_course", label: t("requests.scopeSpecificCourse") },
+   494→    { value: "date_range", label: t("requests.scopeDateRange") },
+   495→    { value: "all", label: t("requests.scopeAll") },
+   496→  ] as const;
+   497→
+   498→  function toggleItem(key: string) {
+   499→    setItems((prev) => {
+   500→      const next = new Set(prev);
+   501→      if (next.has(key)) next.delete(key);
+   502→      else next.add(key);
+   503→      return next;
+   504→    });
+   505→  }
+   506→
+   507→  // ── Validation: which scopes require an additional selection? ──
+   508→  const needsSelection = scope === "specific_request" || scope === "specific_course";
+   509→  const needsDateRange = scope === "date_range";
+   510→  const selectionMissing = needsSelection
+   511→    ? (scope === "specific_request" ? !selectedRequestId : !selectedCourseId)
+   512→    : false;
+   513→  const dateRangeMissing = needsDateRange && (!dateFrom || !dateTo);
+   514→
+   515→  const canExport = items.size > 0 && !selectionMissing && !dateRangeMissing && !exporting;
+   516→
+   517→  async function handleExport() {
+   518→    if (items.size === 0) {
+   519→      toast({ title: t("misc.error"), description: t("requests.selectAtLeastOne"), variant: "destructive" });
+   520→      return;
+   521→    }
+   522→    if (scope === "specific_course" && !selectedCourseId) {
+   523→      toast({ title: t("misc.error"), description: (t("requests.selectCoursePrompt") || "Please select a course"), variant: "destructive" });
+   524→      return;
+   525→    }
+   526→    if (scope === "specific_request" && !selectedRequestId) {
+   527→      toast({ title: t("misc.error"), description: (t("requests.selectRequestPrompt") || "Please select a request"), variant: "destructive" });
+   528→      return;
+   529→    }
+   530→    if (scope === "date_range" && (!dateFrom || !dateTo)) {
+   531→      toast({ title: t("misc.error"), description: (t("requests.selectDateRangePrompt") || "Please select both dates"), variant: "destructive" });
+   532→      return;
+   533→    }
+   534→    setExporting(true);
+   535→    setProgress(10);
+   536→    try {
+   537→      const params = new URLSearchParams({ scope, format, items: Array.from(items).join(","), locale });
+   538→      if (dateFrom) params.set("dateFrom", dateFrom);
+   539→      if (dateTo) params.set("dateTo", dateTo);
+   540→      if (scope === "specific_course" && selectedCourseId) {
+   541→        params.set("specificId", selectedCourseId);
+   542→      }
+   543→      if (scope === "specific_request" && selectedRequestId) {
+   544→        params.set("specificId", selectedRequestId);
+   545→      }
+   546→      setProgress(50);
+   547→      window.open(`/api/export/company-data?${params.toString()}`, "_blank");
+   548→      setProgress(100);
+   549→      toast({ title: t("misc.success"), description: t("requests.exportStarted") });
+   550→      await addLog({ type: "EXPORT", source: "EXPORT", itemCount: items.size, status: "SUCCESS" });
+   551→      onOpenChange(false);
+   552→    } catch (e) {
+   553→      const msg = e instanceof ApiError ? e.message : t("requests.exportFailed");
+   554→      toast({ title: t("misc.error"), description: msg, variant: "destructive" });
+   555→      await addLog({ type: "EXPORT", source: "EXPORT", status: "FAILED", errorMessage: msg });
+   556→    } finally {
+   557→      setExporting(false);
+   558→      setProgress(0);
+   559→    }
+   560→  }
+   561→
+   562→  return (
+   563→    <Dialog open={open} onOpenChange={onOpenChange}>
+   564→      <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden p-0 gap-0 flex flex-col">
+   565→        <DialogHeader className="p-5 border-b shrink-0">
+   566→          <DialogTitle className="flex items-center gap-2">
+   567→            <Download className="h-5 w-5 text-primary" />
+   568→            {t("requests.export")}
+   569→          </DialogTitle>
+   570→          <DialogDescription className="text-xs">{t("requests.exportDesc")}</DialogDescription>
+   571→        </DialogHeader>
+   572→
+   573→        <div className="p-5 overflow-y-auto flex-1 min-h-0 space-y-5">
+   574→          {/* Scope — dynamic field rendering based on selected scope */}
+   575→          <div>
+   576→            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{t("requests.scope")}</div>
+   577→            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+   578→              {scopeOptions.map((opt) => (
+   579→                <label key={opt.value}
+   580→                  className={`flex items-center gap-2 rounded-md border p-2 cursor-pointer text-xs transition-colors ${
+   581→                    scope === opt.value ? "border-primary bg-primary/5" : "hover:bg-muted/30"
+   582→                  }`}>
+   583→                  <input type="radio" name="export-scope" checked={scope === opt.value} onChange={() => setScope(opt.value)} className="accent-primary" />
+   584→                  {opt.label}
+   585→                </label>
+   586→              ))}
+   587→            </div>
+   588→
+   589→            {/* ── Dynamic field area: only renders for scopes that need extra input ── */}
+   590→            {scope === "specific_request" && (
+   591→              <div className="mt-3 space-y-1.5">
+   592→                <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+   593→                  {t("requests.selectRequestPrompt") || "Select a request"}
+   594→                </label>
+   595→                <SearchableSelect
+   596→                  value={selectedRequestId}
+   597→                  onChange={setSelectedRequestId}
+   598→                  options={requests}
+   599→                  loading={requestsLoading}
+   600→                  placeholder={t("requests.selectRequestPrompt") || "Select a request…"}
+   601→                  searchPlaceholder={t("requests.searchRequestPlaceholder") || "Search by request # or course…"}
+   602→                  emptyText={t("requests.noRequestsAvailable") || "No requests available"}
+   603→                />
+   604→                {requests.length === 0 && !requestsLoading && (
+   605→                  <div className="text-[10px] text-muted-foreground">
+   606→                    {t("requests.noRequestsAvailable") || "No requests available for this company"}
+   607→                  </div>
+   608→                )}
+   609→              </div>
+   610→            )}
+   611→
+   612→            {scope === "specific_course" && (
+   613→              <div className="mt-3 space-y-1.5">
+   614→                <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+   615→                  {t("requests.selectCoursePrompt") || "Select a course"}
+   616→                </label>
+   617→                <SearchableSelect
+   618→                  value={selectedCourseId}
+   619→                  onChange={setSelectedCourseId}
+   620→                  options={courses}
+   621→                  loading={coursesLoading}
+   622→                  placeholder={t("requests.selectCoursePrompt") || "Select a course…"}
+   623→                  searchPlaceholder={t("requests.searchCoursePlaceholder") || "Search by course name or code…"}
+   624→                  emptyText={t("requests.noCoursesAvailable") || "No courses available"}
+   625→                />
+   626→                {courses.length === 0 && !coursesLoading && (
+   627→                  <div className="text-[10px] text-muted-foreground">
+   628→                    {t("requests.noCoursesAvailable") || "No courses available for this company"}
+   629→                  </div>
+   630→                )}
+   631→              </div>
+   632→            )}
+   633→
+   634→            {scope === "date_range" && (
+   635→              <div className="mt-3 grid grid-cols-2 gap-2">
+   636→                <div className="space-y-1">
+   637→                  <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block">
+   638→                    {t("requests.dateFrom") || "From date"}
+   639→                  </label>
+   640→                  <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="text-xs h-9" />
+   641→                </div>
+   642→                <div className="space-y-1">
+   643→                  <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide block">
+   644→                    {t("requests.dateTo") || "To date"}
+   645→                  </label>
+   646→                  <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="text-xs h-9" />
+   647→                </div>
+   648→              </div>
+   649→            )}
+   650→
+   651→            {/* last + all: no extra fields */}
+   652→            {(scope === "last" || scope === "all") && (
+   653→              <div className="mt-3 text-[10px] text-muted-foreground italic">
+   654→                {scope === "last"
+   655→                  ? (t("requests.scopeLastHint") || "The most recent request will be exported automatically.")
+   656→                  : (t("requests.scopeAllHint") || "All company data will be exported.")}
+   657→              </div>
+   658→            )}
+   659→          </div>
+   660→
+   661→          {/* Items */}
+   662→          <div>
+   663→            <div className="flex items-center justify-between mb-2">
+   664→              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t("requests.itemsToExport")}</div>
+   665→              <div className="flex gap-1">
+   666→                <Button type="button" variant="ghost" size="sm" className="text-xs h-7" onClick={() => setItems(new Set(EXPORT_ITEMS.map(i => i.key)))}>{t("requests.selectAll")}</Button>
+   667→                <Button type="button" variant="ghost" size="sm" className="text-xs h-7" onClick={() => setItems(new Set())}>{t("requests.clear")}</Button>
+   668→              </div>
+   669→            </div>
+   670→            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+   671→              {EXPORT_ITEMS.map((item) => (
+   672→                <label key={item.key} className="flex items-center gap-2 rounded-md border p-2 cursor-pointer hover:bg-muted/30">
+   673→                  <Checkbox checked={items.has(item.key)} onCheckedChange={() => toggleItem(item.key)} />
+   674→                  <span className="text-xs">{item.label}</span>
+   675→                </label>
+   676→              ))}
+   677→            </div>
+   678→          </div>
+   679→
+   680→          {/* Format */}
+   681→          <div>
+   682→            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{t("requests.format")}</div>
+   683→            <div className="flex gap-2">
+   684→              {([
+   685→                { value: "excel", label: "Excel", icon: FileSpreadsheet },
+   686→                { value: "pdf", label: "PDF", icon: FileText },
+   687→                { value: "zip", label: t("requests.zipWithAttachments"), icon: FileArchive },
+   688→              ] as const).map((opt) => (
+   689→                <label key={opt.value}
+   690→                  className={`flex items-center gap-2 rounded-md border p-2.5 cursor-pointer text-xs transition-colors ${
+   691→                    format === opt.value ? "border-primary bg-primary/5" : "hover:bg-muted/30"
+   692→                  }`}>
+   693→                  <input type="radio" name="export-format" checked={format === opt.value} onChange={() => setFormat(opt.value)} className="accent-primary" />
+   694→                  <opt.icon className="h-3.5 w-3.5" />
+   695→                  {opt.label}
+   696→                </label>
+   697→              ))}
+   698→            </div>
+   699→          </div>
+   700→
+   701→          {exporting && (
+   702→            <div className="space-y-1">
+   703→              <Progress value={progress} className="h-1.5" />
+   704→              <div className="text-[10px] text-muted-foreground text-center">{t("requests.preparingExport")}</div>
+   705→            </div>
+   706→          )}
+   707→        </div>
+   708→
+   709→        <DialogFooter className="p-4 border-t bg-muted/30 shrink-0">
+   710→          <Button variant="outline" onClick={() => onOpenChange(false)}>{t("action.cancel")}</Button>
+   711→          <Button onClick={handleExport} disabled={!canExport} title={!canExport && selectionMissing ? (t("requests.selectFirstPrompt") || "Select an item first") : undefined}>
+   712→            {exporting ? <Loader2 className="h-4 w-4 me-1.5 animate-spin" /> : <FileDown className="h-4 w-4 me-1.5" />}
+   713→            {t("requests.exportBtn")}
+   714→          </Button>
+   715→        </DialogFooter>
+   716→      </DialogContent>
+   717→    </Dialog>
+   718→  );
+   719→}
+   720→

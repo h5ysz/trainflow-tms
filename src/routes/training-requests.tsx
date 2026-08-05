@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge, PriorityBadge } from "@/components/common/status-badge";
-import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Check, X, RotateCcw, ArrowRight, FileText, Download, Upload, Eye, Pencil, Printer, MoreVertical, FileSpreadsheet, FileText as FileTextIcon, Send } from "lucide-react";
+import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Check, X, RotateCcw, ArrowRight, FileText, Download, Upload, Eye, Pencil, Printer, MoreVertical, FileText as FileTextIcon, Send } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription, DrawerClose } from "@/components/ui/drawer";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -27,6 +27,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/lib/store/app-store";
 import { canPerformAction } from "@/lib/auth/permissions";
 import { ImportDialog, ExportDialog } from "@/components/common/import-export-dialogs";
+import { ExportExcelButton } from "@/components/common/export-excel-button";
 
 interface RequestImportResult {
   requestsCreated: number;
@@ -1012,9 +1013,7 @@ export function TrainingRequestsRoute() {
             <Button variant="outline" size="sm" onClick={() => directExport("pdf")}>
               <Printer className="h-3.5 w-3.5 me-1.5" />Print PDF
             </Button>
-            <Button variant="outline" size="sm" onClick={() => directExport("excel")}>
-              <FileSpreadsheet className="h-3.5 w-3.5 me-1.5" />Export Excel
-            </Button>
+            <ExportExcelButton requestId={selectedRequest.id} />
             <Button variant="outline" size="sm" onClick={() => directExport("zip")}>
               <FileTextIcon className="h-3.5 w-3.5 me-1.5" />Download ZIP
             </Button>
@@ -1448,6 +1447,10 @@ export function TrainingRequestsRoute() {
               <Button variant="outline" onClick={() => setPreviewTarget(null)}>
                 {t("action.cancel")}
               </Button>
+              {/* Export Excel — universal: any role that can view this request can export it.
+                  Server-side RBAC in /api/export/company-data enforces the contractor's
+                  companyId scope automatically. */}
+              <ExportExcelButton requestId={previewTarget.id} size="default" />
               {/* Print button — always available for any non-deleted request, regardless of status */}
               <Button variant="outline" onClick={() => window.print()}>
                 <Printer className="h-4 w-4 me-1.5" />{t("action.print") || "Print"}
@@ -1475,6 +1478,16 @@ export function TrainingRequestsRoute() {
               {drawerTarget && <PriorityBadge priority={drawerTarget.priority} />}
               {drawerTarget && <StatusBadge status={drawerTarget.status} />}
             </DrawerDescription>
+            {/* Quick export action — always available to any role viewing the
+                request. Same reusable <ExportExcelButton /> used in the inline
+                toolbar and the read-only Preview dialog. Server-side RBAC in
+                /api/export/company-data enforces the contractor's companyId
+                scope automatically. */}
+            {drawerTarget && (
+              <div className="flex justify-end pt-2">
+                <ExportExcelButton requestId={drawerTarget.id} />
+              </div>
+            )}
           </DrawerHeader>
 
           {drawerTarget && (

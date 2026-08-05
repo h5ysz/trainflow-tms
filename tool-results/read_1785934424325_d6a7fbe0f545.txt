@@ -1,0 +1,1422 @@
+     1→// /api/export/company-data — professional administrative export
+     2→//
+     3→// Query params:
+     4→//   scope: last | specific_request | specific_course | date_range | all
+     5→//   items: comma-separated subset of:
+     6→//          requests, trainees, attendance, results, evaluations,
+     7→//          certificates, invoices, attachments
+     8→//   format: excel | pdf | zip
+     9→//   locale: en | ar  — controls column headers, sheet names AND enum value
+    10→//                       translation. When ar, sheet view is right-to-left.
+    11→//   specificId?: string — request id (specific_request) or course id (specific_course)
+    12→//   dateFrom?: string  (ISO date)
+    13→//   dateTo?:   string  (ISO date)
+    14→//
+    15→// Output:
+    16→//   excel → .xlsx workbook (multi-sheet, styled)
+    17→//   pdf   → .pdf document (summary + key tables)
+    18→//   zip   → .zip archive (Excel + attachment files)
+    19→// locale). Every selected item gets its own sheet — empty sheets are NOT
+    20→// created. Enum values from the DB (statuses, priorities, test types…) are
+    21→// translated to the chosen locale. Numeric IDs are written as text so leading
+    22→// zeros are preserved. Dates are written as real Excel dates with a yyyy-mm-dd
+    23→// format so they sort and filter correctly.
+    24→import { NextRequest } from "next/server";
+    25→import { db } from "@/lib/db";
+    26→import { requireAuth, fail } from "@/lib/auth/api";
+    27→import ExcelJS from "exceljs";
+    28→
+    29→type Locale = "en" | "ar";
+    30→
+    31→// ─────────────────────────────────────────────────────────────────────────────
+    32→// Translation maps — DB enum/raw value → localized display value
+    33→// ─────────────────────────────────────────────────────────────────────────────
+    34→type TxEntry = { en: string; ar: string };
+    35→
+    36→const REQUEST_STATUS: Record<string, TxEntry> = {
+    37→  DRAFT: { en: "Draft", ar: "مسودة" },
+    38→  SUBMITTED: { en: "Submitted", ar: "مقدم" },
+    39→  UNDER_REVIEW: { en: "Under Review", ar: "قيد المراجعة" },
+    40→  APPROVED: { en: "Approved", ar: "معتمد" },
+    41→  SCHEDULED: { en: "Scheduled", ar: "مجدول" },
+    42→  IN_PROGRESS: { en: "In Progress", ar: "قيد التنفيذ" },
+    43→  COMPLETED: { en: "Completed", ar: "مكتمل" },
+    44→  CANCELLED: { en: "Cancelled", ar: "ملغي" },
+    45→  REJECTED: { en: "Rejected", ar: "مرفوض" },
+    46→  REQUIRES_MODIFICATION: { en: "Requires Modification", ar: "يحتاج تعديل" },
+    47→  CLOSED: { en: "Closed", ar: "مغلق" },
+    48→};
+    49→
+    50→const PRIORITY: Record<string, TxEntry> = {
+    51→  LOW: { en: "Low", ar: "منخفضة" },
+    52→  NORMAL: { en: "Normal", ar: "عادية" },
+    53→  HIGH: { en: "High", ar: "عالية" },
+    54→  URGENT: { en: "Urgent", ar: "عاجلة" },
+    55→};
+    56→
+    57→const ATTENDANCE_STATUS: Record<string, TxEntry> = {
+    58→  REGISTERED: { en: "Registered", ar: "مسجل" },
+    59→  PRESENT: { en: "Present", ar: "حاضر" },
+    60→  ABSENT: { en: "Absent", ar: "غائب" },
+    61→  LATE: { en: "Late", ar: "متأخر" },
+    62→  EXCUSED: { en: "Excused", ar: "بعذر" },
+    63→};
+    64→
+    65→const TEST_TYPE: Record<string, TxEntry> = {
+    66→  PRE_TEST: { en: "Pre-Test", ar: "اختبار قبلي" },
+    67→  FINAL_TEST: { en: "Final Test", ar: "الاختبار النهائي" },
+    68→};
+    69→
+    70→const CERT_STATUS: Record<string, TxEntry> = {
+    71→  VALID: { en: "Valid", ar: "سارية" },
+    72→  EXPIRED: { en: "Expired", ar: "منتهية" },
+    73→  REVOKED: { en: "Revoked", ar: "ملغاة" },
+    74→  RENEWED: { en: "Renewed", ar: "مجددة" },
+    75→};
+    76→
+    77→const CERT_RELEASE_STATUS: Record<string, TxEntry> = {
+    78→  DRAFT: { en: "Draft", ar: "مسودة" },
+    79→  READY_FOR_RELEASE: { en: "Ready for Release", ar: "جاهزة للإصدار" },
+    80→  RELEASED: { en: "Released", ar: "صادرة" },
+    81→  DOWNLOADED: { en: "Downloaded", ar: "تم تنزيلها" },
+    82→};
+    83→
+    84→const INVOICE_STATUS: Record<string, TxEntry> = {
+    85→  DRAFT: { en: "Draft", ar: "مسودة" },
+    86→  SENT: { en: "Sent", ar: "مرسلة" },
+    87→  PAID: { en: "Paid", ar: "مدفوعة" },
+    88→  PARTIALLY_PAID: { en: "Partially Paid", ar: "مدفوعة جزئياً" },
+    89→  OVERDUE: { en: "Overdue", ar: "متأخرة" },
+    90→  CANCELLED: { en: "Cancelled", ar: "ملغاة" },
+    91→  REFUNDED: { en: "Refunded", ar: "مستردة" },
+    92→};
+    93→
+    94→const TRAINEE_STATUS: Record<string, TxEntry> = {
+    95→  ACTIVE: { en: "Active", ar: "نشط" },
+    96→  INACTIVE: { en: "Inactive", ar: "غير نشط" },
+    97→};
+    98→
+    99→const ENROLLMENT_STATUS: Record<string, TxEntry> = {
+   100→  PENDING: { en: "Pending", ar: "قيد الانتظار" },
+   101→  CONFIRMED: { en: "Confirmed", ar: "مؤكد" },
+   102→  CHECKED_IN: { en: "Checked In", ar: "تم الحضور" },
+   103→  TRAINING: { en: "Training", ar: "تدريب" },
+   104→  COMPLETED: { en: "Completed", ar: "مكتمل" },
+   105→  CANCELLED: { en: "Cancelled", ar: "ملغي" },
+   106→  NO_SHOW: { en: "No Show", ar: "لم يحضر" },
+   107→  ENROLLED: { en: "Enrolled", ar: "مسجل" },
+   108→  REPLACED: { en: "Replaced", ar: "مستبدل" },
+   109→};
+   110→
+   111→const FINAL_TEST_STATUS: Record<string, TxEntry> = {
+   112→  NOT_REQUIRED: { en: "Not Required", ar: "غير مطلوب" },
+   113→  PENDING: { en: "Pending", ar: "قيد الانتظار" },
+   114→  IN_PROGRESS: { en: "In Progress", ar: "قيد التنفيذ" },
+   115→  PASSED: { en: "Passed", ar: "ناجح" },
+   116→  FAILED: { en: "Failed", ar: "راسب" },
+   117→  NOT_STARTED: { en: "Not Started", ar: "لم يبدأ" },
+   118→};
+   119→
+   120→const CERT_ENROLL_STATUS: Record<string, TxEntry> = {
+   121→  NOT_ELIGIBLE: { en: "Not Eligible", ar: "غير مؤهل" },
+   122→  ELIGIBLE: { en: "Eligible", ar: "مؤهل" },
+   123→  GENERATED: { en: "Generated", ar: "تم الإصدار" },
+   124→  ISSUED: { en: "Issued", ar: "صادر" },
+   125→  NOT_ISSUED: { en: "Not Issued", ar: "غير صادر" },
+   126→};
+   127→
+   128→function tx(map: Record<string, TxEntry>, key: string | null | undefined, locale: Locale): string {
+   129→  if (!key) return "";
+   130→  const entry = map[key];
+   131→  return entry ? entry[locale] : key;
+   132→}
+   133→
+   134→// ─────────────────────────────────────────────────────────────────────────────
+   135→// i18n strings (sheet names, headers, summary labels)
+   136→// ─────────────────────────────────────────────────────────────────────────────
+   137→const SHEET_NAMES = {
+   138→  summary: (l: Locale) => (l === "ar" ? "الملخص" : "Summary"),
+   139→  requests: (l: Locale) => (l === "ar" ? "طلبات التدريب" : "Training Requests"),
+   140→  trainees: (l: Locale) => (l === "ar" ? "المتدربون" : "Trainees"),
+   141→  attendance: (l: Locale) => (l === "ar" ? "الحضور" : "Attendance"),
+   142→  results: (l: Locale) => (l === "ar" ? "نتائج التقييم" : "Assessment Results"),
+   143→  evaluations: (l: Locale) => (l === "ar" ? "التقييمات" : "Evaluations"),
+   144→  certificates: (l: Locale) => (l === "ar" ? "الشهادات" : "Certificates"),
+   145→  invoices: (l: Locale) => (l === "ar" ? "الفواتير" : "Invoices"),
+   146→  attachments: (l: Locale) => (l === "ar" ? "المرفقات" : "Attachments"),
+   147→};
+   148→
+   149→const HEADERS = {
+   150→  requests: (l: Locale) => [
+   151→    l === "ar" ? "رقم الطلب" : "Request #",
+   152→    l === "ar" ? "الشركة" : "Company",
+   153→    l === "ar" ? "الدورة" : "Course",
+   154→    l === "ar" ? "الحالة" : "Status",
+   155→    l === "ar" ? "الأولوية" : "Priority",
+   156→    l === "ar" ? "عدد المتدربين" : "Trainee Count",
+   157→    l === "ar" ? "التاريخ المبدئي من" : "Preferred From",
+   158→    l === "ar" ? "التاريخ المبدئي إلى" : "Preferred To",
+   159→    l === "ar" ? "الموقع" : "Location",
+   160→    l === "ar" ? "اللغة" : "Language",
+   161→    l === "ar" ? "الملاحظات" : "Notes",
+   162→    l === "ar" ? "تاريخ الإنشاء" : "Created At",
+   163→  ],
+   164→  trainees: (l: Locale) => [
+   165→    l === "ar" ? "اسم المتدرب" : "Full Name",
+   166→    l === "ar" ? "رقم الهوية" : "National ID",
+   167→    l === "ar" ? "الجنسية" : "Nationality",
+   168→    l === "ar" ? "المهنة" : "Job Title",
+   169→    l === "ar" ? "الجوال" : "Mobile",
+   170→    l === "ar" ? "البريد" : "Email",
+   171→    l === "ar" ? "الطلب المرتبط" : "Request #",
+   172→    l === "ar" ? "الحالة" : "Status",
+   173→  ],
+   174→  attendance: (l: Locale) => [
+   175→    l === "ar" ? "الجلسة" : "Session #",
+   176→    l === "ar" ? "اسم المتدرب" : "Trainee Name",
+   177→    l === "ar" ? "رقم الهوية" : "National ID",
+   178→    l === "ar" ? "الحالة" : "Status",
+   179→    l === "ar" ? "وقت الحضور" : "Check-in",
+   180→    l === "ar" ? "وقت المغادرة" : "Check-out",
+   181→  ],
+   182→  results: (l: Locale) => [
+   183→    l === "ar" ? "الجلسة" : "Session #",
+   184→    l === "ar" ? "اسم المتدرب" : "Trainee Name",
+   185→    l === "ar" ? "نوع الاختبار" : "Test Type",
+   186→    l === "ar" ? "النتيجة %" : "Score %",
+   187→    l === "ar" ? "النتيجة" : "Result",
+   188→    l === "ar" ? "التاريخ" : "Date",
+   189→  ],
+   190→  evaluations: (l: Locale) => [
+   191→    l === "ar" ? "الجلسة" : "Session #",
+   192→    l === "ar" ? "اسم المتدرب" : "Trainee Name",
+   193→    l === "ar" ? "تقييم المدرب" : "Trainer Rating",
+   194→    l === "ar" ? "تقييم المحتوى" : "Content Rating",
+   195→    l === "ar" ? "التقييم العام" : "Overall Rating",
+   196→    l === "ar" ? "التعليقات" : "Comments",
+   197→  ],
+   198→  certificates: (l: Locale) => [
+   199→    l === "ar" ? "رقم الشهادة" : "Certificate #",
+   200→    l === "ar" ? "الجلسة" : "Session #",
+   201→    l === "ar" ? "اسم المتدرب" : "Trainee Name",
+   202→    l === "ar" ? "رقم الهوية" : "National ID",
+   203→    l === "ar" ? "النتيجة النهائية" : "Final Score",
+   204→    l === "ar" ? "تاريخ الإصدار" : "Issued At",
+   205→    l === "ar" ? "صالحة حتى" : "Valid Until",
+   206→    l === "ar" ? "الحالة" : "Status",
+   207→    l === "ar" ? "حالة الإصدار" : "Release Status",
+   208→  ],
+   209→  invoices: (l: Locale) => [
+   210→    l === "ar" ? "رقم الفاتورة" : "Invoice #",
+   211→    l === "ar" ? "رقم الطلب" : "Request #",
+   212→    l === "ar" ? "المبلغ الإجمالي" : "Grand Total",
+   213→    l === "ar" ? "المبلغ المدفوع" : "Paid Amount",
+   214→    l === "ar" ? "الرصيد المتبقي" : "Outstanding",
+   215→    l === "ar" ? "العملة" : "Currency",
+   216→    l === "ar" ? "الحالة" : "Status",
+   217→    l === "ar" ? "تاريخ الإصدار" : "Issue Date",
+   218→    l === "ar" ? "تاريخ الاستحقاق" : "Due Date",
+   219→  ],
+   220→  attachments: (l: Locale) => [
+   221→    l === "ar" ? "اسم الملف" : "File Name",
+   222→    l === "ar" ? "نوع الملف" : "File Type",
+   223→    l === "ar" ? "النوع" : "Category",
+   224→    l === "ar" ? "اسم المتدرب" : "Trainee Name",
+   225→    l === "ar" ? "رقم الطلب" : "Request #",
+   226→    l === "ar" ? "تاريخ الرفع" : "Uploaded At",
+   227→    l === "ar" ? "الرابط" : "URL",
+   228→  ],
+   229→};
+   230→
+   231→// ─────────────────────────────────────────────────────────────────────────────
+   232→// Helpers — styling, dates, IDs
+   233→// ─────────────────────────────────────────────────────────────────────────────
+   234→const HEADER_FILL = "FF1F3A5F"; // deep navy
+   235→const HEADER_FONT_COLOR = "FFFFFFFF";
+   236→const BORDER_COLOR = "FFD0D7DE";
+   237→
+   238→function styleSheet(ws: ExcelJS.Worksheet, locale: Locale) {
+   239→  // Header row styling
+   240→  const headerRow = ws.getRow(1);
+   241→  headerRow.font = { bold: true, size: 11, color: { argb: HEADER_FONT_COLOR } };
+   242→  headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL } };
+   243→  headerRow.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+   244→  headerRow.height = 28;
+   245→  headerRow.border = {
+   246→    top: { style: "thin", color: { argb: BORDER_COLOR } },
+   247→    bottom: { style: "medium", color: { argb: BORDER_COLOR } },
+   248→    left: { style: "thin", color: { argb: BORDER_COLOR } },
+   249→    right: { style: "thin", color: { argb: BORDER_COLOR } },
+   250→  };
+   251→
+   252→  // Freeze header + enable filter + RTL for Arabic
+   253→  const view: Partial<ExcelJS.WorksheetView> = { state: "frozen", ySplit: 1 };
+   254→  if (locale === "ar") view.rightToLeft = true;
+   255→  ws.views = [view as ExcelJS.WorksheetView];
+   256→
+   257→  // Auto-filter on the header row
+   258→  const colCount = ws.columnCount;
+   259→  if (colCount > 0) {
+   260→    const lastLetter = ws.getColumn(colCount).letter;
+   261→    ws.autoFilter = `A1:${lastLetter}1`;
+   262→  }
+   263→
+   264→  // Page setup — fit-to-width when printing / exporting to PDF
+   265→  ws.pageSetup.orientation = "landscape";
+   266→  ws.pageSetup.fitToPage = true;
+   267→  ws.pageSetup.fitToWidth = 1;
+   268→  ws.pageSetup.fitToHeight = 0;
+   269→  ws.properties.defaultRowHeight = 18;
+   270→}
+   271→
+   272→function autoWidth(ws: ExcelJS.Worksheet, opts: { wrapCols?: Set<number> } = {}) {
+   273→  const wrapCols = opts.wrapCols ?? new Set<number>();
+   274→  const colCount = ws.columnCount;
+   275→  const rowCount = ws.rowCount;
+   276→  for (let c = 1; c <= colCount; c++) {
+   277→    let maxLen = 0;
+   278→    for (let r = 1; r <= rowCount; r++) {
+   279→      const cell = ws.getCell(r, c);
+   280→      let val = "";
+   281→      if (cell.value instanceof Date) {
+   282→        val = cell.value.toLocaleDateString();
+   283→      } else if (cell.value !== null && cell.value !== undefined) {
+   284→        val = String(cell.value);
+   285→      }
+   286→      if (wrapCols.has(c)) {
+   287→        if (val.length > maxLen && val.length <= 50) maxLen = val.length;
+   288→      } else {
+   289→        const lines = val.split("\n");
+   290→        const longest = Math.max(...lines.map((l) => l.length), 0);
+   291→        if (longest > maxLen) maxLen = longest;
+   292→      }
+   293→    }
+   294→    ws.getColumn(c).width = Math.min(Math.max(maxLen + 3, 12), 60);
+   295→  }
+   296→}
+   297→
+   298→function applyDataStyling(ws: ExcelJS.Worksheet, rowCount: number) {
+   299→  if (rowCount === 0) return;
+   300→  // Apply borders + zebra striping to data rows
+   301→  for (let r = 2; r <= rowCount + 1; r++) {
+   302→    const row = ws.getRow(r);
+   303→    row.border = {
+   304→      top: { style: "thin", color: { argb: BORDER_COLOR } },
+   305→      bottom: { style: "thin", color: { argb: BORDER_COLOR } },
+   306→      left: { style: "thin", color: { argb: BORDER_COLOR } },
+   307→      right: { style: "thin", color: { argb: BORDER_COLOR } },
+   308→    };
+   309→    if (r % 2 === 1) {
+   310→      // Light zebra stripe
+   311→      row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF6F8FA" } };
+   312→    }
+   313→    row.alignment = { vertical: "middle", horizontal: "left", wrapText: false };
+   314→  }
+   315→}
+   316→
+   317→function writeIdCell(ws: ExcelJS.Worksheet, row: ExcelJS.Row, colIdx: number, value: string) {
+   318→  // National IDs / ref numbers must be text — preserves leading zeros
+   319→  const cell = ws.getCell(row.number, colIdx);
+   320→  cell.value = String(value ?? "");
+   321→  cell.numFmt = "@";
+   322→}
+   323→
+   324→function writeDateCell(cell: ExcelJS.Cell, value: Date | string | null | undefined, withTime = false) {
+   325→  if (!value) {
+   326→    cell.value = "";
+   327→    return;
+   328→  }
+   329→  const date = typeof value === "string" ? new Date(value) : value;
+   330→  if (Number.isNaN(date.getTime())) {
+   331→    cell.value = "";
+   332→    return;
+   333→  }
+   334→  cell.value = date;
+   335→  cell.numFmt = withTime ? "yyyy-mm-dd hh:mm" : "yyyy-mm-dd";
+   336→}
+   337→
+   338→// ─────────────────────────────────────────────────────────────────────────────
+   339→// Main route
+   340→// ─────────────────────────────────────────────────────────────────────────────
+   341→export const GET = async (req: NextRequest) => {
+   342→  const user = await requireAuth();
+   343→
+   344→  // Contractors are scoped to their own company. Coordinators / Super Admin /
+   345→  // Company Admin can export ALL companies' data (they don't have companyId).
+   346→  const isGlobalRole = ["COORDINATOR", "SUPER_ADMIN", "COMPANY_ADMIN", "TRAINER", "AUDITOR"].includes(user.role);
+   347→  if (!user.companyId && !isGlobalRole) {
+   348→    return fail("No company linked", 403);
+   349→  }
+   350→
+   351→  const url = new URL(req.url);
+   352→  const scope = (url.searchParams.get("scope") || "last") as
+   353→    | "last" | "specific_request" | "specific_course" | "date_range" | "all";
+   354→  const items = (url.searchParams.get("items") || "").split(",").filter(Boolean);
+   355→  const localeParam = url.searchParams.get("locale") === "ar" ? "ar" : "en";
+   356→  const locale: Locale = localeParam;
+   357→  const specificId = url.searchParams.get("specificId") || undefined;
+   358→  const dateFrom = url.searchParams.get("dateFrom") || undefined;
+   359→  const dateTo = url.searchParams.get("dateTo") || undefined;
+   360→  const format = (url.searchParams.get("format") || "excel") as "excel" | "pdf" | "zip";
+   361→
+   362→  if (items.length === 0) {
+   363→    return fail("No items selected", 422, "VALIDATION_ERROR");
+   364→  }
+   365→
+   366→  const companyId = user.companyId; // undefined for global roles → no company filter
+   367→
+   368→  // ── Build the TrainingRequest where-clause ──
+   369→  // Contractors: scoped to their own company.
+   370→  // Coordinators/Admins: see ALL companies (no companyId filter).
+   371→  const reqWhere: Record<string, unknown> = { deletedAt: null };
+   372→  if (companyId) reqWhere.companyId = companyId;
+   373→  let scopeCourseId: string | undefined;
+   374→  let scopeCourseTitle = "";
+   375→  let scopeRequestRef = "";
+   376→
+   377→  switch (scope) {
+   378→    case "last": {
+   379→      const last = await db.trainingRequest.findFirst({
+   380→        where: reqWhere,
+   381→        orderBy: { createdAt: "desc" },
+   382→        select: { id: true, refNumber: true },
+   383→      });
+   384→      if (last) {
+   385→        reqWhere.id = last.id;
+   386→        scopeRequestRef = last.refNumber;
+   387→      }
+   388→      break;
+   389→    }
+   390→    case "specific_request": {
+   391→      if (specificId) {
+   392→        reqWhere.id = specificId;
+   393→        const r = await db.trainingRequest.findUnique({
+   394→          where: { id: specificId },
+   395→          select: { refNumber: true },
+   396→        });
+   397→        scopeRequestRef = r?.refNumber ?? specificId;
+   398→      }
+   399→      break;
+   400→    }
+   401→    case "specific_course": {
+   402→      if (specificId) {
+   403→        scopeCourseId = specificId;
+   404→        // A request is "for this course" if its primary courseId matches OR
+   405→        // any of its requestCourses.courseId matches.
+   406→        reqWhere.OR = [
+   407→          { courseId: specificId },
+   408→          { requestCourses: { some: { courseId: specificId, deletedAt: null } } },
+   409→        ];
+   410→        const c = await db.course.findUnique({ where: { id: specificId }, select: { title: true } });
+   411→        scopeCourseTitle = c?.title ?? specificId;
+   412→      }
+   413→      break;
+   414→    }
+   415→    case "date_range": {
+   416→      if (dateFrom || dateTo) {
+   417→        const range: Record<string, Date> = {};
+   418→        if (dateFrom) range.gte = new Date(dateFrom);
+   419→        if (dateTo) {
+   420→          const end = new Date(dateTo);
+   421→          end.setHours(23, 59, 59, 999);
+   422→          range.lte = end;
+   423→        }
+   424→        reqWhere.createdAt = range;
+   425→      }
+   426→      break;
+   427→    }
+   428→    case "all":
+   429→    default:
+   430→      // No additional filter — full company export
+   431→      break;
+   432→  }
+   433→
+   434→  // ── Fetch request ids (used by downstream sheets when scopeCourseId set) ──
+   435→  const allRequests = await db.trainingRequest.findMany({
+   436→    where: reqWhere,
+   437→    select: {
+   438→      id: true, refNumber: true, status: true, priority: true, traineeCount: true,
+   439→      preferredDateFrom: true, preferredDateTo: true, preferredLocation: true,
+   440→      preferredLanguage: true, notes: true, createdAt: true,
+   441→      company: { select: { name: true } },
+   442→      course: { select: { title: true } },
+   443→    },
+   444→    orderBy: { createdAt: "desc" },
+   445→  });
+   446→  const requestIds = allRequests.map((r) => r.id);
+   447→
+   448→  // ── Workbook ──
+   449→  const wb = new ExcelJS.Workbook();
+   450→  wb.creator = "GCCLAB TMS";
+   451→  wb.created = new Date();
+   452→  wb.modified = new Date();
+   453→
+   454→  // Counters for the Summary sheet
+   455→  const counts = {
+   456→    requests: 0, trainees: 0, attendance: 0, results: 0,
+   457→    evaluations: 0, certificates: 0, invoices: 0, attachments: 0, courses: 0,
+   458→  };
+   459→
+   460→  // Number of distinct courses touched by the requests
+   461→  if (requestIds.length > 0) {
+   462→    const distinctCourses = await db.trainingRequestCourse.findMany({
+   463→      where: { requestId: { in: requestIds }, deletedAt: null },
+   464→      select: { courseId: true },
+   465→      distinct: ["courseId"],
+   466→    });
+   467→    counts.courses = distinctCourses.length;
+   468→    // Include the primary course as well
+   469→    const primaryCourses = new Set(
+   470→      allRequests.map((r) => r.course?.title).filter(Boolean) as string[],
+   471→    );
+   472→    counts.courses = Math.max(counts.courses, primaryCourses.size);
+   473→  }
+   474→
+   475→  // ═══════════════════════════════════════════════════════════════════════════
+   476→  // SHEET 1 — Summary (always present, always first)
+   477→  // ═══════════════════════════════════════════════════════════════════════════
+   478→  const summaryWs = wb.addWorksheet(SHEET_NAMES.summary(locale));
+   479→  // Two-column layout: label | value
+   480→  summaryWs.columns = [
+   481→    { header: locale === "ar" ? "الحقل" : "Field", key: "field" },
+   482→    { header: locale === "ar" ? "القيمة" : "Value", key: "value" },
+   483→  ];
+   484→
+   485→  const companyName = allRequests[0]?.company?.name
+   486→    ?? (companyId ? (await db.company.findUnique({ where: { id: companyId }, select: { name: true } }))?.name : null)
+   487→    ?? (isGlobalRole ? (locale === "ar" ? "جميع الشركات" : "All Companies") : "");
+   488→  const scopeLabels: Record<string, string> = {
+   489→    last: locale === "ar" ? `آخر طلب (${scopeRequestRef})` : `Last request (${scopeRequestRef})`,
+   490→    specific_request: locale === "ar" ? `طلب محدد (${scopeRequestRef})` : `Specific request (${scopeRequestRef})`,
+   491→    specific_course: locale === "ar" ? `دورة محددة (${scopeCourseTitle})` : `Specific course (${scopeCourseTitle})`,
+   492→    date_range: locale === "ar"
+   493→      ? `نطاق تاريخ${dateFrom ? ` من ${dateFrom}` : ""}${dateTo ? ` إلى ${dateTo}` : ""}`
+   494→      : `Date range${dateFrom ? ` from ${dateFrom}` : ""}${dateTo ? ` to ${dateTo}` : ""}`,
+   495→    all: locale === "ar" ? "كل البيانات" : "All data",
+   496→  };
+   497→
+   498→  // We'll fill summary rows AFTER all data sheets have been built (so counts are populated).
+   499→  // For now, register the sheet so it stays first in the workbook.
+   500→  // We'll re-add rows at the end.
+   501→
+   502→  const itemLabels: Record<string, { en: string; ar: string }> = {
+   503→    requests: { en: "Training Requests", ar: "طلبات التدريب" },
+   504→    trainees: { en: "Trainees", ar: "المتدربون" },
+   505→    attendance: { en: "Attendance", ar: "الحضور" },
+   506→    results: { en: "Assessment Results", ar: "نتائج التقييم" },
+   507→    evaluations: { en: "Evaluations", ar: "التقييمات" },
+   508→    certificates: { en: "Certificates", ar: "الشهادات" },
+   509→    invoices: { en: "Invoices", ar: "الفواتير" },
+   510→    attachments: { en: "Attachments", ar: "المرفقات" },
+   511→  };
+   512→
+   513→  // ═══════════════════════════════════════════════════════════════════════════
+   514→  // SHEET — Training Requests
+   515→  // ═══════════════════════════════════════════════════════════════════════════
+   516→  if (items.includes("requests")) {
+   517→    const ws = wb.addWorksheet(SHEET_NAMES.requests(locale));
+   518→    const headers = HEADERS.requests(locale);
+   519→    ws.columns = headers.map((h) => ({ header: h, key: h }));
+   520→
+   521→    for (const r of allRequests) {
+   522→      const row = ws.addRow([
+   523→        r.refNumber,
+   524→        r.company?.name ?? "",
+   525→        r.course?.title ?? "",
+   526→        tx(REQUEST_STATUS, r.status, locale),
+   527→        tx(PRIORITY, r.priority, locale),
+   528→        r.traineeCount,
+   529→        "", // preferredDateFrom (set as date below)
+   530→        "", // preferredDateTo
+   531→        r.preferredLocation ?? "",
+   532→        r.preferredLanguage ?? "",
+   533→        r.notes ?? "",
+   534→        "", // createdAt
+   535→      ]);
+   536→      // Date cells
+   537→      writeDateCell(ws.getCell(row.number, 7), r.preferredDateFrom);
+   538→      writeDateCell(ws.getCell(row.number, 8), r.preferredDateTo);
+   539→      writeDateCell(ws.getCell(row.number, 12), r.createdAt, true);
+   540→      // Ref number as text
+   541→      writeIdCell(ws, row, 1, r.refNumber);
+   542→    }
+   543→    counts.requests = allRequests.length;
+   544→    styleSheet(ws, locale);
+   545→    autoWidth(ws, { wrapCols: new Set([11]) }); // wrap Notes
+   546→    applyDataStyling(ws, allRequests.length);
+   547→    // Wrap text on Notes column for all data rows
+   548→    if (allRequests.length > 0) {
+   549→      for (let r = 2; r <= allRequests.length + 1; r++) {
+   550→        ws.getCell(r, 11).alignment = { vertical: "top", wrapText: true };
+   551→      }
+   552→    }
+   553→  }
+   554→
+   555→  // ═══════════════════════════════════════════════════════════════════════════
+   556→  // SHEET — Trainees
+   557→  // ═══════════════════════════════════════════════════════════════════════════
+   558→  if (items.includes("trainees")) {
+   559→    const ws = wb.addWorksheet(SHEET_NAMES.trainees(locale));
+   560→    const headers = HEADERS.trainees(locale);
+   561→    ws.columns = headers.map((h) => ({ header: h, key: h }));
+   562→
+   563→    // Fetch trainees via requestCourses → trainees → trainee
+   564→    const reqsWithTrainees = await db.trainingRequest.findMany({
+   565→      where: reqWhere,
+   566→      select: {
+   567→        refNumber: true,
+   568→        requestCourses: {
+   569→          where: { deletedAt: null },
+   570→          select: {
+   571→            course: { select: { title: true } },
+   572→            trainees: {
+   573→              where: { deletedAt: null },
+   574→              include: {
+   575→                trainee: {
+   576→                  select: {
+   577→                    fullName: true, nationalId: true, nationality: true,
+   578→                    jobTitle: true, mobile: true, email: true, status: true,
+   579→                  },
+   580→                },
+   581→              },
+   582→            },
+   583→          },
+   584→        },
+   585→      },
+   586→      orderBy: { refNumber: "asc" },
+   587→    });
+   588→
+   589→    let traineeRowCount = 0;
+   590→    const seenTraineeIds = new Set<string>();
+   591→    for (const r of reqsWithTrainees) {
+   592→      for (const rc of r.requestCourses) {
+   593→        for (const trc of rc.trainees) {
+   594→          // Deduplicate by nationalId+fullName (trainee might appear in multiple courses)
+   595→          const dedupKey = `${trc.trainee.nationalId}|${trc.trainee.fullName}`;
+   596→          if (seenTraineeIds.has(dedupKey)) continue;
+   597→          seenTraineeIds.add(dedupKey);
+   598→          const row = ws.addRow([
+   599→            trc.trainee.fullName,
+   600→            "", // nationalId as text
+   601→            trc.trainee.nationality ?? "",
+   602→            trc.trainee.jobTitle ?? "",
+   603→            trc.trainee.mobile ?? "",
+   604→            trc.trainee.email ?? "",
+   605→            r.refNumber,
+   606→            tx(TRAINEE_STATUS, trc.trainee.status, locale),
+   607→          ]);
+   608→          writeIdCell(ws, row, 2, trc.trainee.nationalId);
+   609→          traineeRowCount++;
+   610→        }
+   611→      }
+   612→    }
+   613→    counts.trainees = traineeRowCount;
+   614→    styleSheet(ws, locale);
+   615→    autoWidth(ws);
+   616→    applyDataStyling(ws, traineeRowCount);
+   617→  }
+   618→
+   619→  // ═══════════════════════════════════════════════════════════════════════════
+   620→  // SHEET — Attendance
+   621→  // ═══════════════════════════════════════════════════════════════════════════
+   622→  if (items.includes("attendance")) {
+   623→    const ws = wb.addWorksheet(SHEET_NAMES.attendance(locale));
+   624→    const headers = HEADERS.attendance(locale);
+   625→    ws.columns = headers.map((h) => ({ header: h, key: h }));
+   626→
+   627→    // If a specific course is selected, only show attendance for sessions
+   628→    // whose request belongs to that course
+   629→    const sessionWhere: Record<string, unknown> = {
+   630→      request: reqWhere,
+   631→      deletedAt: null,
+   632→    };
+   633→    const sessions = await db.trainingSession.findMany({
+   634→      where: sessionWhere,
+   635→      select: {
+   636→        refNumber: true,
+   637→        attendance: {
+   638→          where: { deletedAt: null },
+   639→          select: {
+   640→            traineeName: true, traineeIdNational: true, status: true,
+   641→            checkInAt: true, checkOutAt: true,
+   642→          },
+   643→        },
+   644→      },
+   645→      orderBy: { refNumber: "asc" },
+   646→    });
+   647→
+   648→    let attendanceRowCount = 0;
+   649→    for (const s of sessions) {
+   650→      for (const a of s.attendance) {
+   651→        const row = ws.addRow([
+   652→          s.refNumber,
+   653→          a.traineeName,
+   654→          "", // nationalId as text
+   655→          tx(ATTENDANCE_STATUS, a.status, locale),
+   656→          "", // checkIn
+   657→          "", // checkOut
+   658→        ]);
+   659→        writeIdCell(ws, row, 3, a.traineeIdNational ?? "");
+   660→        writeDateCell(ws.getCell(row.number, 5), a.checkInAt, true);
+   661→        writeDateCell(ws.getCell(row.number, 6), a.checkOutAt, true);
+   662→        writeIdCell(ws, row, 1, s.refNumber);
+   663→        attendanceRowCount++;
+   664→      }
+   665→    }
+   666→    counts.attendance = attendanceRowCount;
+   667→    styleSheet(ws, locale);
+   668→    autoWidth(ws);
+   669→    applyDataStyling(ws, attendanceRowCount);
+   670→  }
+   671→
+   672→  // ═══════════════════════════════════════════════════════════════════════════
+   673→  // SHEET — Assessment Results
+   674→  // ═══════════════════════════════════════════════════════════════════════════
+   675→  if (items.includes("results")) {
+   676→    const ws = wb.addWorksheet(SHEET_NAMES.results(locale));
+   677→    const headers = HEADERS.results(locale);
+   678→    ws.columns = headers.map((h) => ({ header: h, key: h }));
+   679→
+   680→    const sessions = await db.trainingSession.findMany({
+   681→      where: { request: reqWhere, deletedAt: null },
+   682→      select: {
+   683→        refNumber: true,
+   684→        testResults: {
+   685→          where: { deletedAt: null },
+   686→          select: {
+   687→            traineeName: true, testType: true, scorePercent: true,
+   688→            passed: true, attemptedAt: true,
+   689→          },
+   690→        },
+   691→      },
+   692→      orderBy: { refNumber: "asc" },
+   693→    });
+   694→
+   695→    let resultsRowCount = 0;
+   696→    for (const s of sessions) {
+   697→      for (const r of s.testResults) {
+   698→        const row = ws.addRow([
+   699→          s.refNumber,
+   700→          r.traineeName,
+   701→          tx(TEST_TYPE, r.testType, locale),
+   702→          r.scorePercent,
+   703→          r.passed ? (locale === "ar" ? "ناجح" : "Passed") : (locale === "ar" ? "راسب" : "Failed"),
+   704→          "", // date
+   705→        ]);
+   706→        writeDateCell(ws.getCell(row.number, 6), r.attemptedAt, true);
+   707→        writeIdCell(ws, row, 1, s.refNumber);
+   708→        // Center score + result
+   709→        ws.getCell(row.number, 4).alignment = { horizontal: "center" };
+   710→        ws.getCell(row.number, 5).alignment = { horizontal: "center" };
+   711→        resultsRowCount++;
+   712→      }
+   713→    }
+   714→    counts.results = resultsRowCount;
+   715→    styleSheet(ws, locale);
+   716→    autoWidth(ws);
+   717→    applyDataStyling(ws, resultsRowCount);
+   718→  }
+   719→
+   720→  // ═══════════════════════════════════════════════════════════════════════════
+   721→  // SHEET — Evaluations
+   722→  // ═══════════════════════════════════════════════════════════════════════════
+   723→  if (items.includes("evaluations")) {
+   724→    const ws = wb.addWorksheet(SHEET_NAMES.evaluations(locale));
+   725→    const headers = HEADERS.evaluations(locale);
+   726→    ws.columns = headers.map((h) => ({ header: h, key: h }));
+   727→
+   728→    const sessions = await db.trainingSession.findMany({
+   729→      where: { request: reqWhere, deletedAt: null },
+   730→      select: {
+   731→        refNumber: true,
+   732→        evaluations: {
+   733→          where: { deletedAt: null },
+   734→          select: {
+   735→            traineeName: true, trainerRating: true, contentRating: true,
+   736→            overallRating: true, comments: true,
+   737→          },
+   738→        },
+   739→      },
+   740→      orderBy: { refNumber: "asc" },
+   741→    });
+   742→
+   743→    let evalRowCount = 0;
+   744→    for (const s of sessions) {
+   745→      for (const e of s.evaluations) {
+   746→        const row = ws.addRow([
+   747→          s.refNumber,
+   748→          e.traineeName,
+   749→          e.trainerRating ?? "",
+   750→          e.contentRating ?? "",
+   751→          e.overallRating ?? "",
+   752→          e.comments ?? "",
+   753→        ]);
+   754→        writeIdCell(ws, row, 1, s.refNumber);
+   755→        // Center numeric ratings
+   756→        for (const c of [3, 4, 5]) {
+   757→          ws.getCell(row.number, c).alignment = { horizontal: "center" };
+   758→        }
+   759→        evalRowCount++;
+   760→      }
+   761→    }
+   762→    counts.evaluations = evalRowCount;
+   763→    styleSheet(ws, locale);
+   764→    autoWidth(ws, { wrapCols: new Set([6]) }); // wrap Comments
+   765→    applyDataStyling(ws, evalRowCount);
+   766→    if (evalRowCount > 0) {
+   767→      for (let r = 2; r <= evalRowCount + 1; r++) {
+   768→        ws.getCell(r, 6).alignment = { vertical: "top", wrapText: true };
+   769→      }
+   770→    }
+   771→  }
+   772→
+   773→  // ═══════════════════════════════════════════════════════════════════════════
+   774→  // SHEET — Certificates
+   775→  // ═══════════════════════════════════════════════════════════════════════════
+   776→  if (items.includes("certificates")) {
+   777→    const ws = wb.addWorksheet(SHEET_NAMES.certificates(locale));
+   778→    const headers = HEADERS.certificates(locale);
+   779→    ws.columns = headers.map((h) => ({ header: h, key: h }));
+   780→
+   781→    // Filter certs by company (only for contractors), AND if specific_course — also by course
+   782→    const certWhere: Record<string, unknown> = { deletedAt: null };
+   783→    if (companyId) certWhere.companyId = companyId;
+   784→    if (scope === "specific_course" && scopeCourseId) {
+   785→      certWhere.courseId = scopeCourseId;
+   786→    } else if (requestIds.length > 0) {
+   787→      // Limit to certificates issued for sessions belonging to the in-scope requests
+   788→      certWhere.session = { request: { id: { in: requestIds } } };
+   789→    }
+   790→    const certs = await db.certificate.findMany({
+   791→      where: certWhere,
+   792→      select: {
+   793→        refNumber: true, traineeName: true, traineeIdNational: true,
+   794→        finalScore: true, issuedAt: true, validUntil: true, status: true,
+   795→        releaseStatus: true,
+   796→        session: { select: { refNumber: true } },
+   797→      },
+   798→      orderBy: { issuedAt: "desc" },
+   799→    });
+   800→
+   801→    let certRowCount = 0;
+   802→    for (const c of certs) {
+   803→      const row = ws.addRow([
+   804→        "", // refNumber as text
+   805→        c.session?.refNumber ?? "",
+   806→        c.traineeName,
+   807→        "", // nationalId as text
+   808→        c.finalScore,
+   809→        "", // issuedAt
+   810→        "", // validUntil
+   811→        tx(CERT_STATUS, c.status, locale),
+   812→        tx(CERT_RELEASE_STATUS, c.releaseStatus, locale),
+   813→      ]);
+   814→      writeIdCell(ws, row, 1, c.refNumber);
+   815→      writeIdCell(ws, row, 2, c.session?.refNumber ?? "");
+   816→      writeIdCell(ws, row, 4, c.traineeIdNational ?? "");
+   817→      writeDateCell(ws.getCell(row.number, 6), c.issuedAt);
+   818→      writeDateCell(ws.getCell(row.number, 7), c.validUntil);
+   819→      // Center score
+   820→      ws.getCell(row.number, 5).alignment = { horizontal: "center" };
+   821→      certRowCount++;
+   822→    }
+   823→    counts.certificates = certRowCount;
+   824→    styleSheet(ws, locale);
+   825→    autoWidth(ws);
+   826→    applyDataStyling(ws, certRowCount);
+   827→  }
+   828→
+   829→  // ═══════════════════════════════════════════════════════════════════════════
+   830→  // SHEET — Invoices
+   831→  // ═══════════════════════════════════════════════════════════════════════════
+   832→  if (items.includes("invoices")) {
+   833→    const ws = wb.addWorksheet(SHEET_NAMES.invoices(locale));
+   834→    const headers = HEADERS.invoices(locale);
+   835→    ws.columns = headers.map((h) => ({ header: h, key: h }));
+   836→
+   837→    // If specific_course scope, we still want invoices tied to requests in that course
+   838→    const invWhere: Record<string, unknown> = { deletedAt: null };
+   839→    if (companyId) invWhere.companyId = companyId;
+   840→    if (requestIds.length > 0) {
+   841→      invWhere.requestId = { in: requestIds };
+   842→    }
+   843→    const invoices = await db.invoice.findMany({
+   844→      where: invWhere,
+   845→      select: {
+   846→        refNumber: true, grandTotal: true, paidAmount: true,
+   847→        outstandingBalance: true, currency: true, status: true,
+   848→        issueDate: true, dueDate: true,
+   849→        request: { select: { refNumber: true } },
+   850→      },
+   851→      orderBy: { issueDate: "desc" },
+   852→    });
+   853→
+   854→    let invRowCount = 0;
+   855→    for (const inv of invoices) {
+   856→      const row = ws.addRow([
+   857→        "", // refNumber as text
+   858→        inv.request?.refNumber ?? "",
+   859→        inv.grandTotal,
+   860→        inv.paidAmount,
+   861→        inv.outstandingBalance,
+   862→        inv.currency,
+   863→        tx(INVOICE_STATUS, inv.status, locale),
+   864→        "", // issueDate
+   865→        "", // dueDate
+   866→      ]);
+   867→      writeIdCell(ws, row, 1, inv.refNumber);
+   868→      // Number format for currency columns
+   869→      for (const col of [3, 4, 5]) {
+   870→        const cell = ws.getCell(row.number, col);
+   871→        cell.numFmt = '#,##0.00';
+   872→        cell.alignment = { horizontal: "right" };
+   873→      }
+   874→      writeDateCell(ws.getCell(row.number, 8), inv.issueDate);
+   875→      writeDateCell(ws.getCell(row.number, 9), inv.dueDate);
+   876→      invRowCount++;
+   877→    }
+   878→    counts.invoices = invRowCount;
+   879→    styleSheet(ws, locale);
+   880→    autoWidth(ws);
+   881→    applyDataStyling(ws, invRowCount);
+   882→  }
+   883→
+   884→  // ═══════════════════════════════════════════════════════════════════════════
+   885→  // SHEET — Attachments (metadata only — no embedded files)
+   886→  // ═══════════════════════════════════════════════════════════════════════════
+   887→  // Declare rows + AttachmentRow type outside the if block so the ZIP
+   888→  // export section can also access them.
+   889→  type AttachmentRow = {
+   890→    fileName: string; fileType: string; category: string;
+   891→    traineeName: string; requestRef: string;
+   892→    uploadedAt: string; url: string;
+   893→  };
+   894→  const rows: AttachmentRow[] = [];
+   895→
+   896→  if (items.includes("attachments")) {
+   897→    const ws = wb.addWorksheet(SHEET_NAMES.attachments(locale));
+   898→    const headers = HEADERS.attachments(locale);
+   899→    ws.columns = headers.map((h) => ({ header: h, key: h }));
+   900→
+   901→    // Gather attachments from:
+   902→    //  1. Trainee.documents (JSON array) — single source of truth (Phase 3)
+   903→    //  2. TrainingRequest.documents (JSON array)
+   904→    // (AttachmentRow type + rows array declared above the if block)
+   905→    //
+   906→    // Phase 3: Trainee.idAttachmentUrl is no longer read. After Phase 2
+   907→    // backfill, every URL that was in idAttachmentUrl also lives in
+   908→    // documents[] as a `{type:"id"}` entry.
+   909→
+   910→    // Helper: extract a human-readable filename from the stored JSON.
+   911→    // The upload handler stores both `filename` (random hex) and `originalName`
+   912→    // (the real file name). Prefer originalName; fall back to filename; if
+   913→    // neither is available, extract from the URL path.
+   914→    function getDisplayName(doc: { filename?: string; originalName?: string; url?: string }): string {
+   915→      if (doc.originalName && doc.originalName.length > 0) return doc.originalName;
+   916→      if (doc.filename && doc.filename.length > 0 && !/^[a-f0-9]{32}\./.test(doc.filename)) return doc.filename;
+   917→      // If filename is a random hex hash, try to extract from URL
+   918→      const urlParts = doc.url?.split("/") ?? [];
+   919→      const lastPart = urlParts[urlParts.length - 1] ?? "attachment";
+   920→      // If even the URL part is a hex hash, show a generic name with extension
+   921→      if (/^[a-f0-9]{32}\./.test(lastPart)) {
+   922→        const ext = lastPart.split(".").pop() ?? "file";
+   923→        return `Attachment.${ext}`;
+   924→      }
+   925→      return lastPart;
+   926→    }
+   927→
+   928→    // 1. Trainee documents — ONLY for trainees linked to in-scope requests
+   929→    // (via the requestCourses → trainees junction). Previously this queried
+   930→    // ALL trainees in the company, which included old demo/test data.
+   931→    const traineeAttachWhere: Record<string, unknown> = { deletedAt: null };
+   932→    if (companyId) traineeAttachWhere.companyId = companyId;
+   933→    // Filter to only trainees that belong to in-scope requests
+   934→    if (requestIds.length > 0) {
+   935→      traineeAttachWhere.requestCourses = {
+   936→        some: {
+   937→          requestCourse: { requestId: { in: requestIds }, deletedAt: null },
+   938→          deletedAt: null,
+   939→        },
+   940→      };
+   941→    }
+   942→    const traineesForAttachments = await db.trainee.findMany({
+   943→      where: traineeAttachWhere,
+   944→      select: {
+   945→        fullName: true, nationalId: true, documents: true,
+   946→      },
+   947→    });
+   948→    // Fetch trainee→requestRef map separately
+   949→    const traineeRequestMap = new Map<string, string>();
+   950→    if (traineesForAttachments.length > 0) {
+   951→      const traineeIds = traineesForAttachments.map((t) => t.nationalId);
+   952→      // Use junction table to find which request each trainee belongs to
+   953→      const junctions = await db.trainingRequestCourseTrainee.findMany({
+   954→        where: { trainee: { nationalId: { in: traineeIds } }, deletedAt: null },
+   955→        select: {
+   956→          trainee: { select: { nationalId: true } },
+   957→          requestCourse: { select: { request: { select: { refNumber: true } } } },
+   958→        },
+   959→      });
+   960→      for (const j of junctions) {
+   961→        if (!traineeRequestMap.has(j.trainee.nationalId)) {
+   962→          traineeRequestMap.set(j.trainee.nationalId, j.requestCourse.request.refNumber);
+   963→        }
+   964→      }
+   965→    }
+   966→    for (const t of traineesForAttachments) {
+   967→      const reqRef = traineeRequestMap.get(t.nationalId) ?? "";
+   968→      // Phase 3: documents[] is the single source of truth. The legacy
+   969→      // `idAttachmentUrl` column is no longer read here — after Phase 2
+   970→      // backfill, every URL that was in idAttachmentUrl also lives in
+   971→      // documents[] (as a `{type:"id"}` entry), so iterating documents[]
+   972→      // alone produces the correct, deduplicated attachment rows.
+   973→      if (t.documents) {
+   974→        try {
+   975→          const docs = JSON.parse(t.documents) as Array<{
+   976→            url?: string; filename?: string; originalName?: string; type?: string; uploadedAt?: string;
+   977→          }>;
+   978→          for (const d of docs) {
+   979→            if (!d.url) continue;
+   980→            const fileName = getDisplayName(d);
+   981→            const ext = (d.url.split(".").pop() ?? "FILE").toUpperCase();
+   982→            rows.push({
+   983→              fileName,
+   984→              fileType: ext,
+   985→              category: d.type ?? (locale === "ar" ? "مرفق" : "Attachment"),
+   986→              traineeName: t.fullName,
+   987→              requestRef: reqRef,
+   988→              uploadedAt: d.uploadedAt ?? "",
+   989→              url: d.url,
+   990→            });
+   991→          }
+   992→        } catch {
+   993→          // ignore malformed JSON
+   994→        }
+   995→      }
+   996→    }
+   997→
+   998→    // 2. TrainingRequest documents — filter by scope
+   999→    const requestsForAttachments = await db.trainingRequest.findMany({
+  1000→      where: reqWhere,
+  1001→      select: { refNumber: true, documents: true, createdAt: true },
+  1002→    });
+  1003→    for (const r of requestsForAttachments) {
+  1004→      if (!r.documents) continue;
+  1005→      try {
+  1006→        const docs = JSON.parse(r.documents) as Array<{
+  1007→          url?: string; filename?: string; originalName?: string; type?: string; uploadedAt?: string;
+  1008→        }>;
+  1009→        for (const d of docs) {
+  1010→          if (!d.url) continue;
+  1011→          const fileName = getDisplayName(d);
+  1012→          const ext = (d.url.split(".").pop() ?? "FILE").toUpperCase();
+  1013→          rows.push({
+  1014→            fileName,
+  1015→            fileType: ext,
+  1016→            category: d.type ?? (locale === "ar" ? "طلب" : "Request"),
+  1017→            traineeName: "",
+  1018→            requestRef: r.refNumber,
+  1019→            uploadedAt: d.uploadedAt ?? r.createdAt.toISOString(),
+  1020→            url: d.url,
+  1021→          });
+  1022→        }
+  1023→      } catch {
+  1024→        // ignore malformed JSON
+  1025→      }
+  1026→    }
+  1027→
+  1028→    let attRowCount = 0;
+  1029→    // Build the base URL for attachment hyperlinks.
+  1030→    //
+  1031→    // The URL must point to wherever the app is actually serving files —
+  1032→    // the exported Excel should open attachments from the SAME server that
+  1033→    // generated the export. We build the URL from the request's own host
+  1034→    // (via reverse-proxy-aware headers), with a final fallback to the
+  1035→    // production domain.
+  1036→    //
+  1037→    // Priority:
+  1038→    //   1. x-forwarded-proto + x-forwarded-host (Render / load balancer)
+  1039→    //   2. Host header (direct access)
+  1040→    //   3. APP_URL env var (if set and not localhost/0.0.0.0)
+  1041→    //   4. Hardcoded production URL (last resort)
+  1042→    const PRODUCTION_URL = "https://trainflow-tms.onrender.com";
+  1043→
+  1044→    const fwdProto = req.headers.get("x-forwarded-proto") || "https";
+  1045→    const fwdHost = req.headers.get("x-forwarded-host");
+  1046→    const hostHeader = req.headers.get("host");
+  1047→    const envUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL;
+  1048→
+  1049→    let baseUrl: string;
+  1050→    if (fwdHost && !fwdHost.includes("0.0.0.0")) {
+  1051→      // Reverse proxy (Render, nginx, etc.) — trust x-forwarded-host
+  1052→      // but reject 0.0.0.0 (Render's internal bind address)
+  1053→      baseUrl = `${fwdProto}://${fwdHost}`;
+  1054→    } else if (hostHeader && !hostHeader.includes("0.0.0.0")) {
+  1055→      // Direct host header (includes localhost in dev — that's fine,
+  1056→      // the files ARE on localhost in dev mode)
+  1057→      baseUrl = `${req.nextUrl.protocol.replace(":", "")}://${hostHeader}`;
+  1058→    } else if (envUrl && !envUrl.includes("0.0.0.0") && !envUrl.includes("fcapp.run")) {
+  1059→      // Env var
+  1060→      baseUrl = envUrl;
+  1061→    } else {
+  1062→      // Last resort: production URL
+  1063→      baseUrl = PRODUCTION_URL;
+  1064→    }
+  1065→    baseUrl = baseUrl.replace(/\/+$/, "");
+  1066→
+  1067→    for (const a of rows) {
+  1068→      // Build the URL from the base + relative path.
+  1069→      // Strip any existing host from stored URLs (handles stale absolute URLs).
+  1070→      const relativePath = a.url.replace(/^https?:\/\/[^/]+/, "");
+  1071→      const fullUrl = `${baseUrl}${relativePath.startsWith("/") ? "" : "/"}${relativePath}`;
+  1072→      const row = ws.addRow([
+  1073→        a.fileName,
+  1074→        a.fileType,
+  1075→        a.category,
+  1076→        a.traineeName,
+  1077→        a.requestRef,
+  1078→        "", // uploadedAt as date
+  1079→        fullUrl,
+  1080→      ]);
+  1081→      writeDateCell(ws.getCell(row.number, 6), a.uploadedAt ? new Date(a.uploadedAt) : null, true);
+  1082→      writeIdCell(ws, row, 5, a.requestRef);
+  1083→      // Make URL cell a clickable hyperlink
+  1084→      const urlCell = ws.getCell(row.number, 7);
+  1085→      urlCell.value = { text: fullUrl, hyperlink: fullUrl };
+  1086→      urlCell.font = { color: { argb: "FF0563C1" }, underline: true };
+  1087→      attRowCount++;
+  1088→    }
+  1089→    counts.attachments = attRowCount;
+  1090→    styleSheet(ws, locale);
+  1091→    autoWidth(ws, { wrapCols: new Set([1, 7]) });
+  1092→    applyDataStyling(ws, attRowCount);
+  1093→    if (attRowCount > 0) {
+  1094→      for (let r = 2; r <= attRowCount + 1; r++) {
+  1095→        ws.getCell(r, 1).alignment = { vertical: "middle", wrapText: true };
+  1096→        ws.getCell(r, 7).alignment = { vertical: "middle", wrapText: true };
+  1097→      }
+  1098→    }
+  1099→  }
+  1100→
+  1101→  // ═══════════════════════════════════════════════════════════════════════════
+  1102→  // Populate Summary sheet content (now that all counts are known)
+  1103→  // ═══════════════════════════════════════════════════════════════════════════
+  1104→  const exportedItemsList = items
+  1105→    .filter((i) => itemLabels[i])
+  1106→    .map((i) => `• ${itemLabels[i][locale]}`)
+  1107→    .join("\n");
+  1108→
+  1109→  const summaryRows: Array<[string, string | number]> = [
+  1110→    [locale === "ar" ? "اسم الشركة" : "Company Name", companyName],
+  1111→    [locale === "ar" ? "تاريخ ووقت التصدير" : "Export Date & Time", new Date().toLocaleString(locale === "ar" ? "ar-SA" : "en-US")],
+  1112→    [locale === "ar" ? "اسم المستخدم" : "Exported By", user.fullName ?? user.email ?? ""],
+  1113→    [locale === "ar" ? "نطاق التصدير" : "Export Scope", scopeLabels[scope] ?? scope],
+  1114→    [locale === "ar" ? "اللغة" : "Language", locale === "ar" ? "العربية" : "English"],
+  1115→    [locale === "ar" ? "عدد الطلبات" : "Training Requests Count", counts.requests],
+  1116→    [locale === "ar" ? "عدد المتدربين" : "Trainees Count", counts.trainees],
+  1117→    [locale === "ar" ? "عدد الدورات" : "Courses Count", counts.courses],
+  1118→    [locale === "ar" ? "عدد سجلات الحضور" : "Attendance Records", counts.attendance],
+  1119→    [locale === "ar" ? "عدد نتائج التقييم" : "Assessment Results Count", counts.results],
+  1120→    [locale === "ar" ? "عدد التقييمات" : "Evaluations Count", counts.evaluations],
+  1121→    [locale === "ar" ? "عدد الشهادات" : "Certificates Count", counts.certificates],
+  1122→    [locale === "ar" ? "عدد الفواتير" : "Invoices Count", counts.invoices],
+  1123→    [locale === "ar" ? "عدد المرفقات" : "Attachments Count", counts.attachments],
+  1124→    [locale === "ar" ? "العناصر المُصدّرة" : "Exported Items", exportedItemsList],
+  1125→  ];
+  1126→
+  1127→  // Add a title row above headers
+  1128→  summaryWs.spliceRows(1, 0, []);
+  1129→  const titleRow = summaryWs.getRow(1);
+  1130→  titleRow.getCell(1).value = locale === "ar" ? "ملخص التصدير" : "Export Summary";
+  1131→  titleRow.font = { bold: true, size: 16, color: { argb: HEADER_FONT_COLOR } };
+  1132→  titleRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL } };
+  1133→  titleRow.alignment = { vertical: "middle", horizontal: "center" };
+  1134→  titleRow.height = 32;
+  1135→  summaryWs.mergeCells("A1:B1");
+  1136→
+  1137→  // Now row 2 is the column header row
+  1138→  const headerRow = summaryWs.getRow(2);
+  1139→  headerRow.font = { bold: true, size: 11, color: { argb: HEADER_FONT_COLOR } };
+  1140→  headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL } };
+  1141→  headerRow.alignment = { vertical: "middle", horizontal: "center" };
+  1142→  headerRow.height = 24;
+  1143→  headerRow.border = {
+  1144→    top: { style: "thin", color: { argb: BORDER_COLOR } },
+  1145→    bottom: { style: "medium", color: { argb: BORDER_COLOR } },
+  1146→    left: { style: "thin", color: { argb: BORDER_COLOR } },
+  1147→    right: { style: "thin", color: { argb: BORDER_COLOR } },
+  1148→  };
+  1149→
+  1150→  // Data rows
+  1151→  for (let i = 0; i < summaryRows.length; i++) {
+  1152→    const [label, value] = summaryRows[i];
+  1153→    const r = summaryWs.getRow(i + 3);
+  1154→    r.getCell(1).value = label;
+  1155→    r.getCell(2).value = value;
+  1156→    r.alignment = { vertical: "middle", wrapText: label === (locale === "ar" ? "العناصر المُصدّرة" : "Exported Items") };
+  1157→    r.border = {
+  1158→      top: { style: "thin", color: { argb: BORDER_COLOR } },
+  1159→      bottom: { style: "thin", color: { argb: BORDER_COLOR } },
+  1160→      left: { style: "thin", color: { argb: BORDER_COLOR } },
+  1161→      right: { style: "thin", color: { argb: BORDER_COLOR } },
+  1162→    };
+  1163→    r.getCell(1).font = { bold: true, size: 11 };
+  1164→    r.getCell(2).font = { size: 11 };
+  1165→    if (i % 2 === 1) {
+  1166→      r.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF6F8FA" } };
+  1167→    }
+  1168→  }
+  1169→
+  1170→  // Column widths
+  1171→  summaryWs.getColumn(1).width = 32;
+  1172→  summaryWs.getColumn(2).width = 60;
+  1173→
+  1174→  // Freeze title + header
+  1175→  const summaryView: Partial<ExcelJS.WorksheetView> = { state: "frozen", ySplit: 2 };
+  1176→  if (locale === "ar") summaryView.rightToLeft = true;
+  1177→  summaryWs.views = [summaryView as ExcelJS.WorksheetView];
+  1178→
+  1179→  // Page setup for Summary
+  1180→  summaryWs.pageSetup.orientation = "portrait";
+  1181→  summaryWs.pageSetup.fitToPage = true;
+  1182→  summaryWs.pageSetup.fitToWidth = 1;
+  1183→  summaryWs.pageSetup.fitToHeight = 1;
+  1184→
+  1185→  // Set active sheet to Summary
+  1186→  summaryWs.views = summaryWs.views; // ensure applied
+  1187→  wb.views = wb.views; // ensure workbook views applied
+  1188→
+  1189→  // ── Generate response based on format ──
+  1190→  // Every export generates a completely NEW file — no caching at any level.
+  1191→  // Filename format: <CourseName>_<RequestNumber>.<ext>
+  1192→  // Sanitize invalid filename characters.
+  1193→  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  1194→
+  1195→  // Build the filename base: <CourseName>_<RequestNumber>
+  1196→  // For scope=specific_request, use the actual request ref number.
+  1197→  // For other scopes, use the scope tag.
+  1198→  const courseNameForFile = (allRequests[0]?.course?.title ?? scopeCourseTitle ?? "Export")
+  1199→    .replace(/[^a-zA-Z0-9\u0600-\u06FF\u0750-\u077F_-]/g, "_") // sanitize
+  1200→    .replace(/_+/g, "_")
+  1201→    .slice(0, 40);
+  1202→  const requestRefForFile = scopeRequestRef || (allRequests[0]?.refNumber ?? "all");
+  1203→  const fileBase = `${courseNameForFile}_${requestRefForFile}`;
+  1204→
+  1205→  // ── EXCEL: generate .xlsx buffer ──
+  1206→  const excelBuffer = await wb.xlsx.writeBuffer();
+  1207→  const excelFilename = `${fileBase}.xlsx`;
+  1208→
+  1209→  // Helper: generate PDF buffer from HTML via LibreOffice
+  1210→  async function generatePdfBuffer(): Promise<Buffer> {
+  1211→    const { execSync } = await import("child_process");
+  1212→    const fs = await import("fs/promises");
+  1213→    const os = await import("os");
+  1214→    const pathMod = await import("path");
+  1215→
+  1216→    const isAr = locale === "ar";
+  1217→    const dir = isAr ? "rtl" : "ltr";
+  1218→    const textAlign = isAr ? "right" : "left";
+  1219→
+  1220→    const summaryRows = [
+  1221→      [isAr ? "اسم الشركة" : "Company Name", companyName],
+  1222→      [isAr ? "نطاق التصدير" : "Export Scope", scopeLabels[scope] ?? scope],
+  1223→      [isAr ? "اللغة" : "Language", isAr ? "العربية" : "English"],
+  1224→      [isAr ? "عدد الطلبات" : "Training Requests", String(counts.requests)],
+  1225→      [isAr ? "عدد المتدربين" : "Trainees", String(counts.trainees)],
+  1226→      [isAr ? "عدد الدورات" : "Courses", String(counts.courses)],
+  1227→      [isAr ? "عدد الشهادات" : "Certificates", String(counts.certificates)],
+  1228→      [isAr ? "عدد الفواتير" : "Invoices", String(counts.invoices)],
+  1229→      [isAr ? "عدد المرفقات" : "Attachments", String(counts.attachments)],
+  1230→    ].map(([l, v]) => `<tr><td style="padding:4px 12px;color:#666;font-weight:600">${l}</td><td style="padding:4px 12px">${v}</td></tr>`).join("");
+  1231→
+  1232→    let requestsRows = "";
+  1233→    if (items.includes("requests") && allRequests.length > 0) {
+  1234→      const rows = allRequests.map(r =>
+  1235→        `<tr><td style="padding:3px 8px;border-bottom:1px solid #eee">${r.refNumber}</td><td style="padding:3px 8px;border-bottom:1px solid #eee">${r.company?.name ?? ""}</td><td style="padding:3px 8px;border-bottom:1px solid #eee">${r.course?.title ?? ""}</td><td style="padding:3px 8px;border-bottom:1px solid #eee">${tx(REQUEST_STATUS, r.status, locale)}</td><td style="padding:3px 8px;border-bottom:1px solid #eee">${tx(PRIORITY, r.priority, locale)}</td></tr>`
+  1236→      ).join("");
+  1237→      requestsRows = `
+  1238→        <h2 style="margin-top:24px">${isAr ? "طلبات التدريب" : "Training Requests"}</h2>
+  1239→        <table style="width:100%;border-collapse:collapse;font-size:9pt">
+  1240→          <thead><tr><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "رقم الطلب" : "Request #"}</th><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "الشركة" : "Company"}</th><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "الدورة" : "Course"}</th><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "الحالة" : "Status"}</th><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "الأولوية" : "Priority"}</th></tr></thead>
+  1241→          <tbody>${rows}</tbody>
+  1242→        </table>`;
+  1243→    }
+  1244→
+  1245→    let traineeRows = "";
+  1246→    if (items.includes("trainees")) {
+  1247→      const allTraineeData: string[] = [];
+  1248→      const reqsWithTrainees = await db.trainingRequest.findMany({
+  1249→        where: reqWhere,
+  1250→        select: {
+  1251→          refNumber: true,
+  1252→          requestCourses: {
+  1253→            where: { deletedAt: null },
+  1254→            select: {
+  1255→              trainees: {
+  1256→                where: { deletedAt: null },
+  1257→                include: {
+  1258→                  trainee: { select: { fullName: true, nationalId: true, nationality: true, jobTitle: true } },
+  1259→                },
+  1260→              },
+  1261→            },
+  1262→          },
+  1263→        },
+  1264→      });
+  1265→      for (const r of reqsWithTrainees) {
+  1266→        for (const rc of r.requestCourses) {
+  1267→          for (const trc of rc.trainees) {
+  1268→            allTraineeData.push(`<tr><td style="padding:3px 8px;border-bottom:1px solid #eee">${trc.trainee.fullName}</td><td style="padding:3px 8px;border-bottom:1px solid #eee">${trc.trainee.nationalId}</td><td style="padding:3px 8px;border-bottom:1px solid #eee">${trc.trainee.nationality ?? ""}</td><td style="padding:3px 8px;border-bottom:1px solid #eee">${trc.trainee.jobTitle ?? ""}</td><td style="padding:3px 8px;border-bottom:1px solid #eee">${r.refNumber}</td></tr>`);
+  1269→          }
+  1270→        }
+  1271→      }
+  1272→      if (allTraineeData.length > 0) {
+  1273→        traineeRows = `
+  1274→          <h2 style="margin-top:24px">${isAr ? "المتدربون" : "Trainees"}</h2>
+  1275→          <table style="width:100%;border-collapse:collapse;font-size:9pt">
+  1276→            <thead><tr><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "الاسم" : "Name"}</th><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "رقم الهوية" : "National ID"}</th><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "الجنسية" : "Nationality"}</th><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "المهنة" : "Job Title"}</th><th style="padding:3px 8px;text-align:${textAlign};border-bottom:2px solid #ddd">${isAr ? "رقم الطلب" : "Request #"}</th></tr></thead>
+  1277→            <tbody>${allTraineeData.join("")}</tbody>
+  1278→          </table>`;
+  1279→      }
+  1280→    }
+  1281→
+  1282→    const itemLabels: Record<string, { en: string; ar: string }> = {
+  1283→      requests: { en: "Training Requests", ar: "طلبات التدريب" },
+  1284→      trainees: { en: "Trainees", ar: "المتدربون" },
+  1285→      attendance: { en: "Attendance", ar: "الحضور" },
+  1286→      results: { en: "Assessment Results", ar: "نتائج التقييم" },
+  1287→      evaluations: { en: "Evaluations", ar: "التقييمات" },
+  1288→      certificates: { en: "Certificates", ar: "الشهادات" },
+  1289→      invoices: { en: "Invoices", ar: "الفواتير" },
+  1290→      attachments: { en: "Attachments", ar: "المرفقات" },
+  1291→    };
+  1292→    const itemsList = items.filter(i => itemLabels[i]).map(i => `<li>${itemLabels[i][locale]}</li>`).join("");
+  1293→
+  1294→    const html = `<!DOCTYPE html>
+  1295→<html lang="${locale}" dir="${dir}">
+  1296→<head>
+  1297→<meta charset="UTF-8">
+  1298→<style>
+  1299→  @font-face { font-family: 'NotoNaskhArabic'; src: url('file://${process.cwd()}/public/fonts/NotoNaskhArabic-Regular.ttf'); }
+  1300→  body { font-family: 'NotoNaskhArabic', 'DejaVu Sans', sans-serif; font-size: 10pt; color: #333; margin: 40px; }
+  1301→  h1 { font-size: 20pt; color: #1f3a5f; text-align: center; margin-bottom: 5px; }
+  1302→  h2 { font-size: 14pt; color: #1f3a5f; border-bottom: 2px solid #1f3a5f; padding-bottom: 4px; }
+  1303→  .subtitle { text-align: center; font-size: 9pt; color: #999; margin-bottom: 20px; }
+  1304→  table { width: 100%; border-collapse: collapse; }
+  1305→  th { background: #f0f4f8; font-weight: bold; }
+  1306→</style>
+  1307→</head>
+  1308→<body>
+  1309→  <h1>GCCLAB TMS — ${isAr ? "تقرير التصدير" : "Export Report"}</h1>
+  1310→  <p class="subtitle">${new Date().toLocaleString(isAr ? "ar-SA" : "en-US")}</p>
+  1311→  <h2>${isAr ? "الملخص" : "Summary"}</h2>
+  1312→  <table><tbody>${summaryRows}</tbody></table>
+  1313→  ${requestsRows}
+  1314→  ${traineeRows}
+  1315→  <h2 style="margin-top:24px">${isAr ? "العناصر المُصدّرة" : "Exported Items"}</h2>
+  1316→  <ul>${itemsList}</ul>
+  1317→</body>
+  1318→</html>`;
+  1319→
+  1320→    // Use unique temp filenames to prevent file reuse
+  1321→    const tmpDir = os.tmpdir();
+  1322→    const uniqueId = `${stamp}-${Math.random().toString(36).slice(2, 8)}`;
+  1323→    const htmlPath = pathMod.join(tmpDir, `gcclab-${uniqueId}.html`);
+  1324→    await fs.writeFile(htmlPath, html, "utf-8");
+  1325→
+  1326→    try {
+  1327→      execSync(`libreoffice --headless --norestore --nolockcheck --convert-to pdf --outdir ${tmpDir} ${htmlPath}`, {
+  1328→        timeout: 30000,
+  1329→        env: { ...process.env, HOME: process.env.HOME || "/tmp" },
+  1330→      });
+  1331→      const pdfPath = pathMod.join(tmpDir, `gcclab-${uniqueId}.pdf`);
+  1332→      const pdfBuffer = await fs.readFile(pdfPath);
+  1333→      // Cleanup temp files
+  1334→      await fs.unlink(htmlPath).catch(() => {});
+  1335→      await fs.unlink(pdfPath).catch(() => {});
+  1336→      return pdfBuffer;
+  1337→    } catch {
+  1338→      // If LibreOffice fails, return HTML as fallback
+  1339→      await fs.unlink(htmlPath).catch(() => {});
+  1340→      return Buffer.from(html, "utf-8");
+  1341→    }
+  1342→  }
+  1343→
+  1344→  // ── PDF format ──
+  1345→  if (format === "pdf") {
+  1346→    const pdfBuffer = await generatePdfBuffer();
+  1347→    const pdfFilename = `${fileBase}.pdf`;
+  1348→    const isPdfFallback = pdfBuffer.length > 0 && pdfBuffer[0] === 0x25; // '%' = HTML, '%PDF' = real PDF
+  1349→    // Wrap with Uint8Array: Buffer extends Uint8Array at runtime (zero-copy),
+  1350→    // but TypeScript's DOM lib types Response's BodyInit more narrowly and
+  1351→    // rejects Buffer directly. This fixes the CI typecheck failure.
+  1352→    return new Response(new Uint8Array(pdfBuffer), {
+  1353→      headers: {
+  1354→        "Content-Type": isPdfFallback ? "application/pdf" : "text/html; charset=utf-8",
+  1355→        "Content-Disposition": `attachment; filename="${pdfFilename}"`,
+  1356→        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+  1357→        "Pragma": "no-cache",
+  1358→        "Expires": "0",
+  1359→      },
+  1360→    });
+  1361→  }
+  1362→
+  1363→  // ── ZIP format: Excel + PDF + Attachments ──
+  1364→  if (format === "zip") {
+  1365→    const JSZip = (await import("jszip")).default;
+  1366→    const zip = new JSZip();
+  1367→
+  1368→    // Add Excel
+  1369→    zip.file(excelFilename, excelBuffer);
+  1370→
+  1371→    // Add PDF
+  1372→    const pdfBuffer = await generatePdfBuffer();
+  1373→    zip.file(`${fileBase}.pdf`, pdfBuffer);
+  1374→
+  1375→    // Add attachment files with original filenames
+  1376→    if (items.includes("attachments") && rows.length > 0) {
+  1377→      const attachmentsFolder = zip.folder("attachments");
+  1378→      if (attachmentsFolder) {
+  1379→        const fs = await import("fs/promises");
+  1380→        const path = await import("path");
+  1381→        for (const a of rows) {
+  1382→          const relativePath = a.url.replace(/^https?:\/\/[^/]+/, "");
+  1383→          // Use the original display name, fallback to URL basename
+  1384→          const fileName = a.fileName || relativePath.split("/").pop() || "attachment";
+  1385→          const filePath = path.join(process.cwd(), "public", relativePath);
+  1386→          try {
+  1387→            const fileData = await fs.readFile(filePath);
+  1388→            attachmentsFolder.file(fileName, fileData);
+  1389→          } catch {
+  1390→            // File not on disk — add a text file with metadata
+  1391→            attachmentsFolder.file(`${fileName}.url.txt`, `URL: ${a.url}\nTrainee: ${a.traineeName}\nRequest: ${a.requestRef}`);
+  1392→          }
+  1393→        }
+  1394→      }
+  1395→    }
+  1396→
+  1397→    const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
+  1398→    const zipFilename = `${fileBase}.zip`;
+  1399→    // Wrap with Uint8Array (zero-copy) to satisfy Response BodyInit typing.
+  1400→    return new Response(new Uint8Array(zipBuffer), {
+  1401→      headers: {
+  1402→        "Content-Type": "application/zip",
+  1403→        "Content-Disposition": `attachment; filename="${zipFilename}"`,
+  1404→        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+  1405→        "Pragma": "no-cache",
+  1406→        "Expires": "0",
+  1407→      },
+  1408→    });
+  1409→  }
+  1410→
+  1411→  // ── Default: Excel ──
+  1412→  return new Response(excelBuffer, {
+  1413→    headers: {
+  1414→      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  1415→      "Content-Disposition": `attachment; filename="${excelFilename}"`,
+  1416→      "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+  1417→      "Pragma": "no-cache",
+  1418→      "Expires": "0",
+  1419→    },
+  1420→  });
+  1421→};
+  1422→
