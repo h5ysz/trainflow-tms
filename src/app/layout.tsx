@@ -1,15 +1,12 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import { IBM_Plex_Sans_Arabic } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-  display: "swap",
-});
-
+// Single font for the entire application — IBM Plex Sans Arabic.
+// It has excellent coverage for both Arabic and Latin scripts, so we
+// use ONE font everywhere (no Inter/Plex switching). This unifies
+// typography across LTR and RTL layouts.
 const plexArabic = IBM_Plex_Sans_Arabic({
   variable: "--font-plex-arabic",
   subsets: ["arabic", "latin"],
@@ -35,7 +32,7 @@ export default function RootLayout({
   return (
     <html lang="en" dir="ltr" suppressHydrationWarning>
       <body
-        className={`${inter.variable} ${plexArabic.variable} antialiased bg-background text-foreground`}
+        className={`${plexArabic.variable} antialiased bg-background text-foreground`}
       >
         {children}
         <Toaster />

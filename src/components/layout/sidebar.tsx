@@ -1,25 +1,23 @@
 "use client";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GCCLAB TMS — Premium Sidebar Navigation (UI/UX Redesign)
+// GCCLAB TMS — Premium Enterprise Sidebar
 // ─────────────────────────────────────────────────────────────────────────────
 // Modern, compact sidebar inspired by Microsoft 365 Admin Center, Azure Portal,
 // Notion, and Linear. Features:
-//   - Search box at the top to filter navigation items
+//   - NO search box (global search lives in the topbar only)
 //   - Grouped sections with clear visual separation
 //   - Active item: primary-color indicator bar + subtle bg + bolder font
 //   - Compact spacing (reduced vertical gaps)
-//   - Professional footer: user info + profile/settings + logout
+//   - Professional footer: user info + settings + logout
 //   - RTL-aware (logical CSS properties)
 //   - Smooth hover/active transitions
 //
 // NO changes to: permissions, routing, business logic, APIs, database, branding.
-// The logo, nav items, RBAC, and navigation behavior are all preserved.
 
 import { useI18n } from "@/lib/i18n/context";
 import { useAppStore } from "@/lib/store/app-store";
-import { getNavForRole, type NavItem } from "@/lib/auth/permissions";
-import { canAccessModule } from "@/lib/auth/permissions";
+import { getNavForRole, canAccessModule, type NavItem } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import {
@@ -27,10 +25,9 @@ import {
   ClipboardList, CalendarDays, CalendarRange, CalendarClock, UserCheck, QrCode,
   FilePen, FileCheck2, Star, BadgeCheck, BarChart3, ScrollText,
   Bell, Settings, UserPlus, ShieldCheck, BookUser, ClipboardCheck, TrendingUp, RefreshCw,
-  Search, LogOut, UserCircle, Sparkles,
+  LogOut, Sparkles,
   type LucideIcon,
 } from "lucide-react";
-import { useState, useMemo, useRef, useEffect } from "react";
 
 const ICONS: Record<string, LucideIcon> = {
   LayoutDashboard, Building2, Contact, Users, Award, UserSquare, BookOpen,
@@ -53,39 +50,14 @@ const GROUP_LABELS: Record<NavItem["group"], string> = {
 export function Sidebar() {
   const { t, locale } = useI18n();
   const { currentRoute, navigate, user, signOut } = useAppStore();
-  const [searchQuery, setSearchQuery] = useState("");
-  const searchInputRef = useRef<HTMLInputElement>(null);
-
-  // Keyboard shortcut: focus search on "/" — must be before any early return
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "/" && !e.ctrlKey && !e.metaKey && document.activeElement?.tagName !== "INPUT") {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, []);
-
-  const items = user ? getNavForRole(user.permissions) : [];
-
-  // Filter items by search query (matches label text)
-  const filteredItems = useMemo(() => {
-    if (!searchQuery.trim()) return items;
-    const q = searchQuery.toLowerCase();
-    return items.filter((item) => {
-      const label = t(item.labelKey as never).toLowerCase();
-      return label.includes(q);
-    });
-  }, [items, searchQuery, t]);
 
   if (!user) return null;
+  const items = getNavForRole(user.permissions);
 
   const grouped = GROUP_ORDER.map((group) => ({
     group,
     label: t(GROUP_LABELS[group] as never),
-    items: filteredItems.filter((i) => i.group === group),
+    items: items.filter((i) => i.group === group),
   })).filter((g) => g.items.length > 0);
 
   const userInitials = user.fullName.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase();
@@ -111,36 +83,8 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* ─── Search Box ──────────────────────────────────────────────── */}
-      <div className="px-3 pt-3 pb-2 shrink-0">
-        <div className="relative">
-          <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50 pointer-events-none" />
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={locale === "en" ? "Search..." : "بحث..."}
-            className="w-full h-8 rounded-lg bg-sidebar-accent/40 border border-sidebar-border/50 ps-8 pe-2 text-[12px] text-sidebar-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 focus:bg-sidebar-accent/60 transition-all"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute end-1.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-foreground text-xs"
-            >
-              ✕
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* ─── Navigation ─────────────────────────────────────────────── */}
-      <nav className="flex-1 overflow-y-auto tf-scroll px-2 py-1">
-        {grouped.length === 0 && searchQuery && (
-          <div className="px-3 py-6 text-center text-[12px] text-muted-foreground/60">
-            {locale === "en" ? "No results found" : "لا توجد نتائج"}
-          </div>
-        )}
+      {/* ─── Navigation (no search box — global search is in the topbar) ── */}
+      <nav className="flex-1 overflow-y-auto tf-scroll px-2 py-2">
         {grouped.map(({ group, label, items: groupItems }) => (
           <div key={group} className="mb-3">
             {label && (
@@ -210,7 +154,7 @@ export function Sidebar() {
               title={locale === "en" ? "Settings" : "الإعدادات"}
             >
               <Settings className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{locale === "en" ? "Settings" : "الإعدادات"}</span>
+              <span className="hidden sm:inline">{locale === "en" ? "Settings" : "الإعدارات"}</span>
             </button>
           )}
           <button
