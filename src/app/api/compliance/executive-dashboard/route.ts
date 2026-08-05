@@ -3,14 +3,14 @@
 // Sprint 6: Executive dashboard for GCCLAB administrators.
 // Returns all KPIs + chart data in a single API call for <2s load.
 // Filters: companyId, courseId, dateFrom, dateTo
-// Permissions: SUPER_ADMIN, COORDINATOR
+// Permissions: SUPER_ADMIN, COORDINATOR, TRAINER
 import { db } from "@/lib/db";
 import { withErrorEnvelope, requireRole, ok } from "@/lib/auth/api";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export const GET = withErrorEnvelope(async function GET(req: Request) {
-  await requireRole("SUPER_ADMIN", "COORDINATOR");
+  await requireRole("SUPER_ADMIN", "COORDINATOR", "TRAINER");
 
   const url = new URL(req.url);
   const companyId = url.searchParams.get("companyId");
