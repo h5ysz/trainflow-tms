@@ -297,12 +297,12 @@ export function Topbar() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="gap-2.5 h-12 px-2 sm:px-3 rounded-xl">
-              <Avatar className="h-10 w-10 ring-2 ring-primary/15">
-                <AvatarFallback className="bg-primary/10 text-primary text-[13px] font-bold">{initials}</AvatarFallback>
+              <Avatar className="h-[42px] w-[42px] ring-2 ring-primary/15">
+                <AvatarFallback className="bg-primary/10 text-primary text-[14px] font-bold">{initials}</AvatarFallback>
               </Avatar>
               <div className="hidden sm:flex flex-col items-start leading-tight gap-0.5">
-                <span className="text-[16px] font-semibold text-foreground truncate max-w-[140px]">{user.fullName}</span>
-                <span className="text-[13px] text-muted-foreground/80 truncate max-w-[140px]">
+                <span className="text-[16px] font-semibold text-foreground truncate max-w-[130px]">{user.fullName}</span>
+                <span className="text-[13px] text-muted-foreground/80 truncate max-w-[130px]">
                   {user.companyName || t(`role.${user.role}` as const)}
                 </span>
               </div>
@@ -310,20 +310,20 @@ export function Topbar() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align={dir === "rtl" ? "start" : "end"} className="w-72">
-            <DropdownMenuLabel className="flex flex-col gap-2 p-3">
+            <DropdownMenuLabel className="flex flex-col gap-2.5 p-3.5">
               <div className="flex items-center gap-3">
-                <Avatar className="h-11 w-11 ring-2 ring-primary/15">
+                <Avatar className="h-[42px] w-[42px] ring-2 ring-primary/15">
                   <AvatarFallback className="bg-primary/10 text-primary text-[14px] font-bold">{initials}</AvatarFallback>
                 </Avatar>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[15px] font-semibold text-foreground truncate">{user.fullName}</div>
+                  <div className="text-[16px] font-semibold text-foreground truncate">{user.fullName}</div>
                   <div className="text-[13px] text-muted-foreground/80 truncate">{user.email}</div>
                 </div>
               </div>
               <div className="flex items-center justify-between pt-1.5 border-t">
                 <RoleBadge role={user.role} icon={RoleIcon} />
                 {user.companyName && (
-                  <span className="text-[11px] text-muted-foreground/60 truncate max-w-[120px]">{user.companyName}</span>
+                  <span className="text-[12px] text-muted-foreground/60 truncate max-w-[120px]">{user.companyName}</span>
                 )}
               </div>
             </DropdownMenuLabel>

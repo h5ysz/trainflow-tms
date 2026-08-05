@@ -45,7 +45,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex flex-1 flex-col min-w-0">
         <Topbar />
         <main className="flex-1 overflow-y-auto tf-scroll">
-          <div className="w-full p-4 lg:p-6">
+          <div className="w-full p-4 lg:p-5">
             {children}
           </div>
         </main>
