@@ -433,12 +433,17 @@ export function TrainingRequestsRoute() {
     {
       key: "company",
       header: t("requests.company"),
+      // Allow this cell to wrap long company names onto 2 lines instead of
+      // forcing the whole table to grow a horizontal scrollbar. Only this
+      // column and the course column wrap — every other column stays
+      // whitespace-nowrap (inherited from the base TableCell).
+      className: "whitespace-normal",
       cell: (r) => (
         <div className="flex items-center gap-2 text-sm">
-          <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-          <div>
-            <div>{r.companyName || "—"}</div>
-            {r.companyRef && <div className="text-[10px] text-muted-foreground font-mono">{r.companyRef}</div>}
+          <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <div className="min-w-0">
+            <div className="break-words">{r.companyName || "—"}</div>
+            {r.companyRef && <div className="text-[10px] text-muted-foreground font-mono whitespace-nowrap">{r.companyRef}</div>}
           </div>
         </div>
       ),
@@ -446,12 +451,14 @@ export function TrainingRequestsRoute() {
     {
       key: "course",
       header: t("requests.course"),
+      // Same wrapping strategy as the company column.
+      className: "whitespace-normal",
       cell: (r) => (
         <div className="flex items-center gap-2 text-sm">
-          <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
-          <div>
-            <div>{r.courseTitle || "—"}</div>
-            {r.courseCode && <div className="text-[10px] text-muted-foreground font-mono">{r.courseCode}</div>}
+          <BookOpen className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <div className="min-w-0">
+            <div className="break-words">{r.courseTitle || "—"}</div>
+            {r.courseCode && <div className="text-[10px] text-muted-foreground font-mono whitespace-nowrap">{r.courseCode}</div>}
           </div>
         </div>
       ),
@@ -459,6 +466,10 @@ export function TrainingRequestsRoute() {
     {
       key: "trainees",
       header: t("requests.traineeCount"),
+      // Allow the header text "Trainee Count" / "عدد المتدربين" to wrap to 2
+      // lines so this column doesn't force the whole table to overflow. The
+      // cell data is a number and stays nowrap (inherited from base TableCell).
+      headerClassName: "whitespace-normal",
       cell: (r) => (
         <div className="text-sm flex items-center gap-1.5"><Users className="h-3.5 w-3.5 text-muted-foreground" />{r.traineeCount}</div>
       ),
