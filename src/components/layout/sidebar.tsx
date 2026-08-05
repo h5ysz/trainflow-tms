@@ -65,7 +65,7 @@ export function Sidebar() {
   return (
     <aside className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground">
       {/* ─── Brand Header ────────────────────────────────────────────── */}
-      <div className="flex h-14 items-center gap-3 px-4 border-b border-sidebar-border shrink-0">
+      <div className="flex h-14 items-center gap-2.5 px-3 border-b border-sidebar-border shrink-0">
         <Image
           src="/gcclab-icon.png"
           alt="GCC Lab"
@@ -84,7 +84,7 @@ export function Sidebar() {
       </div>
 
       {/* ─── Navigation (no search box — global search is in the topbar) ── */}
-      <nav className="flex-1 overflow-y-auto tf-scroll px-2 py-2">
+      <nav className="flex-1 overflow-y-auto tf-scroll px-1.5 py-2">
         {grouped.map(({ group, label, items: groupItems }) => (
           <div key={group} className="mb-3">
             {label && (
@@ -128,7 +128,7 @@ export function Sidebar() {
       {/* ─── Footer: User + Actions ─────────────────────────────────── */}
       <div className="border-t border-sidebar-border shrink-0">
         {/* User info */}
-        <div className="px-3 py-2.5 flex items-center gap-2.5">
+        <div className="px-2.5 py-2.5 flex items-center gap-2.5">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary text-[11px] font-bold ring-1 ring-primary/20">
             {userInitials}
           </div>

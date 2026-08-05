@@ -25,13 +25,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       {/* Desktop sidebar — 1px divider, no gutter */}
-      <div className="hidden lg:block w-72 shrink-0 border-e border-border/60">
+      <div className="hidden lg:block w-60 shrink-0 border-e border-border/60">
         <Sidebar />
       </div>
 
       {/* Mobile sidebar (Sheet) */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-        <SheetContent side={dir === "rtl" ? "right" : "left"} className="p-0 w-72">
+        <SheetContent side={dir === "rtl" ? "right" : "left"} className="p-0 w-60">
           {/* Radix requires a title on every dialog; the sidebar shows its own brand
               block, so this one is for assistive technology only. */}
           <VisuallyHidden>
