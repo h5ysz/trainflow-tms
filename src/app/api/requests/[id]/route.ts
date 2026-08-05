@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { canPerformAction } from "@/lib/auth/permissions";
 import { recordStatusChange } from "@/lib/auth/audit";
-import { canTransition, mergeIdAttachmentIntoDocuments, parseDocsSafe } from "../route";
+import { canTransition } from "../route";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { validateRequestForApproval, MIN_TRAINEES_PER_COURSE, MAX_TRAINEES_PER_COURSE } from "@/lib/api/request-validation";
 import type { TrainingRequestStatus } from "@prisma/client";
@@ -231,14 +231,15 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
       const existing_tn = await db.trainee.findFirst({
         where: { companyId: existing.companyId, nationalId: t.nationalId, deletedAt: null },
       });
+      // ── Source of truth: incoming documents from the UI ──
+      // On edit (PUT), the UI sends the COMPLETE list of documents the trainee
+      // should have. If the user deleted a document, it's NOT in incomingDocs.
+      // We must NOT merge with existing — that would resurrect deleted docs.
+      // The only exception: fold in legacy idAttachmentUrl for backward compat.
       const incomingDocs = Array.isArray(t.documents) ? t.documents : [];
-      const existingDocs = existing_tn ? parseDocsSafe(existing_tn.documents) : [];
-      const mergedDocs = mergeIdAttachmentIntoDocuments(
-        incomingDocs,
-        existingDocs,
-        (t.idAttachmentUrl as string) ?? null,
-      );
-      const documentsJson = mergedDocs.length > 0 ? JSON.stringify(mergedDocs) : (existing_tn ? existing_tn.documents : null);
+      const documentsJson = incomingDocs.length > 0
+        ? JSON.stringify(incomingDocs)
+        : null;
 
       const trainee = existing_tn
         ? await db.trainee.update({
