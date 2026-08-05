@@ -1347,12 +1347,13 @@ export function TrainingRequestsRoute() {
                       {previewDetail.requestCourses.flatMap((rc, rcIdx) =>
                         (rc.trainees ?? []).map((t, idx) => {
                           const tr = t.trainee;
-                          // Parse trainee.documents JSON to count attachments
-                          let docCount = 0;
+                          // Parse trainee.documents JSON to show actual attachment links
+                          let docs: Array<{ url?: string; filename?: string; type?: string }> = [];
                           try {
-                            const docs = tr.documents ? JSON.parse(tr.documents) : [];
-                            docCount = Array.isArray(docs) ? docs.length : 0;
+                            const parsed = tr.documents ? JSON.parse(tr.documents) : [];
+                            docs = Array.isArray(parsed) ? parsed : [];
                           } catch { /* ignore */ }
+                          const docCount = docs.length;
                           return (
                             <tr key={`${rcIdx}-${idx}`} className="border-t">
                               <td className="p-2 text-muted-foreground">{idx + 1}</td>
@@ -1362,9 +1363,21 @@ export function TrainingRequestsRoute() {
                               <td className="p-2">{tr.jobTitle ?? "—"}</td>
                               <td className="p-2">
                                 {docCount > 0 ? (
-                                  <span className="inline-flex items-center gap-1 text-info">
-                                    <FileText className="h-3 w-3" /> {docCount}
-                                  </span>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {docs.map((d, di) => (
+                                      <a
+                                        key={di}
+                                        href={d.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 text-xs text-info hover:underline"
+                                        title={d.filename ?? `Attachment ${di + 1}`}
+                                      >
+                                        <FileText className="h-3 w-3 shrink-0" />
+                                        <span className="truncate max-w-[80px]">{d.filename ?? `Doc ${di + 1}`}</span>
+                                      </a>
+                                    ))}
+                                  </div>
                                 ) : (
                                   <span className="text-muted-foreground">—</span>
                                 )}
