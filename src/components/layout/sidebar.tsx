@@ -65,19 +65,19 @@ export function Sidebar() {
   return (
     <aside className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground">
       {/* ─── Brand Header ────────────────────────────────────────────── */}
-      <div className="flex h-14 items-center gap-2.5 px-4 border-b border-sidebar-border shrink-0">
+      <div className="flex h-14 items-center gap-3 px-4 border-b border-sidebar-border shrink-0">
         <Image
           src="/gcclab-icon.png"
           alt="GCC Lab"
-          width={32}
-          height={32}
+          width={38}
+          height={38}
           className="shrink-0 object-contain rounded-lg"
         />
-        <div className="min-w-0">
-          <div className="text-[13px] font-bold leading-tight tracking-tight">
+        <div className="min-w-0 flex flex-col justify-center gap-0.5">
+          <div className="text-[20px] font-bold leading-none tracking-tight text-foreground">
             {locale === "en" ? "GCC Lab" : "المختبر الخليجي"}
           </div>
-          <div className="text-[10px] text-muted-foreground leading-tight">
+          <div className="text-[13px] text-muted-foreground/80 leading-none font-medium">
             {locale === "en" ? "Training Management" : "إدارة التدريب"}
           </div>
         </div>
