@@ -218,14 +218,14 @@ export function Topbar() {
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 px-3 sm:px-4">
+    <header className="sticky top-0 z-30 flex h-14 items-center gap-2 min-w-0 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 px-3 sm:px-4">
       <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(true)}>
         <Menu className="h-5 w-5" />
       </Button>
 
       <button
         onClick={() => setCommandOpen(true)}
-        className="group flex items-center gap-2 h-9 ps-3 pe-2 rounded-md border border-input bg-muted/40 text-sm text-muted-foreground hover:bg-muted transition-colors w-full max-w-md"
+        className="group flex items-center gap-2 h-9 ps-3 pe-2 rounded-md border border-input bg-muted/40 text-sm text-muted-foreground hover:bg-muted transition-colors flex-1 min-w-0 max-w-md"
       >
         <Search className="h-4 w-4 shrink-0" />
         <span className="flex-1 text-start truncate">{t("app.shortcut")}</span>
