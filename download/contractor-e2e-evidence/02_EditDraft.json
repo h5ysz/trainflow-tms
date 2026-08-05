@@ -1,0 +1,59 @@
+{
+  "request_id": "ba5cdd23-e702-4ff9-bdc5-2738ea71e9cb",
+  "ref_number": "TR-2026-000022",
+  "api_endpoint": "PUT /api/requests/[id]",
+  "http_status": 200,
+  "db_status_before": "DRAFT",
+  "db_status_after": "DRAFT",
+  "db_notes_before": null,
+  "db_notes_after": "Updated notes from E2E edit test",
+  "screenshot_before": "/home/z/my-project/download/contractor-e2e-evidence/03-edit-before.png",
+  "screenshot_after": "/home/z/my-project/download/contractor-e2e-evidence/03-edit-after.png",
+  "console_logs": [
+    {
+      "type": "warning",
+      "text": "Select is changing from controlled to uncontrolled. Components should not switch from controlled to uncontrolled (or vice versa). Decide between using a controlled or uncontrolled value for the lifetime of the component.",
+      "url": "http://localhost:3000/_next/static/chunks/92bd73dcf150a71d.js"
+    }
+  ],
+  "network_requests": [
+    {
+      "method": "GET",
+      "url": "http://localhost:3000/api/requests/ba5cdd23-e702-4ff9-bdc5-2738ea71e9cb",
+      "type": "request"
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:3000/api/requests/ba5cdd23-e702-4ff9-bdc5-2738ea71e9cb",
+      "status": 200,
+      "type": "response",
+      "size": 2551
+    },
+    {
+      "method": "PUT",
+      "url": "http://localhost:3000/api/requests/ba5cdd23-e702-4ff9-bdc5-2738ea71e9cb",
+      "type": "request"
+    },
+    {
+      "method": "PUT",
+      "url": "http://localhost:3000/api/requests/ba5cdd23-e702-4ff9-bdc5-2738ea71e9cb",
+      "status": 200,
+      "type": "response",
+      "size": 0
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:3000/api/requests?page=1&pageSize=10",
+      "type": "request"
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:3000/api/requests?page=1&pageSize=10",
+      "status": 200,
+      "type": "response",
+      "size": 8333
+    }
+  ],
+  "test": "02_EditDraft",
+  "timestamp": "2026-08-05T17:45:04.125087"
+}

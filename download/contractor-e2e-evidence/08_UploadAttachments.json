@@ -1,0 +1,29 @@
+{
+  "api_endpoint": "POST /api/trainees/upload-id or /api/requests/upload-doc (when file selected)",
+  "upload_ui_available": true,
+  "screenshot_before": "/home/z/my-project/download/contractor-e2e-evidence/09-upload-before.png",
+  "screenshot_after": "/home/z/my-project/download/contractor-e2e-evidence/09-upload-after.png",
+  "console_logs": [
+    {
+      "type": "warning",
+      "text": "Select is changing from uncontrolled to controlled. Components should not switch from controlled to uncontrolled (or vice versa). Decide between using a controlled or uncontrolled value for the lifetime of the component.",
+      "url": "http://localhost:3000/_next/static/chunks/92bd73dcf150a71d.js"
+    }
+  ],
+  "network_requests": [
+    {
+      "method": "GET",
+      "url": "http://localhost:3000/api/courses?pageSize=100",
+      "type": "request"
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:3000/api/courses?pageSize=100",
+      "status": 200,
+      "type": "response",
+      "size": 2350
+    }
+  ],
+  "test": "08_UploadAttachments",
+  "timestamp": "2026-08-05T17:45:42.882519"
+}

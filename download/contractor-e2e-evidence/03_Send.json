@@ -1,0 +1,59 @@
+{
+  "request_id": "ba5cdd23-e702-4ff9-bdc5-2738ea71e9cb",
+  "ref_number": "TR-2026-000022",
+  "api_endpoint": "POST /api/requests/[id]/transition",
+  "http_status": 200,
+  "db_status_before": "DRAFT",
+  "db_status_after": "SUBMITTED",
+  "notifications_before": {
+    "e587af7b-8a9e-4107-9cb2-f6fe5e3529ce": 0,
+    "5b58d83a-d035-4efa-aa2e-b44fd55b0711": 0
+  },
+  "notifications_after": {
+    "e587af7b-8a9e-4107-9cb2-f6fe5e3529ce": 1,
+    "5b58d83a-d035-4efa-aa2e-b44fd55b0711": 1
+  },
+  "coordinator_notification_records": [
+    {
+      "id": "b0af818d-f768-45e1-a202-07dacd9c0b1e",
+      "title": "New Training Request Submitted",
+      "titleAr": "\u0637\u0644\u0628 \u062a\u062f\u0631\u064a\u0628 \u062c\u062f\u064a\u062f",
+      "message": "Training request TR-2026-000022 has been submitted and is awaiting your review.",
+      "type": "INFO",
+      "category": "TRAINING",
+      "isRead": false,
+      "createdAt": "2026-08-05T17:45:05.171Z"
+    }
+  ],
+  "screenshot_before": "/home/z/my-project/download/contractor-e2e-evidence/04-send-before.png",
+  "screenshot_after": "/home/z/my-project/download/contractor-e2e-evidence/04-send-after.png",
+  "console_logs": [],
+  "network_requests": [
+    {
+      "method": "POST",
+      "url": "http://localhost:3000/api/requests/ba5cdd23-e702-4ff9-bdc5-2738ea71e9cb/transition",
+      "type": "request"
+    },
+    {
+      "method": "POST",
+      "url": "http://localhost:3000/api/requests/ba5cdd23-e702-4ff9-bdc5-2738ea71e9cb/transition",
+      "status": 200,
+      "type": "response",
+      "size": 0
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:3000/api/requests?page=1&pageSize=10",
+      "type": "request"
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:3000/api/requests?page=1&pageSize=10",
+      "status": 200,
+      "type": "response",
+      "size": 8359
+    }
+  ],
+  "test": "03_Send",
+  "timestamp": "2026-08-05T17:45:09.747808"
+}

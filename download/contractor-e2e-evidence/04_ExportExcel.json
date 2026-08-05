@@ -1,0 +1,27 @@
+{
+  "request_id": "ba5cdd23-e702-4ff9-bdc5-2738ea71e9cb",
+  "api_endpoint": "/api/export/company-data?scope=specific_request&specificId=ba5cdd23-e702-4ff9-bdc5-2738ea71e9cb&items=requests%2Ctrainees%2Cattendance%2Cresults%2Cevaluations%2Ccertificates%2Cinvoices%2Cattachments&format=excel&locale=en",
+  "http_status": 200,
+  "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "file_size_bytes": 14712,
+  "xlsx_file": "/home/z/my-project/download/contractor-e2e-evidence/export-contractor.xlsx",
+  "screenshot_before": "/home/z/my-project/download/contractor-e2e-evidence/05-export-before.png",
+  "screenshot_after": "/home/z/my-project/download/contractor-e2e-evidence/05-export-after.png",
+  "console_logs": [],
+  "network_requests": [
+    {
+      "method": "GET",
+      "url": "http://localhost:3000/api/requests/ba5cdd23-e702-4ff9-bdc5-2738ea71e9cb",
+      "type": "request"
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:3000/api/requests/ba5cdd23-e702-4ff9-bdc5-2738ea71e9cb",
+      "status": 200,
+      "type": "response",
+      "size": 2605
+    }
+  ],
+  "test": "04_ExportExcel",
+  "timestamp": "2026-08-05T17:45:14.790597"
+}

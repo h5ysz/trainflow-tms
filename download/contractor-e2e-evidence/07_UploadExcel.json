@@ -1,0 +1,10 @@
+{
+  "api_endpoint": "N/A (dialog open only \u2014 file upload requires user file selection)",
+  "dialog_opened": true,
+  "screenshot_before": "/home/z/my-project/download/contractor-e2e-evidence/08-import-before.png",
+  "screenshot_after": "/home/z/my-project/download/contractor-e2e-evidence/08-import-after.png",
+  "console_logs": [],
+  "network_requests": [],
+  "test": "07_UploadExcel",
+  "timestamp": "2026-08-05T17:45:35.954485"
+}

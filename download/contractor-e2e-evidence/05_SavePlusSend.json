@@ -1,0 +1,82 @@
+{
+  "request_id": "0e850b31-a087-46d1-a988-7819ab260d35",
+  "ref_number": "TR-2026-000023",
+  "api_endpoint": "POST /api/requests (with status=SUBMITTED)",
+  "http_status": 201,
+  "db_status_after": "SUBMITTED",
+  "db_submittedAt": "2026-08-05T17:45:23.432Z",
+  "notifications_before": {
+    "e587af7b-8a9e-4107-9cb2-f6fe5e3529ce": 0,
+    "5b58d83a-d035-4efa-aa2e-b44fd55b0711": 0
+  },
+  "notifications_after": {
+    "e587af7b-8a9e-4107-9cb2-f6fe5e3529ce": 1,
+    "5b58d83a-d035-4efa-aa2e-b44fd55b0711": 1
+  },
+  "coordinator_notification_records": [
+    {
+      "id": "2a82a824-830a-417a-88d7-978d2b18bc1f",
+      "title": "New Training Request Submitted",
+      "titleAr": "\u0637\u0644\u0628 \u062a\u062f\u0631\u064a\u0628 \u062c\u062f\u064a\u062f",
+      "message": "Training request TR-2026-000023 has been submitted and is awaiting your review.",
+      "type": "INFO",
+      "category": "TRAINING",
+      "isRead": false,
+      "createdAt": "2026-08-05T17:45:23.441Z"
+    }
+  ],
+  "screenshot_before": "/home/z/my-project/download/contractor-e2e-evidence/06-combo-before.png",
+  "screenshot_after": "/home/z/my-project/download/contractor-e2e-evidence/06-combo-after.png",
+  "console_logs": [
+    {
+      "type": "warning",
+      "text": "Select is changing from uncontrolled to controlled. Components should not switch from controlled to uncontrolled (or vice versa). Decide between using a controlled or uncontrolled value for the lifetime of the component.",
+      "url": "http://localhost:3000/_next/static/chunks/92bd73dcf150a71d.js"
+    },
+    {
+      "type": "warning",
+      "text": "Select is changing from controlled to uncontrolled. Components should not switch from controlled to uncontrolled (or vice versa). Decide between using a controlled or uncontrolled value for the lifetime of the component.",
+      "url": "http://localhost:3000/_next/static/chunks/92bd73dcf150a71d.js"
+    }
+  ],
+  "network_requests": [
+    {
+      "method": "GET",
+      "url": "http://localhost:3000/api/courses?pageSize=100",
+      "type": "request"
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:3000/api/courses?pageSize=100",
+      "status": 200,
+      "type": "response",
+      "size": 2350
+    },
+    {
+      "method": "POST",
+      "url": "http://localhost:3000/api/requests",
+      "type": "request"
+    },
+    {
+      "method": "POST",
+      "url": "http://localhost:3000/api/requests",
+      "status": 201,
+      "type": "response",
+      "size": 0
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:3000/api/requests?page=1&pageSize=10",
+      "type": "request"
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:3000/api/requests?page=1&pageSize=10",
+      "status": 200,
+      "type": "response",
+      "size": 8359
+    }
+  ],
+  "test": "05_SavePlusSend",
+  "timestamp": "2026-08-05T17:45:27.859730"
+}
