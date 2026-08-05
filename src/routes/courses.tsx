@@ -217,9 +217,8 @@ export function CoursesRoute() {
                 <Select value={formData.language as string} onValueChange={(v) => setField("language", v)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="en">English</SelectItem>
                     <SelectItem value="ar">العربية</SelectItem>
-                    <SelectItem value="bilingual">Bilingual</SelectItem>
+                    <SelectItem value="en">English</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>

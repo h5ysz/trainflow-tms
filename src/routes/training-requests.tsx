@@ -256,7 +256,7 @@ export function TrainingRequestsRoute() {
   const [formData, setFormData] = useState<Record<string, unknown>>({
     priority: "NORMAL",
     traineeCount: 1,
-    preferredLanguage: "en",
+    preferredLanguage: locale,
     status: "DRAFT",
   });
   // ── New: trainee list (Manual/Copy-Paste/Excel import) ──
@@ -706,7 +706,7 @@ export function TrainingRequestsRoute() {
       toast({ title: t("misc.success"), description: t("misc.createSuccess") });
       setDialogOpen(false);
       // Reset all form state — trainees + additionalDocs + formData.
-      setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: "en", status: "DRAFT" });
+      setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: locale, status: "DRAFT" });
       setTrainees([]);
       setAdditionalDocs([]);
       refetch();
@@ -776,7 +776,7 @@ export function TrainingRequestsRoute() {
     setFormData({
       priority: req.priority ?? "NORMAL",
       traineeCount: req.traineeCount ?? 1,
-      preferredLanguage: req.preferredLanguage ?? "en",
+      preferredLanguage: req.preferredLanguage ?? locale,
       status: req.status,
       companyId: req.companyId,
       courseId: req.courseId,
@@ -879,7 +879,7 @@ export function TrainingRequestsRoute() {
       toast({ title: t("misc.success"), description: t("misc.updateSuccess") });
       setDialogOpen(false);
       setEditTarget(null);
-      setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: "en", status: "DRAFT" });
+      setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: locale, status: "DRAFT" });
       setTrainees([]);
       setAdditionalDocs([]);
       refetch();
@@ -1011,7 +1011,7 @@ export function TrainingRequestsRoute() {
           if (!open) {
             // Reset all form state when the dialog closes — avoids stale
             // trainees/docs leaking into the next "New" click.
-            setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: "en", status: "DRAFT" });
+            setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: locale, status: "DRAFT" });
             setTrainees([]);
             setAdditionalDocs([]);
           }
@@ -1087,9 +1087,8 @@ export function TrainingRequestsRoute() {
               <Select value={formData.preferredLanguage as string} onValueChange={(v) => setField("preferredLanguage", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="en">English</SelectItem>
                   <SelectItem value="ar">العربية</SelectItem>
-                  <SelectItem value="bilingual">Bilingual</SelectItem>
+                  <SelectItem value="en">English</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
@@ -1209,7 +1208,7 @@ export function TrainingRequestsRoute() {
               <DetailRow label={t("requests.preferredLocation")} value={detailsTarget.preferredLocation} />
               <DetailRow label={t("requests.preferredDateFrom")} value={fmtDate(detailsTarget.preferredDateFrom)} />
               <DetailRow label={t("requests.preferredDateTo")} value={fmtDate(detailsTarget.preferredDateTo)} />
-              <DetailRow label={t("requests.preferredLanguage")} value={detailsTarget.preferredLanguage} />
+              <DetailRow label={t("requests.preferredLanguage")} value={formatPreferredLanguage(detailsTarget.preferredLanguage, locale)} />
             </FormGrid>
 
             {detailsTarget.notes && <DetailRow label={t("requests.notes")} value={detailsTarget.notes} />}
@@ -1278,7 +1277,7 @@ export function TrainingRequestsRoute() {
               <DetailRow label={t("requests.preferredLocation")} value={previewTarget.preferredLocation} />
               <DetailRow label={t("requests.preferredDateFrom")} value={fmtDate(previewTarget.preferredDateFrom)} />
               <DetailRow label={t("requests.preferredDateTo")} value={fmtDate(previewTarget.preferredDateTo)} />
-              <DetailRow label={t("requests.preferredLanguage")} value={previewTarget.preferredLanguage} />
+              <DetailRow label={t("requests.preferredLanguage")} value={formatPreferredLanguage(previewTarget.preferredLanguage, locale)} />
             </FormGrid>
 
             {previewTarget.notes && <DetailRow label={t("requests.notes")} value={previewTarget.notes} />}
@@ -1451,7 +1450,7 @@ export function TrainingRequestsRoute() {
                 <DetailRow label={t("requests.preferredLocation")} value={drawerTarget.preferredLocation} />
                 <DetailRow label={t("requests.preferredDateFrom")} value={fmtDate(drawerTarget.preferredDateFrom)} />
                 <DetailRow label={t("requests.preferredDateTo")} value={fmtDate(drawerTarget.preferredDateTo)} />
-                <DetailRow label={t("requests.preferredLanguage")} value={drawerTarget.preferredLanguage} />
+                <DetailRow label={t("requests.preferredLanguage")} value={formatPreferredLanguage(drawerTarget.preferredLanguage, locale)} />
               </FormGrid>
 
               {drawerTarget.notes && <DetailRow label={t("requests.notes")} value={drawerTarget.notes} />}
@@ -1617,6 +1616,17 @@ function fmtDate(value?: string | null) {
 
 function fmtDateTime(value?: string | null) {
   return value ? new Date(value).toLocaleString() : null;
+}
+
+// Display the preferred language value as a localized label.
+// Existing records with "bilingual" are mapped to the current UI language
+// so they don't break — the value is never shown as "bilingual" to the user.
+function formatPreferredLanguage(value: string | null | undefined, locale: string): string {
+  if (!value) return "—";
+  if (value === "ar") return "العربية";
+  if (value === "en") return "English";
+  // "bilingual" or any other legacy value → follow UI language
+  return locale === "ar" ? "العربية" : "English";
 }
 
 function DetailRow({ label, value }: { label: string; value?: string | number | null }) {
