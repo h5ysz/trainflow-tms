@@ -111,10 +111,8 @@ export function AdditionalDocumentsSection({
     try {
       const newDocs: AdditionalDocument[] = [];
       for (let i = 0; i < list.length; i++) {
-        const f = list[i];
-        const fd = new FormData();
-        fd.append("file", f);
-        const res = await api.post<AdditionalDocument>("/api/requests/upload-doc", fd);
+        const f = list[i]!;
+        const res = await api.postFile<AdditionalDocument>("/requests/upload-doc", f);
         newDocs.push(res);
         setProgress(Math.round(((i + 1) / list.length) * 100));
       }
