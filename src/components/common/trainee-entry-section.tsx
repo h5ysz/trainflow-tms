@@ -432,7 +432,11 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
   // Use the measured height if available (and larger than the constant),
   // otherwise fall back to the constant. This fixes the empty-table-on-
   // first-render bug where the virtualization calculated 0 visible rows.
-  const currentTableHeight = Math.max(VISIBLE_TABLE_HEIGHT, measuredHeight);
+  // When there are no trainees, use a small height so the Additional Documents
+  // section below is visible without scrolling.
+  const currentTableHeight = filtered.length === 0
+    ? Math.min(120, VISIBLE_TABLE_HEIGHT)
+    : Math.max(VISIBLE_TABLE_HEIGHT, measuredHeight);
   const totalHeight = filtered.length * ROW_HEIGHT;
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 2);
   const visibleCount = Math.ceil(currentTableHeight / ROW_HEIGHT) + 4;
