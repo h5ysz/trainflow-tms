@@ -1,20 +1,24 @@
 // /api/trainees/upload-id — accepts a single ID / Iqama attachment (image or
-// PDF) and stores it under public/uploads/trainee-docs/ with a random hex
-// filename so the original (potentially non-ASCII or duplicate) name can't
-// collide on disk or leak through the URL. Returns the public URL the client
-// can store on the Trainee row (idAttachmentUrl) plus filename/size/mime for
-// the UI to display.
+// PDF) and uploads it to Cloudinary (signed upload, server-side only).
+//
+// If Cloudinary is not configured (no env vars), falls back to writing
+// the file to public/uploads/trainee-docs/ on disk — preserving the old
+// behavior for local development.
+//
+// The Cloudinary URL is a public CDN URL that works on desktop, mobile,
+// and survives server restarts/redeploys. The old /api/uploads/ route
+// continues to serve files that were uploaded to disk before the
+// Cloudinary migration.
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { withModuleAction, ok, fail } from "@/lib/auth/api";
+import { isCloudinaryConfigured, uploadToCloudinary } from "@/lib/cloudinary";
 
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads", "trainee-docs");
 const PUBLIC_PREFIX = "/api/uploads/trainee-docs";
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
-// Extensions/MIME we accept — images of the ID card plus PDF scans. Anything
-// else is rejected with VALIDATION_ERROR so the client can show a clear toast.
 const ALLOWED: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
@@ -55,8 +59,26 @@ export const POST = withModuleAction("trainees", "edit", async ({ req }) => {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  // 16 random hex bytes → 32-char filename. Collisions are astronomically
-  // unlikely, but we still race-check by using O_CREAT|O_EXCL via "wx".
+
+  // ── Cloudinary path (production) ──
+  // If Cloudinary env vars are set, upload to Cloudinary for permanent storage.
+  if (isCloudinaryConfigured()) {
+    try {
+      const result = await uploadToCloudinary(buffer, file.name, mime, "trainee-docs");
+      const response: UploadIdResponse = {
+        url: result.url,
+        filename: file.name,
+        size: result.size,
+        mime,
+      };
+      return ok(response);
+    } catch (e) {
+      console.error("[upload-id] Cloudinary upload failed, falling back to disk", e);
+      // Fall through to disk-based upload as a fallback
+    }
+  }
+
+  // ── Disk fallback (local dev or Cloudinary misconfigured) ──
   const basename = `${crypto.randomBytes(16).toString("hex")}.${ext}`;
   const targetPath = path.join(UPLOAD_DIR, basename);
 
@@ -64,8 +86,6 @@ export const POST = withModuleAction("trainees", "edit", async ({ req }) => {
     await fs.mkdir(UPLOAD_DIR, { recursive: true });
     await fs.writeFile(targetPath, buffer, { flag: "wx" });
   } catch (e) {
-    // EEXIST → random hex collision; tell the client to retry. Anything else
-    // is a real I/O problem (disk full, permissions) → 500.
     const code = (e as NodeJS.ErrnoException).code;
     if (code === "EEXIST") {
       return fail("Upload conflict — please try again", 409, "UPLOAD_CONFLICT");

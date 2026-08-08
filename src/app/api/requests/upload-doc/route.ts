@@ -1,12 +1,16 @@
 // /api/requests/upload-doc — upload a single request-level additional document
 // (medical certificate, vaccination, work permit, company letter, etc.).
-// Files are stored under public/uploads/request-docs/<random-hex>.<ext>; the
-// caller receives the URL + metadata to pass back to POST /api/requests as
-// part of the `additionalDocuments` array.
+//
+// Uploads to Cloudinary (signed, server-side) when configured.
+// Falls back to disk storage (public/uploads/request-docs/) when Cloudinary
+// env vars are not set — preserving old behavior for local dev.
+//
+// Old files on disk continue to be served by /api/uploads/[...path].
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { ok, fail, withModuleAction } from "@/lib/auth/api";
+import { isCloudinaryConfigured, uploadToCloudinary } from "@/lib/cloudinary";
 
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads", "request-docs");
 const PUBLIC_PREFIX = "/api/uploads/request-docs";
@@ -47,6 +51,27 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
   }
 
   const buffer = Buffer.from(await f.arrayBuffer());
+
+  // ── Cloudinary path (production) ──
+  if (isCloudinaryConfigured()) {
+    try {
+      const result = await uploadToCloudinary(buffer, f.name || "document", mime, "request-docs");
+      return ok({
+        url: result.url,
+        filename: f.name || "document",
+        originalName: f.name || "document",
+        type: mime,
+        size: result.size,
+        uploadedAt: new Date().toISOString(),
+        uploadedById: user.id,
+      });
+    } catch (e) {
+      console.error("[requests/upload-doc] Cloudinary upload failed, falling back to disk", e);
+      // Fall through to disk-based upload
+    }
+  }
+
+  // ── Disk fallback ──
   const basename = `${crypto.randomBytes(16).toString("hex")}.${ext}`;
   const targetPath = path.join(UPLOAD_DIR, basename);
 
@@ -62,8 +87,6 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
     return fail("Could not save uploaded file", 500);
   }
 
-  // Preserve the original filename for display (the random hex basename is
-  // what's actually served). The client stores BOTH in additionalDocuments[].
   return ok({
     url: `${PUBLIC_PREFIX}/${basename}`,
     filename: basename,
