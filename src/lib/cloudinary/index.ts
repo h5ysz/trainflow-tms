@@ -68,8 +68,9 @@ export async function uploadToCloudinary(
     // Use a random public_id so files don't collide.
     // Cloudinary generates a random ID if public_id is not set.
     overwrite: false,
-    // Return the URL in a CDN-optimized format.
-    transformation: mime.startsWith("image/") ? [{ quality: "auto", fetch_format: "auto" }] : undefined,
+    // No transformation — preserve the original file exactly as uploaded.
+    // Cloudinary's auto-quality re-encodes images which changes the file hash.
+    // For ID documents and legal attachments, the original must be preserved.
   });
 
   return {
