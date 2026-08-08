@@ -33,6 +33,13 @@ export const traineeUpsertSchema = z.object({
   companyId: z.string().trim().min(1),
   status: z.string().trim().max(50).optional(),
   notes: z.string().max(2000).optional().nullable(),
+  // Photo + identity attachments, stored on the trainee file itself.
+  // `.passthrough()` keeps any extra fields (uploadedAt, size, ...) intact.
+  documents: z.array(z.object({
+    url: z.string().trim().min(1),
+    filename: z.string().trim().min(1),
+    type: z.string().trim().min(1).max(50),
+  }).passthrough()).max(20).optional().nullable(),
 });
 
 // Partial variant for PUT (all fields optional except we still constrain shapes).

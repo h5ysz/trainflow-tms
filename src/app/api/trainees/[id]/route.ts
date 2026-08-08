@@ -10,18 +10,6 @@ export const GET = withModuleAction("trainees", "view", async ({ params, user })
     where: { id },
     include: {
       company: true,
-      // request and course hang off requestCourse, not off the join row itself.
-      requestCourses: {
-        where: { deletedAt: null },
-        include: {
-          requestCourse: {
-            include: {
-              request: { select: { id: true, refNumber: true, status: true } },
-              course: { select: { id: true, title: true, code: true, refNumber: true } },
-            },
-          },
-        },
-      },
     },
   });
   if (!trainee || trainee.deletedAt) return notFound("Trainee not found");
@@ -46,7 +34,7 @@ export const PUT = withModuleAction("trainees", "edit", async ({ req, params, us
     return notFound("Trainee not found");
   }
 
-  const { fullName, nationalId, nationality, jobTitle, mobile, email, companyId, status, notes } = body;
+  const { fullName, nationalId, nationality, jobTitle, mobile, email, companyId, status, notes, documents } = body;
 
   if (user.role === "CONTRACTOR" && companyId !== undefined && companyId !== user.companyId) {
     return fail("Forbidden — cannot reassign trainee to another company", 403);
@@ -79,6 +67,7 @@ export const PUT = withModuleAction("trainees", "edit", async ({ req, params, us
       ...(companyId !== undefined && { companyId }),
       ...(status !== undefined && { status }),
       ...(notes !== undefined && { notes }),
+      ...(documents !== undefined && { documents: JSON.stringify(documents) }),
       updatedBy: user.id,
     },
   });

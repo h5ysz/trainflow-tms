@@ -19,6 +19,7 @@ export const GET = withModuleAction("trainees", "view", async ({ req, user }) =>
       { email: { contains: q.search } },
       { mobile: { contains: q.search } },
       { refNumber: { contains: q.search } },
+      { nationality: { contains: q.search } },
     ];
   }
   if (q.filters.status) where.status = q.filters.status;
@@ -61,6 +62,7 @@ export const GET = withModuleAction("trainees", "view", async ({ req, user }) =>
       companyRef: t.company?.refNumber ?? null,
       status: t.status,
       notes: t.notes,
+      documents: t.documents,
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
       requestsCount: t._count.requestCourses,
@@ -71,10 +73,36 @@ export const GET = withModuleAction("trainees", "view", async ({ req, user }) =>
 
 export const POST = withModuleAction("trainees", "create", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
-  const { fullName, nationalId, nationality, jobTitle, mobile, email, companyId, status, notes } = body;
+  const { fullName, nationalId, nationality, jobTitle, mobile, email, companyId, status, notes, documents } = body;
 
   if (!fullName || !nationalId || !companyId) {
     return fail("fullName, nationalId, and companyId are required", 422, "VALIDATION_ERROR");
+  }
+
+  // Staged photo / identity attachments uploaded via /api/trainees/upload-id.
+  let documentsJson: string | null = null;
+  if (documents !== undefined && documents !== null) {
+    if (!Array.isArray(documents)) {
+      return fail("documents must be an array", 422, "VALIDATION_ERROR");
+    }
+    const now = new Date().toISOString();
+    const clean = documents
+      .map((d) => {
+        const o = (d ?? {}) as Record<string, unknown>;
+        const url = typeof o.url === "string" ? o.url.trim() : "";
+        const type = typeof o.type === "string" ? o.type.trim() : "";
+        const filename = typeof o.filename === "string" ? o.filename.trim() : "";
+        if (!url || !type) return null;
+        return {
+          url,
+          filename,
+          type,
+          uploadedAt: typeof o.uploadedAt === "string" ? o.uploadedAt : now,
+          uploadedById: user.id,
+        };
+      })
+      .filter((d): d is NonNullable<typeof d> => d !== null);
+    documentsJson = JSON.stringify(clean);
   }
 
   // Prevent duplicate National ID (excluding soft-deleted records)
@@ -107,6 +135,7 @@ export const POST = withModuleAction("trainees", "create", async ({ req, user })
       companyId,
       status: status ?? "ACTIVE",
       notes: notes ?? null,
+      ...(documentsJson !== null && { documents: documentsJson }),
       createdBy: user.id,
       updatedBy: user.id,
       updatedAt: new Date(),
