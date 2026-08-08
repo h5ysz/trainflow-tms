@@ -101,10 +101,9 @@ services:
       # ─── Cloudinary (file upload storage) ───
       # Permanent file storage for ID images and additional documents.
       # Replaces local disk storage which is lost on Render free plan redeploys.
-      # Set these in the Render dashboard — never commit the actual values.
       - key: CLOUDINARY_CLOUD_NAME
-        sync: false
+        value: zmq8l03w
       - key: CLOUDINARY_API_KEY
-        sync: false
+        value: "141122823626226"
       - key: CLOUDINARY_API_SECRET
-        sync: false
+        value: ZJh23W4OTGoS6CaT-q3C2I38wGA
