@@ -10,10 +10,11 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@/components/ui/visually-hidden";
 import { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { cn } from "@/lib/utils";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { dir, t } = useI18n();
-  const { sidebarOpen, setSidebarOpen, theme, currentRoute } = useAppStore();
+  const { sidebarOpen, setSidebarOpen, theme, currentRoute, sidebarCollapsed } = useAppStore();
 
   // Apply theme + direction to <html>
   useEffect(() => {
@@ -25,9 +26,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
-      {/* Desktop sidebar — no visible gutter, natural separation */}
-      <div className="hidden lg:block w-52 shrink-0">
-        <Sidebar />
+      {/* Desktop sidebar — collapsible rail, animated width */}
+      <div
+        className={cn(
+          "hidden lg:block shrink-0 transition-[width] duration-200 ease-in-out",
+          sidebarCollapsed ? "w-[68px]" : "w-52"
+        )}
+      >
+        <Sidebar collapsed={sidebarCollapsed} showToggle />
       </div>
 
       {/* Mobile sidebar (Sheet) */}

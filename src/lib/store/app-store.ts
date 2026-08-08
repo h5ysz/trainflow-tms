@@ -35,6 +35,10 @@ export interface AppState {
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
 
+  // Sidebar (desktop collapse)
+  sidebarCollapsed: boolean;
+  setSidebarCollapsed: (collapsed: boolean) => void;
+
   // Command palette
   commandOpen: boolean;
   setCommandOpen: (open: boolean) => void;
@@ -115,6 +119,8 @@ export const useAppStore = create<AppState>()(
       // Sidebar
       sidebarOpen: false,
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+      sidebarCollapsed: false,
+      setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
 
       // Command palette
       commandOpen: false,
@@ -131,6 +137,8 @@ export const useAppStore = create<AppState>()(
         currentRoute: state.currentRoute,
         // Persisted so a refresh on a detail route keeps its subject.
         routeParam: state.routeParam,
+        // Persisted so the desktop rail stays collapsed across reloads.
+        sidebarCollapsed: state.sidebarCollapsed,
       }),
       // Silently accept any persisted state from older store versions.
       // Without this, Zustand logs: "State loaded from storage couldn't be
