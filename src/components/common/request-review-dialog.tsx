@@ -95,7 +95,7 @@ interface ReviewTrainee {
 
 // Document types managed per trainee. The order here defines the column order
 // in the review dialog table.
-const DOC_TYPES = ["iqama", "id", "passport", "certificate", "medical"] as const;
+const DOC_TYPES = ["iqama", "id", "passport", "certificate", "ohs"] as const;
 type DocType = (typeof DOC_TYPES)[number];
 
 // The API also accepts "other", which has no dedicated column here: unlike the
@@ -356,7 +356,7 @@ export function RequestReviewDialog({
   }[]>(() => {
     // Phase 3: derive the attachment list from documents[] only. Each
     // trainee may have multiple documents (id/iqama/passport/certificate/
-    // medical/other) — surface every URL, not just the ID. This replaces
+    // ohs/other) — surface every URL, not just the ID. This replaces
     // the legacy single-URL `idAttachmentUrl` view.
     const out: { ownerName: string; ownerNationalId: string; course: string; url: string }[] = [];
     for (const { trainee, course } of allTrainees) {
@@ -1007,7 +1007,7 @@ function TraineesSection({ detail, onPreview, onChanged, canEdit }: {
     id: t("requests.review.docId") || "ID",
     passport: t("requests.review.docPassport") || "Passport",
     certificate: t("requests.review.docCertificate") || "Certificate",
-    medical: t("requests.review.docMedical") || "Medical",
+    ohs: t("requests.review.docOhs") || "OHS",
     other: t("requests.review.docOther") || "Other",
   };
 

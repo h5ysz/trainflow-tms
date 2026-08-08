@@ -54,7 +54,7 @@ import {
 export interface TraineeDocument {
   url: string;
   filename: string;
-  type: "iqama" | "id" | "passport" | "certificate" | "medical" | "other";
+  type: "iqama" | "id" | "passport" | "certificate" | "ohs" | "other";
   uploadedAt: string;
 }
 
@@ -1592,7 +1592,7 @@ export type { UploadIdResponse };
 
 // ─── Multi-document row component ─────────────────────────────────────────
 // Allows uploading additional documents (PDF, JPG, PNG) per trainee row.
-// Supports document types: Iqama, ID, Passport, Certificate, Medical, Other.
+// Supports document types: Iqama, ID, Passport, Certificate, OHS, Other.
 function RowDocUpload({
   rowId,
   documents,
@@ -1647,7 +1647,7 @@ function RowDocUpload({
               { type: "id" as const, label: t("requests.docTypes.id") },
               { type: "passport" as const, label: t("requests.docTypes.passport") },
               { type: "certificate" as const, label: t("requests.docTypes.certificate") },
-              { type: "medical" as const, label: t("requests.docTypes.medical") },
+              { type: "ohs" as const, label: t("requests.docTypes.ohs") },
               { type: "other" as const, label: t("requests.docTypes.other") },
             ]).map((opt) => (
               <button

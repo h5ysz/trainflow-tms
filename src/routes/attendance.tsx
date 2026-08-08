@@ -174,7 +174,7 @@ export function AttendanceRoute() {
               <Input placeholder="Session ID" value={(formData.sessionId as string) ?? ""} onChange={(e) => setField("sessionId", e.target.value)} />
             </Field>
             <Field label={t("attendance.status")}>
-              <Select value={formData.status as string} onValueChange={(v) => setField("status", v)}>
+              <Select value={(formData.status as string) ?? "PRESENT"} onValueChange={(v) => setField("status", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {STATUSES.map((s) => <SelectItem key={s} value={s}>{t(`status.${s}` as never)}</SelectItem>)}

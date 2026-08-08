@@ -255,7 +255,7 @@ export const dict = {
     "requests.docTypes.id": "National ID / هوية",
     "requests.docTypes.passport": "Passport / جواز",
     "requests.docTypes.certificate": "Certificate / شهادة",
-    "requests.docTypes.medical": "Medical / طبي",
+    "requests.docTypes.ohs": "OHS Certificate / شهادة OHS",
     "requests.docTypes.other": "Other / أخرى",
     "requests.traineeCount": "Trainee Count",
     "requests.minTrainees": "Minimum: 10",
@@ -659,6 +659,7 @@ export const dict = {
     "scheduling.day": "Day",
     "scheduling.list": "List",
     "scheduling.empty": "No sessions scheduled for this period",
+    "scheduling.open": "Open",
 
     // Attendance
     "attendance.title": "Attendance",
@@ -1237,7 +1238,7 @@ export const dict = {
     "requests.review.docId": "ID",
     "requests.review.docPassport": "Passport",
     "requests.review.docCertificate": "Certificate",
-    "requests.review.docMedical": "Medical",
+    "requests.review.docOhs": "OHS",
     "requests.review.docOther": "Other",
     "requests.review.docUploaded": "Document uploaded",
     "requests.review.docUploadFailed": "Upload failed",
@@ -1544,7 +1545,7 @@ export const dict = {
     "requests.docTypes.id": "هوية وطنية",
     "requests.docTypes.passport": "جواز سفر",
     "requests.docTypes.certificate": "شهادة",
-    "requests.docTypes.medical": "طبي",
+    "requests.docTypes.ohs": "شهادة OHS",
     "requests.docTypes.other": "أخرى",
     "requests.traineeCount": "عدد المتدربين",
     "requests.minTrainees": "الحد الأدنى: 10",
@@ -1948,6 +1949,7 @@ export const dict = {
     "scheduling.day": "يوم",
     "scheduling.list": "قائمة",
     "scheduling.empty": "لا توجد جلسات مجدولة لهذه الفترة",
+    "scheduling.open": "فتح",
 
     // Attendance
     "attendance.title": "الحضور",
@@ -2525,7 +2527,7 @@ export const dict = {
     "requests.review.docId": "ID",
     "requests.review.docPassport": "Passport",
     "requests.review.docCertificate": "Certificate",
-    "requests.review.docMedical": "Medical",
+    "requests.review.docOhs": "OHS",
     "requests.review.docOther": "Other",
     "requests.review.docUploaded": "Document uploaded",
     "requests.review.docUploadFailed": "Upload failed",

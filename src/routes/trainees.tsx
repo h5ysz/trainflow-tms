@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
@@ -12,9 +12,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/common/status-badge";
-import { UserSquare, Plus, Mail, Phone, Building2, AlertCircle, Fingerprint } from "lucide-react";
+import { UserSquare, Plus, Mail, Phone, Building2, AlertCircle, Fingerprint, IdCard, ExternalLink, Trash2, Loader2 } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api } from "@/lib/api/client";
+import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/lib/store/app-store";
 import { useEntityActions } from "@/hooks/use-entity-actions";
 
@@ -40,17 +41,38 @@ const STATUSES = ["ACTIVE", "INACTIVE"];
 
 const NEW_TRAINEE = { status: "ACTIVE", nationality: "Saudi" };
 
+interface TraineeDocument { url: string; filename: string; type: string; uploadedAt?: string; }
+
+const DOC_TYPES = ["id", "iqama", "passport", "certificate", "ohs", "other"] as const;
+
+const DOC_LABELS: Record<string, { en: string; ar: string }> = {
+  iqama: { en: "Iqama", ar: "الإقامة" },
+  id: { en: "National ID", ar: "الهوية الوطنية" },
+  passport: { en: "Passport", ar: "جواز السفر" },
+  certificate: { en: "Certificate", ar: "شهادة" },
+  ohs: { en: "OHS Certificate", ar: "شهادة OHS" },
+  other: { en: "Other", ar: "أخرى" },
+};
+
 export function TraineesRoute() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const { toast } = useToast();
   const { user } = useAppStore();
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
+
+  // Identity documents (managed from the edit dialog)
+  const [identityDocs, setIdentityDocs] = useState<TraineeDocument[]>([]);
+  const [docType, setDocType] = useState<string>("id");
+  const [docUploading, setDocUploading] = useState(false);
+  const [deletingDoc, setDeletingDoc] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
     useList<Trainee>("/trainees");
 
   const {
     canCreate, canEdit, canDelete,
-    dialogOpen, isEditing, formData, setField, submitting, submit, requireFields,
+    dialogOpen, isEditing, editingId, formData, setField, submitting, submit, requireFields,
     openCreate, openEdit, closeDialog,
     deleteTarget, setDeleteTarget, deleting, confirmDelete,
   } = useEntityActions<Trainee>({
@@ -68,6 +90,66 @@ export function TraineesRoute() {
       }).catch(() => {});
     }
   }, [dialogOpen, companies.length, user?.role]);
+
+  // Seed the identity-documents list from the fetched trainee when editing.
+  useEffect(() => {
+    if (!dialogOpen || !isEditing || !editingId) {
+      setIdentityDocs([]);
+      return;
+    }
+    const raw = formData.documents as string | null | undefined;
+    if (typeof raw === "string") {
+      try {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) setIdentityDocs(arr);
+        else setIdentityDocs([]);
+      } catch {
+        setIdentityDocs([]);
+      }
+    } else {
+      setIdentityDocs([]);
+    }
+  }, [dialogOpen, isEditing, editingId, formData.documents]);
+
+  const handleUploadDoc = async (file: File) => {
+    if (!editingId) return;
+    setDocUploading(true);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      body.append("type", docType);
+      const resp = await fetch(`/api/trainees/${editingId}/documents`, { method: "POST", body, credentials: "same-origin" });
+      const json = await resp.json();
+      if (!resp.ok || !json.success) throw new Error(json.error || "Upload failed");
+      setIdentityDocs((prev) => [
+        ...(docType === "other" ? prev : prev.filter((d) => d.type !== docType)),
+        json.data,
+      ]);
+      toast({ title: t("misc.success"), description: locale === "en" ? "Document uploaded" : "تم رفع المستند" });
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setDocUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDeleteDoc = async (doc: TraineeDocument) => {
+    if (!editingId) return;
+    setDeletingDoc(doc.url);
+    try {
+      const query = `type=${encodeURIComponent(doc.type)}&url=${encodeURIComponent(doc.url)}`;
+      const resp = await fetch(`/api/trainees/${editingId}/documents?${query}`, { method: "DELETE", credentials: "same-origin" });
+      const json = await resp.json();
+      if (!resp.ok || !json.success) throw new Error(json.error || "Delete failed");
+      setIdentityDocs((prev) => prev.filter((d) => !(d.type === doc.type && d.url === doc.url)));
+      toast({ title: t("misc.success"), description: locale === "en" ? "Document removed" : "تم حذف المستند" });
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setDeletingDoc(null);
+    }
+  };
 
   const columns: Column<Trainee>[] = [
     {
@@ -246,6 +328,70 @@ export function TraineesRoute() {
           <Field label={t("trainees.notes")}>
             <Textarea rows={2} placeholder={t("trainees.notes")} value={(formData.notes as string) ?? ""} onChange={(e) => setField("notes", e.target.value)} />
           </Field>
+
+          {isEditing && (
+            <div className="rounded-lg border p-4 space-y-3">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <IdCard className="h-4 w-4 text-primary" />
+                {locale === "en" ? "Identity Documents" : "مستندات الهوية"}
+              </h4>
+
+              {identityDocs.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {identityDocs.map((d) => (
+                    <div key={`${d.type}-${d.url}`} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs">
+                      <span className="text-muted-foreground">
+                        {DOC_LABELS[d.type] ? (locale === "en" ? DOC_LABELS[d.type].en : DOC_LABELS[d.type].ar) : d.type}
+                      </span>
+                      <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center" title={locale === "en" ? "Open document" : "فتح المستند"}>
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-5 w-5 text-destructive hover:text-destructive"
+                        disabled={deletingDoc === d.url}
+                        onClick={() => void handleDeleteDoc(d)}
+                        title={locale === "en" ? "Remove document" : "حذف المستند"}
+                      >
+                        {deletingDoc === d.url ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Select value={docType} onValueChange={(v) => setDocType(v)}>
+                  <SelectTrigger className="w-40 h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {DOC_TYPES.map((dt) => (
+                      <SelectItem key={dt} value={dt}>
+                        {DOC_LABELS[dt] ? (locale === "en" ? DOC_LABELS[dt].en : DOC_LABELS[dt].ar) : dt}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                  className="h-9 w-56 text-xs"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void handleUploadDoc(file);
+                  }}
+                />
+                {docUploading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {locale === "en"
+                  ? "JPG, PNG, WebP or PDF up to 5 MB. Non-\"other\" types replace the previous document of the same type."
+                  : "JPG أو PNG أو WebP أو PDF حتى 5 ميجابايت. الأنواع غير \"أخرى\" تستبدل المستند السابق من نفس النوع."}
+              </p>
+            </div>
+          )}
         </div>
       </FormDialog>
 

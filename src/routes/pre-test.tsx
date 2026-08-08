@@ -248,7 +248,7 @@ export function PreTestRoute() {
               </Select>
             </Field>
             <Field label={t("preTest.questionType")} required>
-              <Select value={formData.type as string} onValueChange={(v) => setField("type", v)}>
+              <Select value={(formData.type as string) ?? "SINGLE_CHOICE"} onValueChange={(v) => setField("type", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="SINGLE_CHOICE">Single Choice</SelectItem>
@@ -294,10 +294,10 @@ export function PreTestRoute() {
 
           <FormGrid>
             <Field label={t("preTest.points")}>
-              <Input type="number" min={1} value={formData.points as number} onChange={(e) => setField("points", parseInt(e.target.value, 10) || 1)} />
+              <Input type="number" min={1} value={(formData.points as number) ?? 1} onChange={(e) => setField("points", parseInt(e.target.value, 10) || 1)} />
             </Field>
             <Field label={t("preTest.order")}>
-              <Input type="number" min={1} value={formData.order as number} onChange={(e) => setField("order", parseInt(e.target.value, 10) || 1)} />
+              <Input type="number" min={1} value={(formData.order as number) ?? 1} onChange={(e) => setField("order", parseInt(e.target.value, 10) || 1)} />
             </Field>
           </FormGrid>
         </div>

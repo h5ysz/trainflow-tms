@@ -325,7 +325,7 @@ export function TrainingSessionsRoute() {
               <Input type="datetime-local" value={(formData.endDate as string) ?? ""} onChange={(e) => setField("endDate", e.target.value)} />
             </Field>
             <Field label={t("sessions.language")}>
-              <Select value={formData.language as string} onValueChange={(v) => setField("language", v)}>
+              <Select value={(formData.language as string) ?? "en"} onValueChange={(v) => setField("language", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="en">English</SelectItem>

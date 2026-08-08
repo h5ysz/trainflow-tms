@@ -7,9 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/common/empty-state";
 import { StatusBadge } from "@/components/common/status-badge";
-import { CalendarRange, ChevronLeft, ChevronRight, Plus, Loader2 } from "lucide-react";
+import { CalendarRange, ChevronLeft, ChevronRight, Plus, Loader2, ArrowRight, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api/client";
+import { useAppStore } from "@/lib/store/app-store";
 
 interface SessionItem {
   id: string;
@@ -27,6 +28,7 @@ type View = "month" | "week" | "day" | "list";
 
 export function SchedulingRoute() {
   const { t, dir, locale } = useI18n();
+  const { navigate } = useAppStore();
   const [view, setView] = useState<View>("month");
   const [current, setCurrent] = useState(new Date());
   const [sessions, setSessions] = useState<SessionItem[]>([]);
@@ -125,7 +127,14 @@ export function SchedulingRoute() {
           ) : (
             <div className="space-y-2">
               {sessions.map((s) => (
-                <div key={s.id} className="flex items-center gap-3 p-3 rounded-md border hover:bg-muted/30">
+                <div
+                  key={s.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate("session-detail", s.id)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate("session-detail", s.id); } }}
+                  className="flex items-center gap-3 p-3 rounded-md border hover:bg-muted/30 cursor-pointer"
+                >
                   <div className="flex h-10 w-10 items-center justify-center rounded-md bg-info/10 text-info shrink-0">
                     <CalendarRange className="h-5 w-5" />
                   </div>
@@ -139,6 +148,15 @@ export function SchedulingRoute() {
                   </div>
                   <div className="text-xs text-muted-foreground text-end shrink-0">{new Date(s.startDate).toLocaleDateString()}</div>
                   <StatusBadge status={s.status} />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 shrink-0"
+                    onClick={(e) => { e.stopPropagation(); navigate("session-detail", s.id); }}
+                  >
+                    {dir === "rtl" ? <ArrowLeft className="h-3.5 w-3.5" /> : <ArrowRight className="h-3.5 w-3.5" />}
+                    {t("scheduling.open") || "Open"}
+                  </Button>
                 </div>
               ))}
             </div>
@@ -168,9 +186,15 @@ export function SchedulingRoute() {
                     </div>
                     <div className="mt-1 space-y-0.5 overflow-hidden">
                       {daySessions.slice(0, 2).map((s) => (
-                        <div key={s.id} className="text-[9px] truncate rounded bg-primary/10 text-primary px-1 py-0.5">
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => navigate("session-detail", s.id)}
+                          title={t("scheduling.open") || "Open"}
+                          className="w-full text-start text-[9px] truncate rounded bg-primary/10 text-primary px-1 py-0.5 hover:bg-primary/20 transition-colors cursor-pointer"
+                        >
                           {s.title}
-                        </div>
+                        </button>
                       ))}
                       {daySessions.length > 2 && (
                         <div className="text-[9px] text-muted-foreground">+{daySessions.length - 2} more</div>

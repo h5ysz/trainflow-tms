@@ -202,19 +202,19 @@ export function CoursesRoute() {
           <div className="border-t pt-4">
             <FormGrid cols={3}>
               <Field label={t("courses.durationHours")} required>
-                <Input type="number" min={1} value={formData.durationHours as number} onChange={(e) => setField("durationHours", parseInt(e.target.value, 10) || 0)} />
+                <Input type="number" min={1} value={(formData.durationHours as number) ?? 0} onChange={(e) => setField("durationHours", parseInt(e.target.value, 10) || 0)} />
               </Field>
               <Field label={t("courses.validityMonths")} required>
-                <Input type="number" min={1} value={formData.validityMonths as number} onChange={(e) => setField("validityMonths", parseInt(e.target.value, 10) || 0)} />
+                <Input type="number" min={1} value={(formData.validityMonths as number) ?? 0} onChange={(e) => setField("validityMonths", parseInt(e.target.value, 10) || 0)} />
               </Field>
               <Field label={t("courses.passScore")} required>
-                <Input type="number" min={0} max={100} value={formData.passScore as number} onChange={(e) => setField("passScore", parseInt(e.target.value, 10) || 0)} />
+                <Input type="number" min={0} max={100} value={(formData.passScore as number) ?? 0} onChange={(e) => setField("passScore", parseInt(e.target.value, 10) || 0)} />
               </Field>
               <Field label={t("courses.maxTrainees")}>
-                <Input type="number" min={1} value={formData.maxTrainees as number} onChange={(e) => setField("maxTrainees", parseInt(e.target.value, 10) || 0)} />
+                <Input type="number" min={1} value={(formData.maxTrainees as number) ?? 0} onChange={(e) => setField("maxTrainees", parseInt(e.target.value, 10) || 0)} />
               </Field>
               <Field label={t("courses.language")}>
-                <Select value={formData.language as string} onValueChange={(v) => setField("language", v)}>
+                <Select value={(formData.language as string) ?? "en"} onValueChange={(v) => setField("language", v)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ar">العربية</SelectItem>
@@ -223,7 +223,7 @@ export function CoursesRoute() {
                 </Select>
               </Field>
               <Field label={t("courses.status")}>
-                <Select value={formData.status as string} onValueChange={(v) => setField("status", v)}>
+                <Select value={(formData.status as string) ?? "ACTIVE"} onValueChange={(v) => setField("status", v)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {STATUSES.map((s) => <SelectItem key={s} value={s}>{t(`status.${s}` as never)}</SelectItem>)}

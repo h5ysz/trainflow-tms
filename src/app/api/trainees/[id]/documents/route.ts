@@ -1,12 +1,12 @@
 // /api/trainees/[id]/documents — multi-document management per trainee.
 //
-// Supports five document types (Iqama, ID, Passport, Certificate, Medical)
+// Supports five document types (Iqama, ID, Passport, Certificate, OHS)
 // plus an "other" catch-all. Files are stored on disk under
 // public/uploads/trainee-docs/<random-hex>.<ext>; their metadata is appended
 // to Trainee.documents as a JSON-encoded array.
 //
 //   POST   /api/trainees/[id]/documents
-//     formData: file=..., type=iqama|id|passport|certificate|medical|other
+//     formData: file=..., type=iqama|id|passport|certificate|ohs|other
 //     →  { url, filename, type, uploadedAt }
 //
 //   DELETE /api/trainees/[id]/documents?type=<type>&url=<url>
@@ -30,7 +30,7 @@ const ALLOWED: Record<string, string> = {
   "application/pdf": "pdf",
 };
 
-const VALID_TYPES = ["iqama", "id", "passport", "certificate", "medical", "other"] as const;
+const VALID_TYPES = ["iqama", "id", "passport", "certificate", "ohs", "other"] as const;
 type DocType = (typeof VALID_TYPES)[number];
 
 interface TraineeDocument {

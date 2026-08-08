@@ -1102,7 +1102,7 @@ export function TrainingRequestsRoute() {
               </Select>
             </Field>
             <Field label={t("requests.priority")}>
-              <Select value={formData.priority as string} onValueChange={(v) => setField("priority", v)}>
+              <Select value={(formData.priority as string) ?? "NORMAL"} onValueChange={(v) => setField("priority", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {PRIORITIES.map((p) => <SelectItem key={p} value={p}>{t(`priority.${p}` as never)}</SelectItem>)}
@@ -1119,7 +1119,7 @@ export function TrainingRequestsRoute() {
               <Input placeholder={t("requests.preferredLocation")} value={(formData.preferredLocation as string) ?? ""} onChange={(e) => setField("preferredLocation", e.target.value)} />
             </Field>
             <Field label={t("requests.preferredLanguage")}>
-              <Select value={formData.preferredLanguage as string} onValueChange={(v) => setField("preferredLanguage", v)}>
+              <Select value={(formData.preferredLanguage as string) ?? ""} onValueChange={(v) => setField("preferredLanguage", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ar">العربية</SelectItem>
