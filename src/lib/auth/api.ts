@@ -35,6 +35,10 @@ export async function getSessionToken(): Promise<string | undefined> {
 export interface AuthUser extends JwtPayload {
   id: string;
   permissions: string[];
+  /** Primary operational region (coordinator scoping) — CENTRAL/EASTERN/WESTERN/SOUTHERN or null. */
+  region?: string | null;
+  /** JSON array of extra regions a coordinator covers (admin-assigned coverage). */
+  regionsCovered?: string | null;
 }
 
 // Account statuses that must never hold a live session.
@@ -87,6 +91,8 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
       roleId: true,
       companyId: true,
       trainerId: true,
+      region: true,
+      regionsCovered: true,
       roleRecord: { select: { permissions: true } },
     },
   });
@@ -104,6 +110,8 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     role: dbUser.role,
     companyId: dbUser.companyId,
     trainerId: dbUser.trainerId,
+    region: dbUser.region,
+    regionsCovered: dbUser.regionsCovered,
     permissions,
   };
 }

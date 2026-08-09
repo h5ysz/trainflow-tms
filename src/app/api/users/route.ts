@@ -4,6 +4,8 @@ import { withErrorEnvelope, requireRole, ok, created, fail, audit } from "@/lib/
 import { hashPassword } from "@/lib/auth/jwt";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
+import { validateRegionsCovered } from "@/lib/api/region-scope";
+import { isRegionCode } from "@/lib/regions";
 
 const ALLOWED_SORT_FIELDS = ["fullName", "email", "createdAt", "updatedAt", "role", "isActive", "lastLoginAt"];
 
@@ -48,6 +50,8 @@ export const GET = withErrorEnvelope(async function GET(req: Request) {
       roleId: u.roleId,
       isActive: u.isActive,
       language: u.language,
+      region: u.region,
+      regionsCovered: u.regionsCovered,
       avatarUrl: u.avatarUrl,
       companyId: u.companyId,
       companyName: u.company?.name ?? null,
@@ -66,7 +70,7 @@ export const POST = withErrorEnvelope(async function POST(req: Request) {
   const user = await requireRole("SUPER_ADMIN");
 
   const body = await req.json().catch(() => ({}));
-  const { email, fullName, password, roleId, language, companyId, trainerId, isActive } = body;
+  const { email, fullName, password, roleId, language, companyId, trainerId, isActive, region, regionsCovered } = body;
 
   if (!email || !fullName || !password || !roleId) {
     return fail("email, fullName, password, roleId are required", 422, "VALIDATION_ERROR");
@@ -74,6 +78,11 @@ export const POST = withErrorEnvelope(async function POST(req: Request) {
 
   const role = await db.role.findUnique({ where: { id: roleId } });
   if (!role || role.deletedAt) return fail(`Invalid roleId: ${roleId}`, 400);
+
+  if (region !== undefined && region !== null && region !== "" && !isRegionCode(region)) {
+    return fail(`Invalid region: ${region}. Valid: CENTRAL, EASTERN, WESTERN, SOUTHERN.`, 422, "VALIDATION_ERROR");
+  }
+  const coveredJson = validateRegionsCovered(regionsCovered);
 
   const dup = await db.user.findFirst({ where: { email, deletedAt: null } });
   if (dup) return fail("Email already exists", 400);
@@ -91,6 +100,8 @@ export const POST = withErrorEnvelope(async function POST(req: Request) {
       isActive: isActive ?? true,
       companyId: companyId ?? null,
       trainerId: trainerId ?? null,
+      region: region ?? null,
+      regionsCovered: coveredJson,
       createdBy: user.id,
       updatedBy: user.id,
     },

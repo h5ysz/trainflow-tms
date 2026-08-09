@@ -24,6 +24,8 @@ export async function GET() {
     companyId: dbUser.companyId,
     companyName: dbUser.company?.name ?? null,
     trainerId: dbUser.trainerId,
+    region: dbUser.region ?? null,
+    regionsCovered: dbUser.regionsCovered ?? null,
     avatarUrl: dbUser.avatarUrl ?? null,
     isActive: dbUser.isActive,
     lastLoginAt: dbUser.lastLoginAt,

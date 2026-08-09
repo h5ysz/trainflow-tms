@@ -7,7 +7,8 @@ import { syncCertificateStatus } from "@/lib/api/enrollment-sync";
 import PDFDocument from "pdfkit";
 import { buildVerifyUrl, resolveOrigin } from "@/lib/qr/urls";
 import { renderQrPng } from "@/lib/qr/server";
-import { arabicFontPath } from "@/lib/pdf/fonts";
+import { arabicFontPath, certificateLogoPath } from "@/lib/pdf/fonts";
+import { drawCertificateLayout } from "@/lib/pdf/certificate-layout";
 import { randomBytes } from "crypto";
 
 // Gated on `create`, not `view`: this handler writes `pdfGeneratedAt` and transitions
@@ -48,7 +49,17 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
     }
   }
 
-  // Generate PDF
+  // ─── Verification QR ────────────────────────────────────────────────
+  // A certificate with no token yet gets one now, and it is persisted in the
+  // same update as pdfGeneratedAt below — otherwise the printed code would
+  // point at a token no lookup could ever match.
+  const verificationToken = cert.verificationToken ?? randomBytes(16).toString("hex");
+  const verifyUrl = buildVerifyUrl(resolveOrigin(req), verificationToken);
+  const qrPng = await renderQrPng(verifyUrl, { width: 240, margin: 1 });
+
+  // ─── Certificate Design ──────────────────────────────────────────────
+  // All content is drawn by the shared layout module, which auto-fits every
+  // block to one page (long names/course titles shrink instead of overflowing).
   const doc = new PDFDocument({
     size: "A4",
     layout: "landscape",
@@ -62,161 +73,30 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
     doc.on("end", () => resolve(Buffer.concat(chunks)));
   });
 
-  // ─── Certificate Design ──────────────────────────────────────────────
-  // Border
-  doc
-    .rect(30, 30, doc.page.width - 60, doc.page.height - 60)
-    .lineWidth(3)
-    .strokeColor("#7B1E2B")
-    .stroke();
-
-  // Inner border
-  doc
-    .rect(40, 40, doc.page.width - 80, doc.page.height - 80)
-    .lineWidth(1)
-    .strokeColor("#7B1E2B")
-    .opacity(0.3)
-    .stroke()
-    .opacity(1);
-
-  // Header. The Arabic half of the strapline is only drawn when an Arabic-capable font
-  // is installed — Helvetica has no Arabic glyphs, so it previously rendered as boxes.
   const arabicFont = arabicFontPath();
   if (arabicFont) doc.registerFont("Arabic", arabicFont);
 
-  doc
-    .fontSize(14)
-    .fillColor("#7B1E2B")
-    .font("Helvetica-Bold")
-    .text("GCCLAB — Gulf Calibration Laboratory", 0, 70, { align: "center" })
-    .fontSize(10)
-    .fillColor("#666")
-    .font("Helvetica")
-    .text("Training & Certification Management System", { align: "center" });
-
-  if (arabicFont) {
-    doc.font("Arabic").fontSize(10).fillColor("#666").text("المختبر الخليجي", { align: "center" });
-    doc.font("Helvetica");
-  }
-
-  // Title
-  doc
-    .fontSize(36)
-    .fillColor("#1a1a1a")
-    .font("Helvetica-Bold")
-    .text("Certificate of Completion", 0, 120, { align: "center" });
-
-  // Subtitle
-  doc
-    .fontSize(14)
-    .fillColor("#666")
-    .font("Helvetica")
-    .text("This is to certify that", 0, 170, { align: "center" });
-
-  // Trainee name
-  doc
-    .fontSize(28)
-    .fillColor("#7B1E2B")
-    .font("Helvetica-Bold")
-    .text(cert.traineeName, 0, 200, { align: "center" });
-
-  // Description
-  doc
-    .fontSize(14)
-    .fillColor("#666")
-    .font("Helvetica")
-    .text("has successfully completed the training course", 0, 245, { align: "center" });
-
-  // Course title
-  doc
-    .fontSize(22)
-    .fillColor("#1a1a1a")
-    .font("Helvetica-Bold")
-    .text(cert.course.title, 0, 275, { align: "center" });
-
-  // Course code
-  doc
-    .fontSize(12)
-    .fillColor("#666")
-    .font("Helvetica")
-    .text(`Course Code: ${cert.course.code}  |  Duration: ${cert.course.durationHours} hours  |  Score: ${cert.finalScore}%`, 0, 315, { align: "center" });
-
-  // Issue + expiry dates
-  const issueDate = cert.issuedAt.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-  const expiryDate = cert.validUntil.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-
-  doc
-    .fontSize(11)
-    .fillColor("#666")
-    .text(`Issued: ${issueDate}  |  Valid Until: ${expiryDate}`, 0, 345, { align: "center" });
-
-  // Certificate ref number
-  doc
-    .fontSize(10)
-    .fillColor("#999")
-    .font("Helvetica")
-    .text(`Certificate No: ${cert.refNumber}`, 0, 375, { align: "center" });
-
-  // Verification QR. A certificate with no token yet gets one now, and it is persisted
-  // in the same update as pdfGeneratedAt below — otherwise the printed code would point
-  // at a token no lookup could ever match.
-  const verificationToken = cert.verificationToken ?? randomBytes(16).toString("hex");
-  const verifyUrl = buildVerifyUrl(resolveOrigin(req), verificationToken);
-  const qrPng = await renderQrPng(verifyUrl, { width: 240, margin: 1 });
-
-  // doc.image() does not advance the text cursor, so everything after it passes
-  // explicit coordinates (as the surrounding code already does).
-  doc.image(qrPng, doc.page.width / 2 - 45, 395, { width: 90 });
-  doc
-    .fontSize(8)
-    .fillColor("#999")
-    .text("Scan to verify this certificate", 0, 490, { align: "center" })
-    .fontSize(7)
-    .text(verifyUrl, { align: "center" });
-
-  // Company info (if available)
-  if (cert.company?.name) {
-    doc
-      .fontSize(11)
-      .fillColor("#666")
-      .font("Helvetica")
-      .text(`Company: ${cert.company.name}`, 0, 515, { align: "center" });
-  }
-
-  // Trainer info (if available)
-  if (cert.session?.trainer?.fullName) {
-    doc
-      .fontSize(11)
-      .fillColor("#666")
-      .text(`Trainer: ${cert.session.trainer.fullName}`, 0, 533, { align: "center" });
-  }
-
-  // Signature line
-  doc
-    .moveTo(150, doc.page.height - 100)
-    .lineTo(350, doc.page.height - 100)
-    .lineWidth(1)
-    .strokeColor("#999")
-    .stroke()
-    .fontSize(10)
-    .fillColor("#666")
-    .font("Helvetica")
-    .text("Authorized Signature", 180, doc.page.height - 90, { align: "left" });
-
-  // GCCLAB seal
-  doc
-    .moveTo(doc.page.width - 350, doc.page.height - 100)
-    .lineTo(doc.page.width - 150, doc.page.height - 100)
-    .stroke()
-    .text("GCCLAB", doc.page.width - 320, doc.page.height - 90, { align: "left" });
-
-  if (arabicFont) {
-    doc
-      .font("Arabic")
-      .fontSize(10)
-      .fillColor("#666")
-      .text("المختبر الخليجي", doc.page.width - 320, doc.page.height - 76, { align: "left" });
-  }
+  drawCertificateLayout(
+    doc,
+    {
+      traineeName: cert.traineeName,
+      courseTitle: cert.course.title,
+      courseCode: cert.course.code,
+      durationHours: cert.course.durationHours,
+      finalScore: cert.finalScore,
+      issuedAt: cert.issuedAt,
+      validUntil: cert.validUntil,
+      refNumber: cert.refNumber,
+      companyName: cert.company?.name,
+      trainerName: cert.session?.trainer?.fullName,
+      verifyUrl,
+      qrPng,
+    },
+    {
+      arabicFontName: arabicFont ? "Arabic" : null,
+      logoPath: certificateLogoPath(),
+    },
+  );
 
   doc.end();
 

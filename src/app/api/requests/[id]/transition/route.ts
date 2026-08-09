@@ -78,10 +78,19 @@ export const POST = withModuleAction("requests", "view", async ({ req, params, u
       updates.rejectionReason = null;
     }
   }
-  if (to === "REQUIRES_MODIFICATION") {
-    updates.reviewedAt = now;
+  if (to === "UNDER_REVIEW") updates.reviewedAt = now;
+  if (to === "APPROVED") {
+    updates.approvedAt = now;
+    updates.approvedBy = user.id;
   }
+  if (to === "SCHEDULED") updates.scheduledAt = now;
+  if (to === "IN_PROGRESS") updates.startedAt = now;
+  if (to === "COMPLETED") updates.completedAt = now;
   if (to === "CANCELLED") updates.cancelledAt = now;
+  if (to === "REJECTED") {
+    updates.rejectedAt = now;
+    updates.rejectionReason = body.rejectionReason ?? null;
+  }
 
   // Capture the reason for REQUIRES_MODIFICATION (passed in the body)
   if (to === "REQUIRES_MODIFICATION" && body.revisionReason) {
@@ -89,6 +98,32 @@ export const POST = withModuleAction("requests", "view", async ({ req, params, u
   }
 
   const updated = await db.trainingRequest.update({ where: { id }, data: updates });
+
+  // ── Notify the requesting contractor when their request is approved ────────
+  // Approval means the coordinator will assign a trainer and schedule next; the
+  // requester should see the request move forward.
+  if (to === "APPROVED" && existing.companyId) {
+    const contractors = await db.user.findMany({
+      where: { role: "CONTRACTOR", companyId: existing.companyId, isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+    if (contractors.length > 0) {
+      await db.notification.createMany({
+        data: contractors.map((c) => ({
+          id: randomUUID(),
+          userId: c.id,
+          title: "Training Request Approved",
+          titleAr: "تمت الموافقة على طلب التدريب",
+          message: `Training request ${existing.refNumber} has been approved. A trainer will be assigned and the session scheduled.`,
+          messageAr: `تمت الموافقة على طلب التدريب ${existing.refNumber}. سيتم اختيار المدرب وجدولة التدريب.`,
+          type: "SUCCESS",
+          category: "TRAINING",
+          link: `/requests`,
+          updatedAt: now,
+        })),
+      });
+    }
+  }
 
   // ── Notify contractor when request is returned for revision ─────────────
   if (to === "REQUIRES_MODIFICATION" && existing.companyId) {

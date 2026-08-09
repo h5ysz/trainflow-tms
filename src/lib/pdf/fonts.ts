@@ -49,3 +49,20 @@ export function arabicFontPath(): string | null {
 export function hasArabicFont(): boolean {
   return arabicFontPath() !== null;
 }
+
+// Certificate header logo. The PNG lives in public/, resolved the same way as the
+// Arabic font so it works both in dev (cwd = project root) and under `output:
+// "standalone"` (cwd = .next/standalone, public/ copied alongside).
+const LOGO_RELATIVE = join("public", "gcclab-logo-official.png");
+
+let logoCached: string | null | undefined;
+
+/** Absolute path to the certificate header logo, or null when unavailable. */
+export function certificateLogoPath(): string | null {
+  if (logoCached !== undefined) return logoCached;
+  logoCached =
+    [join(process.cwd(), LOGO_RELATIVE), join(process.cwd(), "..", "..", LOGO_RELATIVE)].find(
+      (p) => existsSync(p),
+    ) ?? null;
+  return logoCached;
+}

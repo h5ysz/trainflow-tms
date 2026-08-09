@@ -1219,6 +1219,7 @@ export function TrainingRequestsRoute() {
             <TraineeEntrySection
               trainees={trainees}
               onChange={setTrainees}
+              companyId={(formData.companyId as string) || null}
             />
           </div>
 

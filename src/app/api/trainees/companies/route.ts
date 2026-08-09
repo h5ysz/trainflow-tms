@@ -9,12 +9,14 @@
 import { db } from "@/lib/db";
 import { withModuleAction } from "@/lib/auth/api";
 import { list } from "@/lib/api/response";
+import { coordinatorRegionScope } from "@/lib/api/region-scope";
 
 export const GET = withModuleAction("trainees", "view", async ({ user }) => {
   const select = {
     id: true,
     name: true,
     refNumber: true,
+    region: true,
     _count: { select: { trainees: { where: { deletedAt: null } } } },
   } as const;
 
@@ -26,7 +28,7 @@ export const GET = withModuleAction("trainees", "view", async ({ user }) => {
         })
       : null;
     const rows = company
-      ? [{ id: company.id, name: company.name, refNumber: company.refNumber, traineeCount: company._count.trainees }]
+      ? [{ id: company.id, name: company.name, refNumber: company.refNumber, region: company.region, traineeCount: company._count.trainees }]
       : [];
     return list(rows, {
       page: 1,
@@ -36,8 +38,12 @@ export const GET = withModuleAction("trainees", "view", async ({ user }) => {
     });
   }
 
+  const scope = coordinatorRegionScope(user);
+  const where: Record<string, unknown> = { deletedAt: null };
+  if (scope) where.region = { in: scope };
+
   const companies = await db.company.findMany({
-    where: { deletedAt: null },
+    where,
     select,
     orderBy: { name: "asc" },
   });
@@ -46,6 +52,7 @@ export const GET = withModuleAction("trainees", "view", async ({ user }) => {
       id: c.id,
       name: c.name,
       refNumber: c.refNumber,
+      region: c.region,
       traineeCount: c._count.trainees,
     })),
     {

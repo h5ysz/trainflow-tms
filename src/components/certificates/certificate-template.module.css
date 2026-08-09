@@ -1,0 +1,206 @@
+.sheet {
+  position: relative;
+  width: 297mm;
+  height: 210mm;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: #fff;
+  color: #1a1a1a;
+  font-family: Arial, "Helvetica Neue", Helvetica, "Segoe UI", "Noto Sans Arabic", sans-serif;
+}
+
+.borderOuter {
+  position: absolute;
+  inset: 5mm;
+  border: 1.2mm solid #7b1e2b;
+  border-radius: 1mm;
+}
+
+.borderInner {
+  position: absolute;
+  inset: 7mm;
+  border: 0.4mm solid rgba(123, 30, 43, 0.35);
+  border-radius: 0.5mm;
+}
+
+.content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 13mm 16mm 14mm;
+  box-sizing: border-box;
+}
+
+.logo {
+  height: 12mm;
+  width: auto;
+  object-fit: contain;
+}
+
+.brand {
+  margin-top: 2.5mm;
+  font-size: 13pt;
+  font-weight: 700;
+  color: #7b1e2b;
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
+.subBrand {
+  margin-top: 1mm;
+  font-size: 9pt;
+  color: #666;
+  text-align: center;
+}
+
+.arabicBrand {
+  margin-top: 1mm;
+  font-size: 9pt;
+  color: #666;
+  text-align: center;
+}
+
+.title {
+  margin-top: 5mm;
+  font-size: 22pt;
+  font-weight: 700;
+  color: #1a1a1a;
+  text-transform: uppercase;
+  letter-spacing: 2.5px;
+  text-align: center;
+}
+
+.certify {
+  margin-top: 3.5mm;
+  font-size: 12pt;
+  color: #666;
+  text-align: center;
+}
+
+.name {
+  margin-top: 3.5mm;
+  font-size: 22pt;
+  font-weight: 700;
+  color: #7b1e2b;
+  text-align: center;
+  width: 100%;
+}
+
+.completed {
+  margin-top: 3.5mm;
+  font-size: 12pt;
+  color: #666;
+  text-align: center;
+}
+
+.course {
+  margin-top: 2.5mm;
+  font-size: 16pt;
+  font-weight: 700;
+  color: #1a1a1a;
+  text-align: center;
+  width: 100%;
+}
+
+.meta {
+  margin-top: 4mm;
+  font-size: 10pt;
+  color: #666;
+  text-align: center;
+  width: 100%;
+}
+
+.dates {
+  margin-top: 2mm;
+  font-size: 9.5pt;
+  color: #666;
+  text-align: center;
+  width: 100%;
+}
+
+.certNo {
+  margin-top: 2mm;
+  font-size: 9pt;
+  color: #999;
+  text-align: center;
+  width: 100%;
+}
+
+.qrArea {
+  margin-top: 3mm;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.scanLabel {
+  margin-top: 1mm;
+  font-size: 8pt;
+  color: #999;
+  text-align: center;
+}
+
+.url {
+  margin-top: 0.5mm;
+  font-size: 7pt;
+  color: #999;
+  text-align: center;
+  max-width: 230mm;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.extra {
+  margin-top: 1.5mm;
+  font-size: 10pt;
+  color: #666;
+  text-align: center;
+  width: 100%;
+}
+
+.fitText {
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.bottomRow {
+  position: absolute;
+  left: 18mm;
+  right: 18mm;
+  bottom: 10mm;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.sigBlock,
+.sealBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 62mm;
+}
+
+.sigLine,
+.sealLine {
+  width: 100%;
+  border-top: 0.45mm solid #999;
+}
+
+.sigLabel,
+.sealLabel {
+  margin-top: 1.2mm;
+  font-size: 9pt;
+  color: #666;
+  text-align: center;
+}
+
+.sealArabic {
+  margin-top: 0.6mm;
+  font-size: 9pt;
+  color: #666;
+  text-align: center;
+}

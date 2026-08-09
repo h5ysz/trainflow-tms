@@ -7,7 +7,12 @@ export const GET = withModuleAction("certificates", "view", async ({ params, use
   const cert = await db.certificate.findUnique({
     where: { id },
     include: {
-      session: { include: { course: true } },
+      session: {
+        include: {
+          course: true,
+          trainer: { select: { fullName: true, refNumber: true } },
+        },
+      },
       course: true,
       company: true,
     },

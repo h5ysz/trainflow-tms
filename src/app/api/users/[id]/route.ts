@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { withErrorEnvelope, requireRole, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { hashPassword } from "@/lib/auth/jwt";
 import { recordStatusChange } from "@/lib/auth/audit";
+import { validateRegionsCovered } from "@/lib/api/region-scope";
+import { isRegionCode } from "@/lib/regions";
 
 export const GET = withErrorEnvelope(async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await requireRole("SUPER_ADMIN");
@@ -20,6 +22,8 @@ export const GET = withErrorEnvelope(async function GET(_req: Request, ctx: { pa
     roleId: target.roleId,
     isActive: target.isActive,
     language: target.language,
+    region: target.region,
+    regionsCovered: target.regionsCovered,
     avatarUrl: target.avatarUrl,
     companyId: target.companyId,
     companyName: target.company?.name ?? null,
@@ -37,7 +41,7 @@ export const PUT = withErrorEnvelope(async function PUT(req: Request, ctx: { par
   if (!existing || existing.deletedAt) return notFound("User not found");
 
   const body = await req.json().catch(() => ({}));
-  const { email, fullName, roleId, language, isActive, companyId, trainerId, password, avatarUrl } = body;
+  const { email, fullName, roleId, language, isActive, companyId, trainerId, password, avatarUrl, region, regionsCovered } = body;
 
   if (email && email !== existing.email) {
     const dup = await db.user.findFirst({ where: { email, deletedAt: null } });
@@ -46,6 +50,12 @@ export const PUT = withErrorEnvelope(async function PUT(req: Request, ctx: { par
 
   const role = roleId !== undefined ? await db.role.findUnique({ where: { id: roleId } }) : null;
   if (roleId !== undefined && (!role || role.deletedAt)) return fail(`Invalid roleId: ${roleId}`, 400);
+
+  if (region !== undefined && region !== null && region !== "" && !isRegionCode(region)) {
+    return fail(`Invalid region: ${region}. Valid: CENTRAL, EASTERN, WESTERN, SOUTHERN.`, 422, "VALIDATION_ERROR");
+  }
+  let coveredJson: string | null | undefined;
+  if (regionsCovered !== undefined) coveredJson = validateRegionsCovered(regionsCovered);
 
   const updated = await db.user.update({
     where: { id },
@@ -58,6 +68,8 @@ export const PUT = withErrorEnvelope(async function PUT(req: Request, ctx: { par
       ...(companyId !== undefined && { companyId }),
       ...(trainerId !== undefined && { trainerId }),
       ...(avatarUrl !== undefined && { avatarUrl }),
+      ...(region !== undefined && { region: region || null }),
+      ...(coveredJson !== undefined && { regionsCovered: coveredJson }),
       ...(password && { passwordHash: await hashPassword(password) }),
       updatedBy: user.id,
     },

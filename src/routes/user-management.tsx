@@ -24,6 +24,8 @@ import { useList } from "@/lib/api/hooks";
 import { useAppStore } from "@/lib/store/app-store";
 import { canAccessModule } from "@/lib/auth/permissions";
 import { useEntityActions } from "@/hooks/use-entity-actions";
+import { REGIONS, REGION_LABELS } from "@/lib/regions";
+import { cn } from "@/lib/utils";
 
 interface UserRow {
   id: string;
@@ -33,6 +35,8 @@ interface UserRow {
   roleId: string | null;
   isActive: boolean;
   language: string | null;
+  region: string | null;
+  regionsCovered: string | null;
   companyName: string | null;
   companyRef: string | null;
   trainerName: string | null;
@@ -59,6 +63,22 @@ interface RoleRow {
 }
 
 const MIN_PASSWORD = 8;
+
+function parseCoverage(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((r): r is string => typeof r === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function regionLabel(code: string | null | undefined, locale: string): string {
+  if (!code) return locale === "en" ? "—" : "—";
+  const l = REGION_LABELS[code as keyof typeof REGION_LABELS];
+  return l ? (locale === "ar" ? l.ar : l.en) : code;
+}
 
 export function UserManagementRoute() {
   const { t, locale } = useI18n();
@@ -92,6 +112,8 @@ export function UserManagementRoute() {
       roleId: r.roleId,
       isActive: r.isActive,
       language: r.language ?? "en",
+      region: r.region ?? "",
+      regionsCovered: parseCoverage(r.regionsCovered),
     }),
   });
 
@@ -184,6 +206,32 @@ export function UserManagementRoute() {
         ) : (
           <span className="text-xs text-muted-foreground">—</span>
         ),
+    },
+    {
+      key: "region",
+      header: t("users.region"),
+      cell: (row) => {
+        const coverage = parseCoverage(row.regionsCovered);
+        if (!row.region && coverage.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
+        return (
+          <div className="space-y-1">
+            {row.region && (
+              <Badge variant="outline" className="text-xs font-mono">
+                {regionLabel(row.region, locale)}
+              </Badge>
+            )}
+            {coverage.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {coverage.map((r) => (
+                  <Badge key={r} variant="secondary" className="text-[10px] font-mono text-muted-foreground">
+                    +{regionLabel(r, locale)}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: "isActive",
@@ -397,6 +445,54 @@ export function UserManagementRoute() {
                   ))}
                 </SelectContent>
               </Select>
+            </Field>
+            <Field
+              label={t("users.region")}
+              hint={t("users.regionHint")}
+            >
+              <Select
+                value={(formData.region as string) ?? ""}
+                onValueChange={(v) => setField("region", v === "__none__" ? null : v)}
+              >
+                <SelectTrigger><SelectValue placeholder={t("misc.none")} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">{t("misc.none")}</SelectItem>
+                  {REGIONS.map((r) => (
+                    <SelectItem key={r} value={r}>{r} — {REGION_LABELS[r][locale === "ar" ? "ar" : "en"]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field
+              label={t("users.coverage")}
+              hint={t("users.coverageHint")}
+            >
+              <div className="flex flex-wrap gap-1.5">
+                {REGIONS.map((r) => {
+                  const checked = ((formData.regionsCovered as string[]) ?? []).includes(r);
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => {
+                        const cur = (formData.regionsCovered as string[]) ?? [];
+                        setField(
+                          "regionsCovered",
+                          checked ? cur.filter((x) => x !== r) : [...cur, r]
+                        );
+                      }}
+                      className={cn(
+                        "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                        checked
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-input text-muted-foreground hover:bg-muted"
+                      )}
+                    >
+                      {REGION_LABELS[r][locale === "ar" ? "ar" : "en"]}
+                    </button>
+                  );
+                })}
+              </div>
             </Field>
             <Field label={t("settings.defaultLanguage")}>
               <Select value={(formData.language as string) ?? "en"} onValueChange={(v) => setField("language", v)}>

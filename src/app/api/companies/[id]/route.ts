@@ -1,6 +1,7 @@
 // /api/companies/[id] — get / update / soft-delete
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { isRegionCode } from "@/lib/regions";
 
 export const GET = withModuleAction("companies", "view", async ({ params }) => {
   const id = params.id as string;
@@ -30,9 +31,13 @@ export const PUT = withModuleAction("companies", "edit", async ({ req, params, u
 
   const {
     name, nameAr, legalName, crNumber, vatNumber, industry,
-    country, city, address, postalCode, phone, email, website,
+    country, city, region, address, postalCode, phone, email, website,
     contactPerson, contactPhone, contactEmail, status, logoUrl,
   } = body;
+
+  if (region !== undefined && region !== null && region !== "" && !isRegionCode(region)) {
+    return fail(`Invalid region: ${region}. Valid: CENTRAL, EASTERN, WESTERN, SOUTHERN.`, 422, "VALIDATION_ERROR");
+  }
 
   const updated = await db.company.update({
     where: { id },
@@ -45,6 +50,7 @@ export const PUT = withModuleAction("companies", "edit", async ({ req, params, u
       ...(industry !== undefined && { industry }),
       ...(country !== undefined && { country }),
       ...(city !== undefined && { city }),
+      ...(region !== undefined && { region: region || null }),
       ...(address !== undefined && { address }),
       ...(postalCode !== undefined && { postalCode }),
       ...(phone !== undefined && { phone }),

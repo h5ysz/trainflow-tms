@@ -160,6 +160,17 @@ model User {
   roleId              String? // link to Role table for dynamic RBAC
   language            String    @default("en")
   timezone            String?   @default("Asia/Riyadh")
+  // Coordinator primary region + coverage.
+  // `region` = the coordinator's assigned operational region
+  // (CENTRAL | EASTERN | WESTERN | SOUTHERN). When set on a coordinator,
+  // server-side scoping restricts them to companies/requests/trainees within
+  // that region. `regionsCovered` is a JSON string array of extra regions a
+  // coordinator may cover temporarily (assigned by an admin) — the coordinator
+  // can operate in their own region PLUS every covered region, without any
+  // role change. Trainers/users of other roles may carry a region too but it
+  // has no authorization effect for them.
+  region            String?
+  regionsCovered    String? // JSON array of region codes the coordinator covers
   isActive            Boolean   @default(true)
   accountStatus       String    @default("ACTIVE") // ACTIVE | PENDING_APPROVAL | SUSPENDED | REJECTED | LOCKED
   avatarUrl           String?
@@ -255,6 +266,12 @@ model Company {
   industry      String?
   country       String?
   city          String?
+  // Operational region of the company
+  // (CENTRAL | EASTERN | WESTERN | SOUTHERN). Coordinator scoping matches a
+  // company's region against the coordinator's region + coverage. Null means
+  // "region not assigned" — such companies are visible to coordinators who
+  // have no region assignment, but hidden from coordinators scoped to a region.
+  region        String?
   address       String?
   postalCode    String?
   phone         String?

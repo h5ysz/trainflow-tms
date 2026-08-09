@@ -335,6 +335,31 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
     }
   }
 
+  // ── Notify the requesting contractor when their request is rejected ──
+  // The reject dialog (coordinator UI) writes through PUT with status REJECTED.
+  if (newStatus === "REJECTED" && existing.companyId) {
+    const contractors = await db.user.findMany({
+      where: { role: "CONTRACTOR", companyId: existing.companyId, isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+    if (contractors.length > 0) {
+      await db.notification.createMany({
+        data: contractors.map((c) => ({
+          id: crypto.randomUUID(),
+          userId: c.id,
+          title: "Training Request Rejected",
+          titleAr: "تم رفض طلب التدريب",
+          message: `Training request ${existing.refNumber} has been rejected. ${rejectionReason ? `Reason: ${rejectionReason}` : ""}`.trim(),
+          messageAr: `تم رفض طلب التدريب ${existing.refNumber}. ${rejectionReason ? `السبب: ${rejectionReason}` : ""}`.trim(),
+          type: "ERROR",
+          category: "TRAINING",
+          link: `/requests`,
+          updatedAt: now,
+        })),
+      });
+    }
+  }
+
   return ok(updated);
 });
 

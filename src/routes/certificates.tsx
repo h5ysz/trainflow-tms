@@ -11,7 +11,7 @@ import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/common/status-badge";
-import { BadgeCheck, Download, QrCode, Calendar, Building2, AlertCircle, Ban, Loader2, Lock, Unlock } from "lucide-react";
+import { BadgeCheck, Download, QrCode, Calendar, Building2, AlertCircle, Ban, Loader2, Lock, Unlock, Eye } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api, downloadFile } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
@@ -19,6 +19,7 @@ import { useAppStore } from "@/lib/store/app-store";
 import { canPerformAction } from "@/lib/auth/permissions";
 import { QrImage } from "@/components/common/qr-image";
 import { buildVerifyUrl } from "@/lib/qr/urls";
+import { CertificatePreviewDialog } from "@/components/certificates/certificate-preview-dialog";
 
 interface Certificate {
   id: string;
@@ -53,6 +54,7 @@ export function CertificatesRoute() {
   const [revokeTarget, setRevokeTarget] = useState<Certificate | null>(null);
   const [revoking, setRevoking] = useState(false);
   const [verifyTarget, setVerifyTarget] = useState<Certificate | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<Certificate | null>(null);
 
   const canEdit = user ? canPerformAction(user.permissions, "certificates", "edit") : false;
 
@@ -185,6 +187,15 @@ export function CertificatesRoute() {
             variant="ghost"
             size="icon"
             className="h-8 w-8"
+            title={t("certificates.preview")}
+            onClick={() => setPreviewTarget(r)}
+          >
+            <Eye className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
             disabled={!r.verificationToken}
             onClick={() => setVerifyTarget(r)}
           >
@@ -289,6 +300,14 @@ export function CertificatesRoute() {
           </div>
         </div>
       </FormDialog>
+
+      <CertificatePreviewDialog
+        cert={previewTarget}
+        onOpenChange={(o) => {
+          if (!o) setPreviewTarget(null);
+        }}
+        onDownload={previewTarget ? () => void handleDownload(previewTarget) : undefined}
+      />
     </div>
   );
 }

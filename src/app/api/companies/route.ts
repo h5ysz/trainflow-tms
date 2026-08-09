@@ -4,6 +4,8 @@ import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
+import { coordinatorRegionScope } from "@/lib/api/region-scope";
+import { isRegionCode } from "@/lib/regions";
 
 const ALLOWED_SORT_FIELDS = ["name", "createdAt", "updatedAt", "status", "industry", "country", "city"];
 
@@ -24,10 +26,19 @@ export const GET = withModuleAction("companies", "view", async ({ req, user }) =
   if (q.filters.status) where.status = q.filters.status;
   if (q.filters.industry) where.industry = q.filters.industry;
   if (q.filters.country) where.country = q.filters.country;
+  if (q.filters.region) where.region = q.filters.region;
 
   // Contractors only see their own company
   if (user.role === "CONTRACTOR" && user.companyId) {
     where.id = user.companyId;
+  }
+
+  // Coordinators scoped to a region see only companies within their scope
+  // (own region + covered regions). Unscoped coordinators (no region assigned)
+  // keep full visibility for backward compatibility.
+  const scope = coordinatorRegionScope(user);
+  if (scope) {
+    where.region = { in: scope };
   }
 
   const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS);
@@ -57,6 +68,7 @@ export const GET = withModuleAction("companies", "view", async ({ req, user }) =
       industry: c.industry,
       country: c.country,
       city: c.city,
+      region: c.region,
       address: c.address,
       postalCode: c.postalCode,
       phone: c.phone,
@@ -81,11 +93,14 @@ export const POST = withModuleAction("companies", "create", async ({ req, user }
   const body = await req.json().catch(() => ({}));
   const {
     name, nameAr, legalName, crNumber, vatNumber, industry,
-    country, city, address, postalCode, phone, email, website,
+    country, city, region, address, postalCode, phone, email, website,
     contactPerson, contactPhone, contactEmail, status, logoUrl,
   } = body;
 
   if (!name) return fail("Company name is required", 422, "VALIDATION_ERROR");
+  if (region !== undefined && region !== null && region !== "" && !isRegionCode(region)) {
+    return fail(`Invalid region: ${region}. Valid: CENTRAL, EASTERN, WESTERN, SOUTHERN.`, 422, "VALIDATION_ERROR");
+  }
 
   // Uniqueness checks
   if (crNumber) {
@@ -106,6 +121,7 @@ export const POST = withModuleAction("companies", "create", async ({ req, user }
       industry: industry ?? null,
       country: country ?? null,
       city: city ?? null,
+      region: region ?? null,
       address: address ?? null,
       postalCode: postalCode ?? null,
       phone: phone ?? null,

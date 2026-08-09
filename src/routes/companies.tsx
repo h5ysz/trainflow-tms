@@ -9,10 +9,12 @@ import { RowActions } from "@/components/common/row-actions";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Building2, Plus, Mail, Phone, MapPin, AlertCircle } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { useEntityActions } from "@/hooks/use-entity-actions";
+import { REGIONS, REGION_LABELS } from "@/lib/regions";
 
 interface Company {
   id: string;
@@ -22,6 +24,7 @@ interface Company {
   industry?: string | null;
   country?: string | null;
   city?: string | null;
+  region?: string | null;
   email?: string | null;
   phone?: string | null;
   status: string;
@@ -34,7 +37,7 @@ interface Company {
 const STATUS_OPTIONS = ["ACTIVE", "INACTIVE", "SUSPENDED"];
 
 export function CompaniesRoute() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
     useList<Company>("/companies", { pageSize: 10 });
@@ -76,6 +79,18 @@ export function CompaniesRoute() {
           {[row.city, row.country].filter(Boolean).join(", ") || "—"}
         </div>
       ),
+    },
+    {
+      key: "region",
+      header: t("companies.region"),
+      cell: (row) =>
+        row.region ? (
+          <Badge variant="outline" className="text-xs font-mono">
+            {REGION_LABELS[row.region as keyof typeof REGION_LABELS]?.[locale === "ar" ? "ar" : "en"] ?? row.region}
+          </Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
     },
     {
       key: "contact",
@@ -258,6 +273,20 @@ export function CompaniesRoute() {
                   value={(formData.city as string) ?? ""}
                   onChange={(e) => setField("city", e.target.value)}
                 />
+              </Field>
+              <Field label={t("companies.region")} hint={t("companies.regionHint")}>
+                <Select
+                  value={(formData.region as string) ?? ""}
+                  onValueChange={(v) => setField("region", v === "__none__" ? null : v)}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">{t("misc.none")}</SelectItem>
+                    {REGIONS.map((r) => (
+                      <SelectItem key={r} value={r}>{REGION_LABELS[r][locale === "ar" ? "ar" : "en"]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </Field>
               <Field label={t("companies.address")}>
                 <Input

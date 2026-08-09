@@ -4,6 +4,7 @@ import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
+import { coordinatorRegionScope } from "@/lib/api/region-scope";
 import { randomUUID } from "node:crypto";
 
 const ALLOWED_SORT_FIELDS = ["fullName", "nationalId", "createdAt", "updatedAt", "status", "nationality", "jobTitle"];
@@ -29,6 +30,15 @@ export const GET = withModuleAction("trainees", "view", async ({ req, user }) =>
   // Contractors only see their own company's trainees
   if (user.role === "CONTRACTOR" && user.companyId) {
     where.companyId = user.companyId;
+  }
+
+  // Coordinators scoped to a region only see trainees of companies within
+  // their scope (own region + coverage). This makes the company-first trainee
+  // picker safe server-side: even a crafted ?companyId= for an out-of-scope
+  // company returns nothing.
+  const scope = coordinatorRegionScope(user);
+  if (scope) {
+    where.company = { region: { in: scope } };
   }
 
   const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS);
@@ -73,10 +83,29 @@ export const GET = withModuleAction("trainees", "view", async ({ req, user }) =>
 
 export const POST = withModuleAction("trainees", "create", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
-  const { fullName, nationalId, nationality, jobTitle, mobile, email, companyId, status, notes, documents } = body;
+  const { fullName, nationalId, nationality, jobTitle, mobile, email, companyId, status, notes, documents, dateOfBirth, idExpiry } = body;
 
   if (!fullName || !nationalId || !companyId) {
     return fail("fullName, nationalId, and companyId are required", 422, "VALIDATION_ERROR");
+  }
+
+  // ── RBAC: company scope for the trainee file ──
+  // Contractors may only create trainees under their own company (the passed
+  // companyId is forced to theirs). Coordinators scoped to a region may only
+  // create trainees for companies inside their region scope.
+  let finalCompanyId = companyId;
+  if (user.role === "CONTRACTOR" && user.companyId) {
+    finalCompanyId = user.companyId;
+  }
+  const scope = coordinatorRegionScope(user);
+  if (scope) {
+    const targetCompany = await db.company.findFirst({
+      where: { id: finalCompanyId, deletedAt: null },
+      select: { region: true },
+    });
+    if (!targetCompany || !targetCompany.region || !scope.includes(targetCompany.region)) {
+      return fail("You can only add trainees to companies within your region scope", 403, "FORBIDDEN_COMPANY_SCOPE");
+    }
   }
 
   // Staged photo / identity attachments uploaded via /api/trainees/upload-id.
@@ -117,7 +146,7 @@ export const POST = withModuleAction("trainees", "create", async ({ req, user })
   }
 
   // Validate company exists
-  const company = await db.company.findFirst({ where: { id: companyId, deletedAt: null } });
+  const company = await db.company.findFirst({ where: { id: finalCompanyId, deletedAt: null } });
   if (!company) return fail("Company not found", 404);
 
   const refNumber = await nextRefNumber("TRAINEE");
@@ -132,9 +161,11 @@ export const POST = withModuleAction("trainees", "create", async ({ req, user })
       jobTitle: jobTitle ?? null,
       mobile: mobile ?? null,
       email: email ?? null,
-      companyId,
+      companyId: finalCompanyId,
       status: status ?? "ACTIVE",
       notes: notes ?? null,
+      dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+      idExpiry: idExpiry ? new Date(idExpiry) : null,
       ...(documentsJson !== null && { documents: documentsJson }),
       createdBy: user.id,
       updatedBy: user.id,

@@ -137,6 +137,10 @@ export interface TraineeEntrySectionProps {
   trainees: TraineeEntry[];
   onChange: (next: TraineeEntry[]) => void;
   onSaveDraft?: () => void;
+  /** When present, enables the "From Company Records" tab which browses the
+   *  company's registered trainees and can create new trainees under that
+   *  company's file (with photo + ID upload). */
+  companyId?: string | null;
   /** Optional className passthrough so the parent form can size the section. */
   className?: string;
 }
@@ -298,13 +302,13 @@ function recomputeValidity(rows: TraineeEntry[]): TraineeEntry[] {
 
 // ─── Component ─────────────────────────────────────────────────────────────
 
-export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className }: TraineeEntrySectionProps) {
+export function TraineeEntrySection({ trainees, onChange, onSaveDraft, companyId, className }: TraineeEntrySectionProps) {
   const { t } = useI18n();
   const { toast } = useToast();
 
   // Local UI state — none of this needs to leak to the parent. The source of
   // truth for the rows themselves lives in `trainees` (props).
-  const [activeTab, setActiveTab] = React.useState<"manual" | "excel" | "paste">("manual");
+  const [activeTab, setActiveTab] = React.useState<"manual" | "excel" | "paste" | "company">("manual");
   const [search, setSearch] = React.useState("");
   const [filter, setFilter] = React.useState<StatFilter>("all");
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
@@ -799,6 +803,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
             <TabsTrigger value="manual" className="flex-1 sm:flex-initial"><Users className="h-4 w-4 me-1.5" />{t("requests.trainees")}</TabsTrigger>
             <TabsTrigger value="excel" className="flex-1 sm:flex-initial"><FileSpreadsheet className="h-4 w-4 me-1.5" />{t("requests.excelImport")}</TabsTrigger>
             <TabsTrigger value="paste" className="flex-1 sm:flex-initial"><ClipboardPaste className="h-4 w-4 me-1.5" />{t("requests.copyPaste")}</TabsTrigger>
+            <TabsTrigger value="company" className="flex-1 sm:flex-initial"><Users className="h-4 w-4 me-1.5" />{t("requests.fromCompany")}</TabsTrigger>
           </TabsList>
         </div>
 
@@ -1169,6 +1174,15 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, className
               <CopyPlus className="h-3.5 w-3.5 me-1" />{t("requests.importRows")}
             </Button>
           </div>
+        </TabsContent>
+
+        {/* ─── From Company Records ─────────────────────────────────────── */}
+        <TabsContent value="company" className="space-y-4 mt-4">
+          <CompanyRecordsTab
+            companyId={companyId ?? null}
+            trainees={trainees}
+            onAdd={(next) => updateTrainees([...trainees, ...next])}
+          />
         </TabsContent>
       </Tabs>
 
@@ -1709,6 +1723,380 @@ function RowDocUpload({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Company Records tab ───────────────────────────────────────────────────
+// Browses the selected company's registered trainees (server-scoped by the
+// contractor's companyId / coordinator's region) and lets the user either pick
+// existing trainees into the list or create a NEW trainee under that company's
+// file — with optional photo + ID upload staged through /api/trainees/upload-id
+// and persisted via POST /api/trainees.
+
+interface CompanyTraineeRow {
+  id: string;
+  refNumber: string;
+  fullName: string;
+  nationalId: string;
+  nationality: string | null;
+  jobTitle: string | null;
+  mobile: string | null;
+  email: string | null;
+  companyId: string | null;
+  documents: string | null;
+}
+
+function parseStoredDocuments(raw: string | null | undefined): TraineeDocument[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const VALID: TraineeDocument["type"][] = ["iqama", "id", "passport", "certificate", "ohs", "other"];
+    return parsed
+      .map((d) => (d ?? {}) as Record<string, unknown>)
+      .filter((d) => typeof d.url === "string" && d.url)
+      .map((d) => ({
+        url: d.url as string,
+        filename: typeof d.filename === "string" ? d.filename : "attachment",
+        type: VALID.includes(d.type as TraineeDocument["type"]) ? (d.type as TraineeDocument["type"]) : "other",
+        uploadedAt: typeof d.uploadedAt === "string" ? d.uploadedAt : new Date().toISOString(),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function CompanyRecordsTab({
+  companyId,
+  trainees,
+  onAdd,
+}: {
+  companyId: string | null;
+  trainees: TraineeEntry[];
+  onAdd: (next: TraineeEntry[]) => void;
+}) {
+  const { t } = useI18n();
+  const { toast } = useToast();
+
+  const [query, setQuery] = React.useState("");
+  const [rows, setRows] = React.useState<CompanyTraineeRow[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [showNew, setShowNew] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+
+  const [form, setForm] = React.useState({
+    fullName: "", nationalId: "", nationality: "", jobTitle: "", mobile: "", email: "",
+  });
+  const [photoDoc, setPhotoDoc] = React.useState<TraineeDocument | null>(null);
+  const [idDoc, setIdDoc] = React.useState<TraineeDocument | null>(null);
+  const [uploading, setUploading] = React.useState<"photo" | "id" | null>(null);
+
+  const load = React.useCallback(async (q: string) => {
+    if (!companyId) {
+      setRows([]);
+      setSelected(new Set());
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await api.getList<CompanyTraineeRow>("/trainees", {
+        companyId,
+        pageSize: 200,
+        search: q.trim() || undefined,
+      });
+      setRows(res.rows);
+      setSelected(new Set());
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, [companyId, toast, t]);
+
+  React.useEffect(() => {
+    void load("");
+  }, [load]);
+
+  // Debounced search-as-you-type.
+  React.useEffect(() => {
+    const h = window.setTimeout(() => void load(query), 350);
+    return () => window.clearTimeout(h);
+  }, [query, load]);
+
+  const existingIds = React.useMemo(() => {
+    const s = new Set<string>();
+    for (const tr of trainees) {
+      const id = tr.nationalId.trim().toLowerCase();
+      if (id) s.add(id);
+    }
+    return s;
+  }, [trainees]);
+
+  const stageUpload = React.useCallback(async (file: File, kind: "photo" | "id") => {
+    setUploading(kind);
+    try {
+      const res = await api.postFile<UploadIdResponse>("/trainees/upload-id", file);
+      const doc: TraineeDocument = {
+        url: res.url,
+        filename: file.name,
+        type: kind === "photo" ? "other" : "id",
+        uploadedAt: new Date().toISOString(),
+      };
+      if (kind === "photo") setPhotoDoc(doc); else setIdDoc(doc);
+      toast({
+        title: t("misc.success"),
+        description: t(kind === "photo" ? "requests.photoUploaded" : "requests.idDocUploaded"),
+      });
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setUploading(null);
+    }
+  }, [toast, t]);
+
+  const addSelected = React.useCallback(() => {
+    const additions: TraineeEntry[] = [];
+    for (const r of rows) {
+      if (!selected.has(r.id)) continue;
+      const lid = r.nationalId.trim().toLowerCase();
+      if (lid && existingIds.has(lid)) continue;
+      additions.push(emptyRow({
+        fullName: r.fullName,
+        nationalId: r.nationalId,
+        nationality: r.nationality ?? "",
+        jobTitle: r.jobTitle ?? "",
+        documents: parseStoredDocuments(r.documents),
+      }));
+    }
+    if (additions.length === 0) {
+      toast({ title: t("misc.info"), description: t("requests.traineeAlreadyInList") });
+      return;
+    }
+    onAdd(additions);
+    setSelected(new Set());
+    toast({ title: t("misc.success"), description: t("requests.traineesCount", { count: additions.length }) });
+  }, [rows, selected, existingIds, onAdd, toast, t]);
+
+  const submitNew = React.useCallback(async () => {
+    if (!companyId) {
+      toast({ title: t("misc.info"), description: t("requests.noCompanySelected") });
+      return;
+    }
+    if (!form.fullName.trim() || !form.nationalId.trim()) {
+      toast({ title: t("misc.error"), description: t("requests.addAtLeastOneTrainee"), variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const created = await api.post<CompanyTraineeRow>("/trainees", {
+        fullName: form.fullName.trim(),
+        nationalId: form.nationalId.trim(),
+        nationality: form.nationality.trim() || null,
+        jobTitle: form.jobTitle.trim() || null,
+        mobile: form.mobile.trim() || null,
+        email: form.email.trim() || null,
+        companyId,
+        documents: [photoDoc, idDoc].filter((d): d is TraineeDocument => d !== null),
+      });
+      onAdd([emptyRow({
+        fullName: created.fullName,
+        nationalId: created.nationalId,
+        nationality: created.nationality ?? "",
+        jobTitle: created.jobTitle ?? "",
+        documents: parseStoredDocuments(created.documents),
+      })]);
+      setForm({ fullName: "", nationalId: "", nationality: "", jobTitle: "", mobile: "", email: "" });
+      setPhotoDoc(null);
+      setIdDoc(null);
+      setShowNew(false);
+      toast({ title: t("misc.success"), description: t("requests.traineeAdded", { name: created.fullName }) });
+      void load("");
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  }, [form, photoDoc, idDoc, companyId, onAdd, load, toast, t]);
+
+  return (
+    <div className="space-y-3">
+      <Alert variant="default">
+        <Users className="h-4 w-4" />
+        <AlertTitle>{t("requests.fromCompany")}</AlertTitle>
+        <AlertDescription>{t("requests.fromCompanyDesc")}</AlertDescription>
+      </Alert>
+
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t("requests.searchCompanyTrainees")}
+            className="ps-8"
+          />
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          onClick={addSelected}
+          disabled={selected.size === 0}
+          className="shrink-0"
+        >
+          <CheckCircle2 className="h-3.5 w-3.5 me-1" />
+          {t("requests.addSelected", { count: selected.size })}
+        </Button>
+      </div>
+
+      {!companyId ? (
+        <div className="text-sm text-muted-foreground py-8 text-center border rounded-lg">
+          {t("requests.noCompanySelected")}
+        </div>
+      ) : loading ? (
+        <div className="text-sm text-muted-foreground py-8 text-center border rounded-lg">
+          <Loader2 className="h-4 w-4 inline me-1.5 animate-spin" />{t("misc.loading")}
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="text-sm text-muted-foreground py-8 text-center border rounded-lg">
+          {t("requests.noCompanyTrainees")}
+        </div>
+      ) : (
+        <div className="max-h-64 overflow-y-auto border rounded-lg">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-10"></TableHead>
+                <TableHead>{t("requests.placeholderFullName")}</TableHead>
+                <TableHead>{t("requests.nationalId")}</TableHead>
+                <TableHead>{t("requests.newTraineeNationality")}</TableHead>
+                <TableHead>{t("requests.newTraineeJobTitle")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r) => {
+                const already = existingIds.has(r.nationalId.trim().toLowerCase());
+                return (
+                  <TableRow key={r.id}>
+                    <TableCell className="pe-0">
+                      <Checkbox
+                        checked={selected.has(r.id)}
+                        disabled={already}
+                        onCheckedChange={(chk) => {
+                          setSelected((prev) => {
+                            const next = new Set(prev);
+                            if (chk) next.add(r.id); else next.delete(r.id);
+                            return next;
+                          });
+                        }}
+                      />
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {r.fullName}
+                      {already && (
+                        <Badge variant="secondary" className="ms-2 text-[10px]">{t("requests.traineeAlreadyInList")}</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs font-mono">{r.nationalId}</TableCell>
+                    <TableCell className="text-sm">{r.nationality ?? "—"}</TableCell>
+                    <TableCell className="text-sm">{r.jobTitle ?? "—"}</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      <div className="border-t pt-3">
+        <Button type="button" variant="outline" size="sm" onClick={() => setShowNew((v) => !v)} disabled={!companyId}>
+          <Plus className="h-3.5 w-3.5 me-1" />{t("requests.addNewTrainee")}
+        </Button>
+
+        {showNew && (
+          <div className="mt-3 space-y-3 border rounded-lg p-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="block space-y-1">
+                <span className="text-xs font-medium">{t("requests.newTraineeName")} *</span>
+                <Input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-xs font-medium">{t("requests.newTraineeNationalId")} *</span>
+                <Input value={form.nationalId} onChange={(e) => setForm({ ...form, nationalId: e.target.value })} />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-xs font-medium">{t("requests.newTraineeNationality")}</span>
+                <Input value={form.nationality} onChange={(e) => setForm({ ...form, nationality: e.target.value })} />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-xs font-medium">{t("requests.newTraineeJobTitle")}</span>
+                <Input value={form.jobTitle} onChange={(e) => setForm({ ...form, jobTitle: e.target.value })} />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-xs font-medium">{t("requests.newTraineeMobile")}</span>
+                <Input value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-xs font-medium">{t("requests.newTraineeEmail")}</span>
+                <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+              </label>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <input
+                id="company-tab-photo"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void stageUpload(f, "photo");
+                  e.target.value = "";
+                }}
+              />
+              <label htmlFor="company-tab-photo">
+                <Button type="button" variant="outline" size="sm" disabled={uploading !== null} asChild>
+                  <span>
+                    {uploading === "photo" ? <Loader2 className="h-3.5 w-3.5 me-1 animate-spin" /> : <Upload className="h-3.5 w-3.5 me-1" />}
+                    {photoDoc ? photoDoc.filename : t("requests.uploadPhoto")}
+                  </span>
+                </Button>
+              </label>
+
+              <input
+                id="company-tab-id"
+                type="file"
+                accept="image/*,.pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void stageUpload(f, "id");
+                  e.target.value = "";
+                }}
+              />
+              <label htmlFor="company-tab-id">
+                <Button type="button" variant="outline" size="sm" disabled={uploading !== null} asChild>
+                  <span>
+                    {uploading === "id" ? <Loader2 className="h-3.5 w-3.5 me-1 animate-spin" /> : <Paperclip className="h-3.5 w-3.5 me-1" />}
+                    {idDoc ? idDoc.filename : t("requests.uploadIdDoc")}
+                  </span>
+                </Button>
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" size="sm" onClick={() => setShowNew(false)}>
+                {t("misc.cancel")}
+              </Button>
+              <Button type="button" size="sm" onClick={() => void submitNew()} disabled={saving || uploading !== null}>
+                {saving ? <Loader2 className="h-3.5 w-3.5 me-1 animate-spin" /> : <Plus className="h-3.5 w-3.5 me-1" />}
+                {saving ? t("requests.creating") : t("requests.addNewTrainee")}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
