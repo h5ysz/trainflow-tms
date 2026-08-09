@@ -67,7 +67,7 @@ function check(name: string, ok: boolean, detail: string) {
 
   // ── 3. Create Trainer + certify + Course + Questions + 10 Trainees ─────
   const trainer = await req("POST", "/api/trainers", {
-    fullName: "Bugfix Trainer", nationalId: "BUGFIX-TID-001",
+    nameEn: "Bugfix Trainer", nationalId: "BUGFIX-TID-001",
     email: "bugfix.trainer@test.com", phone: "+966555555002",
     nationality: "Saudi", gender: "M", status: "ACTIVE",
   });

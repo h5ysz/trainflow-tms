@@ -19,12 +19,13 @@ import { Users, Plus, Mail, Phone, Award, CalendarDays, AlertCircle, ShieldCheck
 import { useList } from "@/lib/api/hooks";
 import { useEntityActions } from "@/hooks/use-entity-actions";
 import { api } from "@/lib/api/client";
+import { trainerName } from "@/lib/i18n/trainer-name";
 
 interface Trainer {
   id: string;
   refNumber: string;
-  fullName: string;
-  fullNameAr?: string | null;
+  nameEn: string;
+  nameAr?: string | null;
   email?: string | null;
   phone?: string | null;
   nationality?: string | null;
@@ -51,7 +52,7 @@ interface CatalogWorkshop {
 const STATUSES = ["ACTIVE", "INACTIVE", "SUSPENDED"];
 
 export function TrainersRoute() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
     useList<Trainer>("/trainers");
@@ -124,10 +125,10 @@ export function TrainersRoute() {
       cell: (r) => (
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-warning/10 text-warning text-xs font-semibold shrink-0">
-            {r.fullName.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase()}
+            {trainerName(r, locale).split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase()}
           </div>
           <div>
-            <div className="text-sm font-medium">{r.fullName}</div>
+            <div className="text-sm font-medium">{trainerName(r, locale)}</div>
             <div className="text-[10px] text-muted-foreground font-mono">{r.refNumber}</div>
           </div>
         </div>
@@ -199,7 +200,7 @@ export function TrainersRoute() {
 
   const handleSubmit = () =>
     void submit(requireFields({
-      [t("trainers.fullName")]: "fullName",
+      [t("trainers.fullName")]: "nameEn",
       [t("trainers.email")]: "email",
     }));
 
@@ -247,10 +248,10 @@ export function TrainersRoute() {
         <div className="space-y-5">
           <FormGrid>
             <Field label={t("trainers.fullName")} required>
-              <Input placeholder="Full name" value={(formData.fullName as string) ?? ""} onChange={(e) => setField("fullName", e.target.value)} />
+              <Input placeholder="Full name" value={(formData.nameEn as string) ?? ""} onChange={(e) => setField("nameEn", e.target.value)} />
             </Field>
             <Field label={t("trainers.fullNameAr")}>
-              <Input placeholder="الاسم بالعربية" dir="rtl" value={(formData.fullNameAr as string) ?? ""} onChange={(e) => setField("fullNameAr", e.target.value)} />
+              <Input placeholder="الاسم بالعربية" dir="rtl" value={(formData.nameAr as string) ?? ""} onChange={(e) => setField("nameAr", e.target.value)} />
             </Field>
             <Field label={t("trainers.nationalId")}>
               <Input placeholder="ID Number" value={(formData.nationalId as string) ?? ""} onChange={(e) => setField("nationalId", e.target.value)} />
@@ -315,7 +316,7 @@ export function TrainersRoute() {
         open={authTrainer !== null}
         onOpenChange={(o) => !o && setAuthTrainer(null)}
         title={t("trainers.authTitle")}
-        description={authTrainer ? `${authTrainer.fullName} (${authTrainer.refNumber})` : undefined}
+        description={authTrainer ? `${trainerName(authTrainer, locale)} (${authTrainer.refNumber})` : undefined}
         icon={ShieldCheck}
         size="lg"
         onSubmit={() => void saveAuth()}
@@ -394,7 +395,7 @@ export function TrainersRoute() {
       <ConfirmDialog
         open={deleteTarget !== null}
         onOpenChange={(o) => !o && setDeleteTarget(null)}
-        description={deleteTarget?.fullName}
+        description={deleteTarget ? trainerName(deleteTarget, locale) : undefined}
         destructive
         loading={deleting}
         onConfirm={() => void confirmDelete()}

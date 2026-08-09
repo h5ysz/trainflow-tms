@@ -29,9 +29,10 @@ import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api/client";
 import { Users, AlertCircle, Loader2, Search, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { trainerName } from "@/lib/i18n/trainer-name";
 
 interface CourseOption { id: string; title: string; code: string; }
-interface TrainerOption { id: string; fullName: string; }
+interface TrainerOption { id: string; nameEn: string; nameAr?: string | null; }
 
 interface ApprovedRequestTrainee {
   id: string;
@@ -79,7 +80,7 @@ export function AssembleSessionDialog({
    *  the new session's detail page. */
   onAssembled: (session: AssembleResponse["session"]) => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { toast } = useToast();
 
   // ── State ────────────────────────────────────────────────────────────────
@@ -111,7 +112,7 @@ export function AssembleSessionDialog({
     }
     if (trainers.length === 0) {
       api.getList<TrainerOption>("/trainers", { pageSize: 200 })
-        .then((r) => setTrainers(r.rows.map((tr) => ({ id: tr.id, fullName: tr.fullName }))))
+        .then((r) => setTrainers(r.rows.map((tr) => ({ id: tr.id, nameEn: tr.nameEn, nameAr: tr.nameAr }))))
         .catch(() => {});
     }
   }, [open, courses.length, trainers.length]);
@@ -470,7 +471,7 @@ export function AssembleSessionDialog({
                   <SelectContent>
                     <SelectItem value="__none__">{t("session.assembleNoTrainer")}</SelectItem>
                     {trainers.map((tr) => (
-                      <SelectItem key={tr.id} value={tr.id}>{tr.fullName}</SelectItem>
+                      <SelectItem key={tr.id} value={tr.id}>{trainerName(tr, locale)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

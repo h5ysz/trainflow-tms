@@ -9,7 +9,7 @@ export const GET = withModuleAction("workshops", "view", async ({ params }) => {
     include: {
       authorizations: {
         where: { deletedAt: null },
-        include: { trainer: { select: { id: true, fullName: true, refNumber: true } } },
+        include: { trainer: { select: { id: true, nameEn: true, refNumber: true } } },
       },
     },
   });

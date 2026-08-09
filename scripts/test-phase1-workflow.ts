@@ -73,7 +73,7 @@ async function main() {
     });
   }
 
-  console.log(`Setup: company=${company.name}, course=${course.title} (cap=20), trainer=${trainer.fullName}`);
+  console.log(`Setup: company=${company.name}, course=${course.title} (cap=20), trainer=${trainer.nameEn}`);
   console.log(`       Will create 37 trainees (over capacity → expect 2 sessions)\n`);
 
   // Create 37 trainees

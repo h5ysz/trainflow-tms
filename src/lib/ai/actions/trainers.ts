@@ -9,8 +9,8 @@ import { ActionError } from "./types";
 import { copilotAudit } from "./audit";
 
 interface TrainerInput {
-  fullName?: string;
-  fullNameAr?: string;
+  nameEn?: string;
+  nameAr?: string;
   nationalId?: string;
   email?: string;
   phone?: string;
@@ -27,8 +27,8 @@ interface TrainerInput {
 
 function pickTrainerFields(input: TrainerInput) {
   return {
-    fullName: input.fullName,
-    fullNameAr: input.fullNameAr ?? null,
+    nameEn: input.nameEn,
+    nameAr: input.nameAr ?? null,
     nationalId: input.nationalId ?? null,
     email: input.email ?? null,
     phone: input.phone ?? null,
@@ -52,7 +52,7 @@ const createTrainer: ActionHandler<TrainerInput> = {
   descriptionAr: "إنشاء سجل مدرب جديد (الاسم، الاتصال، الجنسية، تاريخ التوظيف).",
   resolvePermission: () => ({ module: "trainers", action: "create" }),
   async preparePreview(input, _user) {
-    if (!input.fullName) throw new ActionError("fullName is required", 422, "VALIDATION_ERROR");
+    if (!input.nameEn) throw new ActionError("nameEn is required", 422, "VALIDATION_ERROR");
     if (input.email) {
       const dup = await db.trainer.findFirst({ where: { email: input.email, deletedAt: null } });
       if (dup) throw new ActionError(`Trainer email "${input.email}" already exists`, 400, "DUPLICATE_EMAIL");
@@ -66,18 +66,18 @@ const createTrainer: ActionHandler<TrainerInput> = {
       actionType: "TRAINER_CREATE",
       title: "Create Trainer",
       titleAr: "إنشاء مدرب",
-      summary: `Create trainer "${fields.fullName}".`,
-      summaryAr: `إنشاء مدرب "${fields.fullName}".`,
-      affectedRecords: [{ entity: "TRAINER", description: `New trainer: ${fields.fullName}` }],
+      summary: `Create trainer "${fields.nameEn}".`,
+      summaryAr: `إنشاء مدرب "${fields.nameEn}".`,
+      affectedRecords: [{ entity: "TRAINER", description: `New trainer: ${fields.nameEn}` }],
       changes: [
-        { field: "fullName", label: "Full Name", oldValue: null, newValue: fields.fullName },
+        { field: "nameEn", label: "Full Name", oldValue: null, newValue: fields.nameEn },
         { field: "email", label: "Email", oldValue: null, newValue: fields.email ?? "—" },
         { field: "mobile", label: "Mobile", oldValue: null, newValue: fields.mobile ?? "—" },
         { field: "nationality", label: "Nationality", oldValue: null, newValue: fields.nationality ?? "—" },
       ],
       warnings: [],
-      expectedResult: `New trainer "${fields.fullName}" will appear in the Trainers list.`,
-      expectedResultAr: `سيظهر المدرب الجديد "${fields.fullName}" في قائمة المدربين.`,
+      expectedResult: `New trainer "${fields.nameEn}" will appear in the Trainers list.`,
+      expectedResultAr: `سيظهر المدرب الجديد "${fields.nameEn}" في قائمة المدربين.`,
       hydratedParams: { input: fields },
     };
   },
@@ -88,8 +88,8 @@ const createTrainer: ActionHandler<TrainerInput> = {
     const trainer = await db.trainer.create({
       data: {
         refNumber,
-        fullName: fields.fullName!,
-        fullNameAr: fields.fullNameAr,
+        nameEn: fields.nameEn!,
+        nameAr: fields.nameAr,
         nationalId: fields.nationalId,
         email: fields.email,
         phone: fields.phone,
@@ -112,8 +112,8 @@ const createTrainer: ActionHandler<TrainerInput> = {
       entity: "TRAINER",
       entityId: trainer.id,
       entityRef: trainer.refNumber,
-      description: `AI created trainer ${trainer.refNumber} (${trainer.fullName})`,
-      descriptionAr: `أنشأ الذكاء الاصطناعي مدرب ${trainer.refNumber} (${trainer.fullName})`,
+      description: `AI created trainer ${trainer.refNumber} (${trainer.nameEn})`,
+      descriptionAr: `أنشأ الذكاء الاصطناعي مدرب ${trainer.refNumber} (${trainer.nameEn})`,
       req,
       newValue: fields,
       copilotActionType: preview.actionType,
@@ -121,9 +121,9 @@ const createTrainer: ActionHandler<TrainerInput> = {
     return {
       success: true,
       actionType: "TRAINER_CREATE",
-      message: `Trainer ${trainer.refNumber} (${trainer.fullName}) created.`,
-      messageAr: `تم إنشاء المدرب ${trainer.refNumber} (${trainer.fullName}).`,
-      results: [{ entity: "TRAINER", id: trainer.id, refNumber: trainer.refNumber, description: trainer.fullName }],
+      message: `Trainer ${trainer.refNumber} (${trainer.nameEn}) created.`,
+      messageAr: `تم إنشاء المدرب ${trainer.refNumber} (${trainer.nameEn}).`,
+      results: [{ entity: "TRAINER", id: trainer.id, refNumber: trainer.refNumber, description: trainer.nameEn }],
     };
   },
 };
@@ -145,12 +145,12 @@ const assignTrainer: ActionHandler<TrainerAssignInput> = {
     }
     const session = await db.trainingSession.findFirst({
       where: { id: input.sessionId, deletedAt: null },
-      include: { course: { select: { id: true, title: true } }, trainer: { select: { id: true, fullName: true, refNumber: true } } },
+      include: { course: { select: { id: true, title: true } }, trainer: { select: { id: true, nameEn: true, refNumber: true } } },
     });
     if (!session) throw new ActionError("Session not found", 404, "NOT_FOUND");
     if (session.trainerId) {
       throw new ActionError(
-        `Session already has a trainer: ${session.trainer?.fullName} (${session.trainer?.refNumber}). Use TRAINER_REPLACE instead.`,
+        `Session already has a trainer: ${session.trainer?.nameEn} (${session.trainer?.refNumber}). Use TRAINER_REPLACE instead.`,
         400,
         "TRAINER_ALREADY_ASSIGNED"
       );
@@ -175,19 +175,19 @@ const assignTrainer: ActionHandler<TrainerAssignInput> = {
       actionType: "TRAINER_ASSIGN",
       title: "Assign Trainer",
       titleAr: "تعيين المدرب",
-      summary: `Assign ${trainer.fullName} (${trainer.refNumber}) to session ${session.refNumber}.`,
-      summaryAr: `تعيين ${trainer.fullName} (${trainer.refNumber}) للجلسة ${session.refNumber}.`,
+      summary: `Assign ${trainer.nameEn} (${trainer.refNumber}) to session ${session.refNumber}.`,
+      summaryAr: `تعيين ${trainer.nameEn} (${trainer.refNumber}) للجلسة ${session.refNumber}.`,
       affectedRecords: [
-        { entity: "TRAINER", refNumber: trainer.refNumber, description: trainer.fullName },
+        { entity: "TRAINER", refNumber: trainer.refNumber, description: trainer.nameEn },
         { entity: "SESSION", refNumber: session.refNumber, description: session.course?.title ?? session.title },
       ],
-      changes: [{ field: "trainerId", label: "Trainer", oldValue: null, newValue: `${trainer.fullName} (${trainer.refNumber})` }],
+      changes: [{ field: "trainerId", label: "Trainer", oldValue: null, newValue: `${trainer.nameEn} (${trainer.refNumber})` }],
       warnings,
-      expectedResult: `${trainer.fullName} will be assigned to session ${session.refNumber}.`,
-      expectedResultAr: `سيتم تعيين ${trainer.fullName} للجلسة ${session.refNumber}.`,
+      expectedResult: `${trainer.nameEn} will be assigned to session ${session.refNumber}.`,
+      expectedResultAr: `سيتم تعيين ${trainer.nameEn} للجلسة ${session.refNumber}.`,
       hydratedParams: {
         sessionId: session.id, sessionRef: session.refNumber,
-        trainerId: trainer.id, trainerRef: trainer.refNumber, trainerName: trainer.fullName,
+        trainerId: trainer.id, trainerRef: trainer.refNumber, trainerName: trainer.nameEn,
       },
     };
   },
@@ -239,7 +239,7 @@ const replaceTrainer: ActionHandler<TrainerReplaceInput> = {
     }
     const session = await db.trainingSession.findFirst({
       where: { id: input.sessionId, deletedAt: null },
-      include: { course: { select: { id: true, title: true } }, trainer: { select: { id: true, fullName: true, refNumber: true } } },
+      include: { course: { select: { id: true, title: true } }, trainer: { select: { id: true, nameEn: true, refNumber: true } } },
     });
     if (!session) throw new ActionError("Session not found", 404, "NOT_FOUND");
     if (!session.trainerId) {
@@ -263,25 +263,25 @@ const replaceTrainer: ActionHandler<TrainerReplaceInput> = {
       actionType: "TRAINER_REPLACE",
       title: "Replace Trainer",
       titleAr: "استبدال المدرب",
-      summary: `Replace ${session.trainer?.fullName} with ${newTrainer.fullName} on session ${session.refNumber}.`,
-      summaryAr: `استبدال ${session.trainer?.fullName} بـ ${newTrainer.fullName} في الجلسة ${session.refNumber}.`,
+      summary: `Replace ${session.trainer?.nameEn} with ${newTrainer.nameEn} on session ${session.refNumber}.`,
+      summaryAr: `استبدال ${session.trainer?.nameEn} بـ ${newTrainer.nameEn} في الجلسة ${session.refNumber}.`,
       affectedRecords: [
-        { entity: "TRAINER", refNumber: session.trainer?.refNumber, description: `From: ${session.trainer?.fullName}` },
-        { entity: "TRAINER", refNumber: newTrainer.refNumber, description: `To: ${newTrainer.fullName}` },
+        { entity: "TRAINER", refNumber: session.trainer?.refNumber, description: `From: ${session.trainer?.nameEn}` },
+        { entity: "TRAINER", refNumber: newTrainer.refNumber, description: `To: ${newTrainer.nameEn}` },
         { entity: "SESSION", refNumber: session.refNumber, description: session.course?.title ?? session.title },
       ],
       changes: [{
         field: "trainerId", label: "Trainer",
-        oldValue: `${session.trainer?.fullName} (${session.trainer?.refNumber})`,
-        newValue: `${newTrainer.fullName} (${newTrainer.refNumber})`,
+        oldValue: `${session.trainer?.nameEn} (${session.trainer?.refNumber})`,
+        newValue: `${newTrainer.nameEn} (${newTrainer.refNumber})`,
       }],
       warnings,
-      expectedResult: `${newTrainer.fullName} will be the new trainer for session ${session.refNumber}.`,
-      expectedResultAr: `سيكون ${newTrainer.fullName} المدرب الجديد للجلسة ${session.refNumber}.`,
+      expectedResult: `${newTrainer.nameEn} will be the new trainer for session ${session.refNumber}.`,
+      expectedResultAr: `سيكون ${newTrainer.nameEn} المدرب الجديد للجلسة ${session.refNumber}.`,
       hydratedParams: {
         sessionId: session.id, sessionRef: session.refNumber,
-        oldTrainerId: session.trainerId, oldTrainerName: session.trainer?.fullName,
-        newTrainerId: newTrainer.id, newTrainerRef: newTrainer.refNumber, newTrainerName: newTrainer.fullName,
+        oldTrainerId: session.trainerId, oldTrainerName: session.trainer?.nameEn,
+        newTrainerId: newTrainer.id, newTrainerRef: newTrainer.refNumber, newTrainerName: newTrainer.nameEn,
       },
     };
   },
@@ -326,7 +326,7 @@ const removeTrainer: ActionHandler<TrainerRemoveInput> = {
     if (!input.sessionId) throw new ActionError("sessionId is required", 422, "VALIDATION_ERROR");
     const session = await db.trainingSession.findFirst({
       where: { id: input.sessionId, deletedAt: null },
-      include: { trainer: { select: { id: true, fullName: true, refNumber: true } } },
+      include: { trainer: { select: { id: true, nameEn: true, refNumber: true } } },
     });
     if (!session) throw new ActionError("Session not found", 404, "NOT_FOUND");
     if (!session.trainerId) throw new ActionError("Session has no trainer to remove", 400, "NO_TRAINER");
@@ -334,15 +334,15 @@ const removeTrainer: ActionHandler<TrainerRemoveInput> = {
       actionType: "TRAINER_REMOVE",
       title: "Remove Trainer",
       titleAr: "إزالة المدرب",
-      summary: `Remove ${session.trainer?.fullName} from session ${session.refNumber}.`,
-      summaryAr: `إزالة ${session.trainer?.fullName} من الجلسة ${session.refNumber}.`,
+      summary: `Remove ${session.trainer?.nameEn} from session ${session.refNumber}.`,
+      summaryAr: `إزالة ${session.trainer?.nameEn} من الجلسة ${session.refNumber}.`,
       affectedRecords: [
-        { entity: "TRAINER", refNumber: session.trainer?.refNumber, description: session.trainer?.fullName ?? "" },
+        { entity: "TRAINER", refNumber: session.trainer?.refNumber, description: session.trainer?.nameEn ?? "" },
         { entity: "SESSION", refNumber: session.refNumber, description: session.title },
       ],
       changes: [{
         field: "trainerId", label: "Trainer",
-        oldValue: `${session.trainer?.fullName} (${session.trainer?.refNumber})`,
+        oldValue: `${session.trainer?.nameEn} (${session.trainer?.refNumber})`,
         newValue: null,
       }],
       warnings: [{
@@ -350,11 +350,11 @@ const removeTrainer: ActionHandler<TrainerRemoveInput> = {
         message: "Session will have no trainer assigned. Schedule a replacement before the start date.",
         messageAr: "لن يكون للجلسة مدرب معيّن. ابحث عن بديل قبل تاريخ البدء.",
       }],
-      expectedResult: `${session.trainer?.fullName} will be unassigned from session ${session.refNumber}.`,
-      expectedResultAr: `سيتم إلغاء تعيين ${session.trainer?.fullName} من الجلسة ${session.refNumber}.`,
+      expectedResult: `${session.trainer?.nameEn} will be unassigned from session ${session.refNumber}.`,
+      expectedResultAr: `سيتم إلغاء تعيين ${session.trainer?.nameEn} من الجلسة ${session.refNumber}.`,
       hydratedParams: {
         sessionId: session.id, sessionRef: session.refNumber,
-        oldTrainerId: session.trainerId, oldTrainerName: session.trainer?.fullName, oldTrainerRef: session.trainer?.refNumber,
+        oldTrainerId: session.trainerId, oldTrainerName: session.trainer?.nameEn, oldTrainerRef: session.trainer?.refNumber,
       },
     };
   },

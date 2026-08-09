@@ -103,7 +103,7 @@ async function gcclabMonthlyQuery(filter: ReportFilter): Promise<ReportDataRow[]
     where: sessionWhere,
     include: {
       course: { select: { id: true, title: true, code: true, refNumber: true } },
-      trainer: { select: { id: true, fullName: true, refNumber: true } },
+      trainer: { select: { id: true, nameEn: true, refNumber: true } },
       attendance: {
         where: { deletedAt: null },
         select: {
@@ -203,7 +203,7 @@ async function gcclabMonthlyQuery(filter: ReportFilter): Promise<ReportDataRow[]
         courseCode: session.course?.code ?? "",
         sessionRef: session.refNumber,
         sessionDate: session.startDate,
-        trainerName: session.trainer?.fullName ?? "",
+        trainerName: session.trainer?.nameEn ?? "",
         attendanceStatus: att.status,
         checkInAt: att.checkInAt,
         preTestScore: preTest?.score ?? null,

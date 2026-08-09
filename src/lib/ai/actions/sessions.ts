@@ -71,7 +71,7 @@ const createSession: ActionHandler<SessionCreateInput> = {
     if (input.trainerId) {
       const trainer = await db.trainer.findFirst({ where: { id: input.trainerId, deletedAt: null } });
       if (!trainer) throw new ActionError("Trainer not found", 404, "NOT_FOUND");
-      trainerName = trainer.fullName;
+      trainerName = trainer.nameEn;
       const validation = await validateTrainerAssignment({
         user, trainerId: trainer.id, courseId: course.id,
         startDate: new Date(input.startDate), endDate: new Date(input.endDate),
@@ -243,7 +243,7 @@ const duplicateSession: ActionHandler<SessionDuplicateInput> = {
     if (input.newTrainerId) {
       const trainer = await db.trainer.findFirst({ where: { id: input.newTrainerId, deletedAt: null } });
       if (!trainer) throw new ActionError("Trainer not found", 404, "NOT_FOUND");
-      newTrainerName = trainer.fullName;
+      newTrainerName = trainer.nameEn;
     }
     return {
       actionType: "SESSION_DUPLICATE",

@@ -34,7 +34,7 @@ export const GET = withErrorEnvelope(async function GET(req: Request) {
     include: {
       course: { select: { id: true, code: true, title: true, validityMonths: true } },
       company: { select: { id: true, name: true } },
-      session: { select: { id: true, refNumber: true, startDate: true, endDate: true, trainer: { select: { fullName: true } } } },
+      session: { select: { id: true, refNumber: true, startDate: true, endDate: true, trainer: { select: { nameEn: true } } } },
       renewedFrom: { select: { id: true, refNumber: true, version: true, validUntil: true, status: true } },
     },
     orderBy: [{ courseId: "asc" }, { issuedAt: "desc" }],
@@ -64,7 +64,7 @@ export const GET = withErrorEnvelope(async function GET(req: Request) {
       courseCode: c.course.code,
       courseTitle: c.course.title,
       companyName: c.company?.name ?? null,
-      trainerName: c.session.trainer?.fullName ?? null,
+      trainerName: c.session.trainer?.nameEn ?? null,
       renewedFrom: c.renewedFrom
         ? { id: c.renewedFrom.id, refNumber: c.renewedFrom.refNumber, version: c.renewedFrom.version ?? 1 }
         : null,

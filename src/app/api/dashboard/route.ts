@@ -254,7 +254,7 @@ export const GET = withModuleAction("dashboard", "view", async ({ user }) => {
     },
     include: {
       course: { select: { id: true, title: true, code: true, refNumber: true } },
-      trainer: { select: { id: true, fullName: true, refNumber: true } },
+        trainer: { select: { id: true, nameEn: true, nameAr: true, refNumber: true } },
     },
     orderBy: { startDate: "asc" },
     take: 5,
@@ -307,7 +307,10 @@ export const GET = withModuleAction("dashboard", "view", async ({ user }) => {
       courseTitle: s.course?.title ?? null,
       courseCode: s.course?.code ?? null,
       courseRef: s.course?.refNumber ?? null,
-      trainerName: s.trainer?.fullName ?? null,
+      trainerName: s.trainer?.nameEn ?? null,
+      trainer: s.trainer
+        ? { nameEn: s.trainer.nameEn, nameAr: s.trainer.nameAr }
+        : null,
       trainerRef: s.trainer?.refNumber ?? null,
       startDate: s.startDate,
       endDate: s.endDate,

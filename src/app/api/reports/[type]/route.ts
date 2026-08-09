@@ -119,7 +119,7 @@ export const GET = withModuleAction("reports", "view", async ({ req, params, use
           ...(from || to ? { startDate: { gte: from, lte: to } } : {}),
         },
         include: {
-          trainer: { select: { id: true, fullName: true, refNumber: true } },
+          trainer: { select: { id: true, nameEn: true, refNumber: true } },
           course: { select: { id: true, title: true, code: true } },
         },
         orderBy: { startDate: "asc" },
@@ -146,7 +146,7 @@ export const GET = withModuleAction("reports", "view", async ({ req, params, use
           for (let j = i + 1; j < arr.length; j++) {
             if (arr[i].startDate < arr[j].endDate && arr[j].startDate < arr[i].endDate) {
               conflictPairs.push({
-                trainerName: arr[i].trainer?.fullName ?? "—",
+                trainerName: arr[i].trainer?.nameEn ?? "—",
                 trainerRef: arr[i].trainer?.refNumber ?? "—",
                 session1: {
                   refNumber: arr[i].refNumber,
@@ -188,7 +188,7 @@ export const GET = withModuleAction("reports", "view", async ({ req, params, use
         },
         include: {
           course: { select: { id: true, title: true, code: true, refNumber: true } },
-          trainer: { select: { id: true, fullName: true, refNumber: true } },
+          trainer: { select: { id: true, nameEn: true, refNumber: true } },
           _count: { select: { attendance: true, certificates: true } },
         },
         orderBy: { startDate: "asc" },
@@ -210,7 +210,7 @@ export const GET = withModuleAction("reports", "view", async ({ req, params, use
           title: s.title,
           courseTitle: s.course?.title ?? null,
           courseCode: s.course?.code ?? null,
-          trainerName: s.trainer?.fullName ?? null,
+          trainerName: s.trainer?.nameEn ?? null,
           trainerRef: s.trainer?.refNumber ?? null,
           shift: s.shift,
           startDate: s.startDate,
@@ -495,7 +495,7 @@ export const GET = withModuleAction("reports", "view", async ({ req, params, use
       return ok({
         type, from, to,
         rows: rows.map((r) => ({
-          trainerName: trainers.find((t) => t.id === r.trainerId)?.fullName ?? "—",
+          trainerName: trainers.find((t) => t.id === r.trainerId)?.nameEn ?? "—",
           trainerRef: trainers.find((t) => t.id === r.trainerId)?.refNumber ?? null,
           sessionCount: r._count.id,
         })),

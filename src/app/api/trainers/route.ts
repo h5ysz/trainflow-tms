@@ -5,7 +5,7 @@ import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
 
-const ALLOWED_SORT_FIELDS = ["fullName", "createdAt", "updatedAt", "status", "nationality", "hireDate"];
+const ALLOWED_SORT_FIELDS = ["nameEn", "createdAt", "updatedAt", "status", "nationality", "hireDate"];
 
 export const GET = withModuleAction("trainers", "view", async ({ req }) => {
   const q = parseListQuery(req);
@@ -13,10 +13,10 @@ export const GET = withModuleAction("trainers", "view", async ({ req }) => {
 
   if (q.search) {
     where.OR = [
-      { fullName: { contains: q.search } },
+      { nameEn: { contains: q.search } },
       { email: { contains: q.search } },
       { nationalId: { contains: q.search } },
-      { fullNameAr: { contains: q.search } },
+      { nameAr: { contains: q.search } },
       { refNumber: { contains: q.search } },
     ];
   }
@@ -49,8 +49,8 @@ export const GET = withModuleAction("trainers", "view", async ({ req }) => {
     rows.map((t) => ({
       id: t.id,
       refNumber: t.refNumber,
-      fullName: t.fullName,
-      fullNameAr: t.fullNameAr,
+      nameEn: t.nameEn,
+      nameAr: t.nameAr,
       nationalId: t.nationalId,
       email: t.email,
       phone: t.phone,
@@ -78,12 +78,12 @@ export const GET = withModuleAction("trainers", "view", async ({ req }) => {
 export const POST = withModuleAction("trainers", "create", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
   const {
-    fullName, fullNameAr, nationalId, email, phone, mobile,
+    nameEn, nameAr, nationalId, email, phone, mobile,
     gender, nationality, country, city, address, bio, photoUrl,
     status, hireDate,
   } = body;
 
-  if (!fullName) return fail("Trainer full name is required", 422, "VALIDATION_ERROR");
+  if (!nameEn) return fail("Trainer English name is required", 422, "VALIDATION_ERROR");
 
   if (nationalId) {
     const exists = await db.trainer.findFirst({ where: { nationalId, deletedAt: null } });
@@ -99,8 +99,8 @@ export const POST = withModuleAction("trainers", "create", async ({ req, user })
   const trainer = await db.trainer.create({
     data: {
       refNumber,
-      fullName,
-      fullNameAr: fullNameAr ?? null,
+      nameEn,
+      nameAr: nameAr ?? null,
       nationalId: nationalId ?? null,
       email: email ?? null,
       phone: phone ?? null,
@@ -125,8 +125,8 @@ export const POST = withModuleAction("trainers", "create", async ({ req, user })
     entity: "TRAINER",
     entityId: trainer.id,
     entityRef: trainer.refNumber,
-    description: `Created trainer: ${trainer.fullName} (${trainer.refNumber})`,
-    descriptionAr: `تم إنشاء مدرب: ${trainer.fullName} (${trainer.refNumber})`,
+    description: `Created trainer: ${trainer.nameEn} (${trainer.refNumber})`,
+    descriptionAr: `تم إنشاء مدرب: ${trainer.nameEn} (${trainer.refNumber})`,
     req,
   });
 

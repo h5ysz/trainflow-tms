@@ -35,7 +35,7 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
     where: { id },
     data: { trainerId, updatedBy: user.id },
     include: {
-      trainer: { select: { id: true, fullName: true, refNumber: true } },
+      trainer: { select: { id: true, nameEn: true, refNumber: true } },
       course: { select: { id: true, title: true, code: true } },
     },
   });
@@ -46,8 +46,8 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
     entity: "SESSION",
     entityId: id,
     entityRef: updated.refNumber,
-    description: `Assigned trainer ${trainer.fullName} (${trainer.refNumber}) to session ${updated.refNumber}`,
-    descriptionAr: `تعيين المدرب ${trainer.fullName} (${trainer.refNumber}) للجلسة ${updated.refNumber}`,
+    description: `Assigned trainer ${trainer.nameEn} (${trainer.refNumber}) to session ${updated.refNumber}`,
+    descriptionAr: `تعيين المدرب ${trainer.nameEn} (${trainer.refNumber}) للجلسة ${updated.refNumber}`,
     req,
     metadata: {
       previousTrainerId,
@@ -62,7 +62,7 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
     sessionId: updated.id,
     sessionRef: updated.refNumber,
     trainerId: updated.trainerId,
-    trainerName: updated.trainer?.fullName ?? null,
+    trainerName: updated.trainer?.nameEn ?? null,
     trainerRef: updated.trainer?.refNumber ?? null,
   });
 });

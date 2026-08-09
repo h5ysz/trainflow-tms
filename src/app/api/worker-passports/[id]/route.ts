@@ -42,7 +42,7 @@ export const GET = withErrorEnvelope(async function GET(_req: Request, ctx: { pa
       daysRemaining,
       status: cert.status,
       finalScore: cert.finalScore,
-      trainerName: cert.session.trainer?.fullName ?? null,
+      trainerName: cert.session.trainer?.nameEn ?? null,
       sessionRef: cert.session.refNumber,
       verificationToken: cert.verificationToken,
       pdfGeneratedAt: cert.pdfGeneratedAt,

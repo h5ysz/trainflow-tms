@@ -50,7 +50,7 @@ export const GET = withModuleAction("sessions", "view", async ({ req, user }) =>
       where,
       include: {
         course: { select: { id: true, title: true, code: true, refNumber: true } },
-        trainer: { select: { id: true, fullName: true, refNumber: true } },
+        trainer: { select: { id: true, nameEn: true, nameAr: true, refNumber: true } },
         request: { select: { id: true, refNumber: true } },
         requestCourse: { select: { id: true, course: { select: { title: true, code: true } } } },
         _count: { select: { attendance: true, certificates: true } },
@@ -74,7 +74,10 @@ export const GET = withModuleAction("sessions", "view", async ({ req, user }) =>
       requestRef: s.request?.refNumber ?? null,
       requestCourseId: s.requestCourseId,
       trainerId: s.trainerId,
-      trainerName: s.trainer?.fullName ?? null,
+      trainer: s.trainer
+        ? { id: s.trainer.id, nameEn: s.trainer.nameEn, nameAr: s.trainer.nameAr, refNumber: s.trainer.refNumber }
+        : null,
+      trainerName: s.trainer?.nameEn ?? null,
       trainerRef: s.trainer?.refNumber ?? null,
       title: s.title,
       location: s.location,

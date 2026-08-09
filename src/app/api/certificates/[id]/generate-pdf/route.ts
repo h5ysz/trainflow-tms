@@ -21,7 +21,7 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
       course: true,
       session: {
         include: {
-          trainer: { select: { fullName: true, refNumber: true } },
+          trainer: { select: { nameEn: true, refNumber: true } },
         },
       },
       company: { select: { name: true, refNumber: true } },
@@ -88,7 +88,7 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
       validUntil: cert.validUntil,
       refNumber: cert.refNumber,
       companyName: cert.company?.name,
-      trainerName: cert.session?.trainer?.fullName,
+      trainerName: cert.session?.trainer?.nameEn,
       verifyUrl,
       qrPng,
     },

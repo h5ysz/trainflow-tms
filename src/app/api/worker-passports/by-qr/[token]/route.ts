@@ -28,7 +28,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
           refNumber: true,
           startDate: true,
           endDate: true,
-          trainer: { select: { fullName: true } },
+          trainer: { select: { nameEn: true } },
         },
       },
     },
@@ -58,7 +58,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
       daysRemaining,
       status: cert.status,
       finalScore: cert.finalScore,
-      trainerName: cert.session.trainer?.fullName ?? null,
+      trainerName: cert.session.trainer?.nameEn ?? null,
     };
 
     if (daysRemaining < 0) {

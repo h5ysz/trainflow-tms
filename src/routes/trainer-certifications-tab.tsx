@@ -17,6 +17,7 @@ import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
 import { useEntityActions } from "@/hooks/use-entity-actions";
 import { toDateInput } from "@/lib/utils";
+import { trainerName } from "@/lib/i18n/trainer-name";
 
 interface CertImportResult {
   coursesProcessed: number;
@@ -25,7 +26,7 @@ interface CertImportResult {
   errors: { row: number; message: string }[];
 }
 
-interface TrainerOption { id: string; fullName: string; }
+interface TrainerOption { id: string; nameEn: string; nameAr?: string | null; }
 interface CourseOption { id: string; title: string; code: string; }
 interface QualOption { id: string; title: string; trainerId?: string; }
 
@@ -38,7 +39,7 @@ interface Certification {
   validUntil?: string | null;
   status: string;
   notes?: string | null;
-  trainer?: { id: string; fullName: string; refNumber: string } | null;
+  trainer?: { id: string; nameEn: string; nameAr?: string | null; refNumber: string } | null;
   course?: { id: string; title: string; code: string; refNumber: string } | null;
   qualification?: { id: string; title: string; credentialNumber: string | null } | null;
 }
@@ -51,7 +52,7 @@ const STATUSES = ["VALID", "EXPIRED", "REVOKED"];
  * lives as a tab on that page rather than as its own route.
  */
 export function TrainerCertificationsTab() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { toast } = useToast();
   const [trainers, setTrainers] = useState<TrainerOption[]>([]);
   const [courses, setCourses] = useState<CourseOption[]>([]);
@@ -87,7 +88,7 @@ export function TrainerCertificationsTab() {
     if (!dialogOpen) return;
     if (trainers.length === 0) {
       api.getList<TrainerOption>("/trainers", { pageSize: 100 })
-        .then((r) => setTrainers(r.rows.map((x) => ({ id: x.id, fullName: x.fullName }))))
+        .then((r) => setTrainers(r.rows.map((x) => ({ id: x.id, nameEn: x.nameEn, nameAr: x.nameAr }))))
         .catch(() => {});
     }
     if (courses.length === 0) {
@@ -148,7 +149,7 @@ export function TrainerCertificationsTab() {
           <div>
             <div className="text-sm font-medium flex items-center gap-1.5">
               <User className="h-3 w-3 text-muted-foreground" />
-              {r.trainer?.fullName ?? "—"}
+              {r.trainer ? trainerName(r.trainer, locale) : "—"}
             </div>
             <div className="text-[10px] font-mono text-muted-foreground">{r.trainer?.refNumber}</div>
           </div>
@@ -279,7 +280,7 @@ export function TrainerCertificationsTab() {
               >
                 <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                 <SelectContent>
-                  {trainers.map((x) => <SelectItem key={x.id} value={x.id}>{x.fullName}</SelectItem>)}
+                  {trainers.map((x) => <SelectItem key={x.id} value={x.id}>{trainerName(x, locale)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </Field>
@@ -342,7 +343,7 @@ export function TrainerCertificationsTab() {
         onOpenChange={(o) => !o && setDeleteTarget(null)}
         description={
           deleteTarget
-            ? `${deleteTarget.trainer?.fullName ?? ""} — ${deleteTarget.course?.title ?? ""}`
+            ? `${trainerName(deleteTarget.trainer, locale)} — ${deleteTarget.course?.title ?? ""}`
             : undefined
         }
         destructive

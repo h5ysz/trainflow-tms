@@ -55,7 +55,7 @@ async function detectTrainerConflicts(scope: AnalyticsScope): Promise<Risk[]> {
   if (!scope.canSeeOperational) return [];
   const sessions = await db.trainingSession.findMany({
     where: { deletedAt: null, status: { in: ["SCHEDULED", "IN_PROGRESS"] }, trainerId: { not: null }, ...sessionCompanyFilter(scope) },
-    include: { trainer: { select: { refNumber: true, fullName: true } } },
+    include: { trainer: { select: { refNumber: true, nameEn: true } } },
     take: 1000,
   });
   const byTrainer = new Map<string, typeof sessions>();
@@ -74,12 +74,12 @@ async function detectTrainerConflicts(scope: AnalyticsScope): Promise<Risk[]> {
             id: `risk_trainer_conflict_${tid}_${i}_${j}`,
             severity: "critical",
             category: "trainer_conflict",
-            title: `Trainer ${arr[i].trainer?.fullName} is double-booked`,
-            titleAr: `المدرب ${arr[i].trainer?.fullName} محجوز مرتين`,
-            description: `${arr[i].trainer?.fullName} (${arr[i].trainer?.refNumber}) has overlapping sessions: ${arr[i].refNumber} and ${arr[j].refNumber}.`,
-            descriptionAr: `${arr[i].trainer?.fullName} (${arr[i].trainer?.refNumber}) لديه جلسات متداخلة: ${arr[i].refNumber} و ${arr[j].refNumber}.`,
+            title: `Trainer ${arr[i].trainer?.nameEn} is double-booked`,
+            titleAr: `المدرب ${arr[i].trainer?.nameEn} محجوز مرتين`,
+            description: `${arr[i].trainer?.nameEn} (${arr[i].trainer?.refNumber}) has overlapping sessions: ${arr[i].refNumber} and ${arr[j].refNumber}.`,
+            descriptionAr: `${arr[i].trainer?.nameEn} (${arr[i].trainer?.refNumber}) لديه جلسات متداخلة: ${arr[i].refNumber} و ${arr[j].refNumber}.`,
             entityRefs: [
-              { entity: "TRAINER", refNumber: arr[i].trainer?.refNumber ?? "—", description: arr[i].trainer?.fullName ?? "" },
+              { entity: "TRAINER", refNumber: arr[i].trainer?.refNumber ?? "—", description: arr[i].trainer?.nameEn ?? "" },
               { entity: "SESSION", refNumber: arr[i].refNumber, description: arr[i].title },
               { entity: "SESSION", refNumber: arr[j].refNumber, description: arr[j].title },
             ],

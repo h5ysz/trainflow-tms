@@ -11,7 +11,7 @@ export const GET = withModuleAction("sessions", "view", async () => {
     where: { deletedAt: null },
     include: {
       course: { select: { title: true } },
-      trainer: { select: { fullName: true } },
+      trainer: { select: { nameEn: true } },
     },
     orderBy: { startDate: "asc" },
   });
@@ -49,7 +49,7 @@ export const GET = withModuleAction("sessions", "view", async () => {
         city: s.city,
         venue: s.venue,
         locationMapUrl: s.locationMapUrl,
-        trainerName: s.trainer?.fullName ?? null,
+        trainerName: s.trainer?.nameEn ?? null,
         notes: s.notes,
       },
       i + 1

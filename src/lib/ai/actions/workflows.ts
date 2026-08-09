@@ -66,7 +66,7 @@ const workflowCreateSession: ActionHandler<WorkflowCreateSessionInput> = {
     if (input.trainerId) {
       const t = await db.trainer.findFirst({ where: { id: input.trainerId, deletedAt: null } });
       if (!t) throw new ActionError("Trainer not found", 404, "NOT_FOUND");
-      trainerName = t.fullName;
+      trainerName = t.nameEn;
       const v = await validateTrainerAssignment({
         user, trainerId: t.id, courseId: course.id,
         startDate: new Date(input.startDate), endDate: new Date(input.endDate),
@@ -379,17 +379,17 @@ const bulkAssignTrainer: ActionHandler<BulkAssignTrainerInput> = {
       actionType: "BULK_ASSIGN_TRAINER",
       title: "Bulk Assign Trainer",
       titleAr: "تعيين جماعي للمدرب",
-      summary: `Assign ${trainer.fullName} to ${validSessions.length} session(s)${errors.length > 0 ? ` (${errors.length} skipped)` : ""}.`,
-      summaryAr: `تعيين ${trainer.fullName} لـ ${validSessions.length} جلسة${errors.length > 0 ? ` (${errors.length} متخطى)` : ""}.`,
+      summary: `Assign ${trainer.nameEn} to ${validSessions.length} session(s)${errors.length > 0 ? ` (${errors.length} skipped)` : ""}.`,
+      summaryAr: `تعيين ${trainer.nameEn} لـ ${validSessions.length} جلسة${errors.length > 0 ? ` (${errors.length} متخطى)` : ""}.`,
       affectedRecords: validSessions.slice(0, 20).map((s) => ({ entity: "SESSION", refNumber: s.refNumber, description: s.title })),
       changes: [
-        { field: "trainer", label: "Trainer", oldValue: null, newValue: `${trainer.fullName} (${trainer.refNumber})` },
+        { field: "trainer", label: "Trainer", oldValue: null, newValue: `${trainer.nameEn} (${trainer.refNumber})` },
         { field: "count", label: "Sessions", oldValue: 0, newValue: validSessions.length },
       ],
       warnings: errors.length > 0 ? [{ level: "warning" as const, message: `${errors.length} session(s) skipped: ${errors.slice(0, 2).join("; ")}${errors.length > 2 ? "..." : ""}`, messageAr: `تم تخطي ${errors.length} جلسة` }] : [],
-      expectedResult: `${validSessions.length} session(s) will have trainer ${trainer.fullName} assigned.`,
-      expectedResultAr: `سيتم تعيين المدرب ${trainer.fullName} لـ ${validSessions.length} جلسة.`,
-      hydratedParams: { trainerId: trainer.id, trainerRef: trainer.refNumber, trainerName: trainer.fullName, sessionIds: validSessions.map((s) => s.id) },
+      expectedResult: `${validSessions.length} session(s) will have trainer ${trainer.nameEn} assigned.`,
+      expectedResultAr: `سيتم تعيين المدرب ${trainer.nameEn} لـ ${validSessions.length} جلسة.`,
+      hydratedParams: { trainerId: trainer.id, trainerRef: trainer.refNumber, trainerName: trainer.nameEn, sessionIds: validSessions.map((s) => s.id) },
     };
   },
   async execute(preview, user, req) {
@@ -748,7 +748,7 @@ const suggestBestTrainer: ActionHandler<SuggestTrainerInput> = {
     // Find certified trainers
     const certs = await db.trainerCertification.findMany({
       where: { courseId: course.id, deletedAt: null, status: "VALID", OR: [{ validUntil: null }, { validUntil: { gte: new Date() } }] },
-      include: { trainer: { select: { id: true, refNumber: true, fullName: true, status: true, deletedAt: true } } },
+      include: { trainer: { select: { id: true, refNumber: true, nameEn: true, status: true, deletedAt: true } } },
     });
     const candidates: Array<{ trainerId: string; trainerRef: string; trainerName: string; conflictCount: number; priorSessions: number }> = [];
     for (const c of certs) {
@@ -759,7 +759,7 @@ const suggestBestTrainer: ActionHandler<SuggestTrainerInput> = {
       const priorSessions = await db.trainingSession.count({
         where: { trainerId: c.trainer.id, deletedAt: null, courseId: course.id },
       });
-      candidates.push({ trainerId: c.trainer.id, trainerRef: c.trainer.refNumber, trainerName: c.trainer.fullName, conflictCount: conflicts, priorSessions });
+      candidates.push({ trainerId: c.trainer.id, trainerRef: c.trainer.refNumber, trainerName: c.trainer.nameEn, conflictCount: conflicts, priorSessions });
     }
     candidates.sort((a, b) => a.conflictCount - b.conflictCount || a.priorSessions - b.priorSessions);
     const top = candidates.slice(0, 5);
@@ -972,7 +972,7 @@ const suggestScheduleConflicts: ActionHandler<SuggestScheduleConflictsInput> = {
   async preparePreview(_input, _user) {
     const sessions = await db.trainingSession.findMany({
       where: { deletedAt: null, status: { in: ["SCHEDULED", "IN_PROGRESS"] }, trainerId: { not: null } },
-      select: { id: true, refNumber: true, title: true, trainerId: true, startDate: true, endDate: true, trainer: { select: { refNumber: true, fullName: true } } },
+      select: { id: true, refNumber: true, title: true, trainerId: true, startDate: true, endDate: true, trainer: { select: { refNumber: true, nameEn: true } } },
     });
     // Group by trainer
     const byTrainer = new Map<string, typeof sessions>();
@@ -988,7 +988,7 @@ const suggestScheduleConflicts: ActionHandler<SuggestScheduleConflictsInput> = {
           if (arr[i].startDate < arr[j].endDate && arr[j].startDate < arr[i].endDate) {
             conflicts.push({
               trainerRef: arr[i].trainer?.refNumber ?? "?",
-              trainerName: arr[i].trainer?.fullName ?? "?",
+              trainerName: arr[i].trainer?.nameEn ?? "?",
               session1Ref: arr[i].refNumber,
               session2Ref: arr[j].refNumber,
               overlap: `${arr[i].startDate.toLocaleDateString()}–${arr[j].endDate.toLocaleDateString()}`,

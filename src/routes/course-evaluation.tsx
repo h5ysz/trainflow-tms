@@ -18,9 +18,10 @@ import { api } from "@/lib/api/client";
 import { useList } from "@/lib/api/hooks";
 import { useEntityActions } from "@/hooks/use-entity-actions";
 import { useMemo, useState, useEffect } from "react";
+import { trainerName } from "@/lib/i18n/trainer-name";
 
 interface SessionOption { id: string; refNumber: string; title: string; }
-interface TrainerOption { id: string; fullName: string; }
+interface TrainerOption { id: string; nameEn: string; nameAr?: string | null; }
 
 interface Evaluation {
   id: string;
@@ -28,6 +29,7 @@ interface Evaluation {
   sessionCode?: string | null;
   trainerId?: string | null;
   trainerName?: string | null;
+  trainer?: { nameEn: string; nameAr?: string | null } | null;
   traineeName: string;
   traineeEmail?: string | null;
   trainerRating: number;
@@ -89,7 +91,7 @@ function StarInput({ value, onChange }: { value: number; onChange: (v: number) =
 }
 
 export function CourseEvaluationRoute() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [sessions, setSessions] = useState<SessionOption[]>([]);
   const [trainers, setTrainers] = useState<TrainerOption[]>([]);
 
@@ -118,7 +120,7 @@ export function CourseEvaluationRoute() {
     }
     if (trainers.length === 0) {
       api.getList<TrainerOption>("/trainers", { pageSize: 100 })
-        .then((r) => setTrainers(r.rows.map((x) => ({ id: x.id, fullName: x.fullName }))))
+        .then((r) => setTrainers(r.rows.map((x) => ({ id: x.id, nameEn: x.nameEn, nameAr: x.nameAr }))))
         .catch(() => {});
     }
   }, [dialogOpen, sessions.length, trainers.length]);
@@ -175,7 +177,7 @@ export function CourseEvaluationRoute() {
       key: "trainer",
       header: t("evaluation.trainer"),
       cell: (r) => (
-        <div className="text-sm flex items-center gap-1.5"><GraduationCap className="h-3.5 w-3.5 text-muted-foreground" />{r.trainerName || "—"}</div>
+        <div className="text-sm flex items-center gap-1.5"><GraduationCap className="h-3.5 w-3.5 text-muted-foreground" />{r.trainer ? trainerName(r.trainer, locale) : (r.trainerName || "—")}</div>
       ),
     },
     { key: "trainerRating", header: t("evaluation.trainerRating"), cell: (r) => <StarRow value={r.trainerRating} /> },
@@ -294,7 +296,7 @@ export function CourseEvaluationRoute() {
               <Select value={(formData.trainerId as string) ?? ""} onValueChange={(v) => setField("trainerId", v)}>
                 <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                 <SelectContent>
-                  {trainers.map((x) => <SelectItem key={x.id} value={x.id}>{x.fullName}</SelectItem>)}
+                  {trainers.map((x) => <SelectItem key={x.id} value={x.id}>{trainerName(x, locale)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </Field>

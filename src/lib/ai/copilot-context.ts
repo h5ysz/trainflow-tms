@@ -32,7 +32,7 @@ export async function buildCopilotContext(user: CopilotUser, locale: "ar" | "en"
     db.trainingSession.findMany({
       where: { deletedAt: null, startDate: { gte: new Date(), lte: new Date(Date.now() + 7 * 86400000) }, ...(isContractor && companyId ? { enrollments: { some: { companyId, deletedAt: null } } } : {}) },
       take: 10, orderBy: { startDate: "asc" },
-      select: { id: true, refNumber: true, title: true, startDate: true, status: true, shift: true, city: true, trainer: { select: { fullName: true } }, course: { select: { title: true } }, _count: { select: { enrollments: true } } },
+      select: { id: true, refNumber: true, title: true, startDate: true, status: true, shift: true, city: true, trainer: { select: { nameEn: true } }, course: { select: { title: true } }, _count: { select: { enrollments: true } } },
     }),
     db.trainingRequest.findMany({
       where: { deletedAt: null, status: { in: ["SUBMITTED", "UNDER_REVIEW"] }, ...(isContractor && companyId ? { companyId } : {}) },
@@ -52,7 +52,7 @@ export async function buildCopilotContext(user: CopilotUser, locale: "ar" | "en"
     db.trainingSession.findMany({
       where: { deletedAt: null, startDate: { gte: new Date(new Date().setHours(0, 0, 0, 0)), lte: new Date(new Date().setHours(23, 59, 59, 999)) }, ...(isContractor && companyId ? { enrollments: { some: { companyId, deletedAt: null } } } : {}) },
       take: 20, orderBy: { startDate: "asc" },
-      select: { id: true, refNumber: true, title: true, startDate: true, status: true, shift: true, city: true, course: { select: { title: true } }, trainer: { select: { fullName: true } }, _count: { select: { enrollments: true } } },
+      select: { id: true, refNumber: true, title: true, startDate: true, status: true, shift: true, city: true, course: { select: { title: true } }, trainer: { select: { nameEn: true } }, _count: { select: { enrollments: true } } },
     }),
     db.trainingSession.aggregate({ _count: true, where: { deletedAt: null, ...(isContractor && companyId ? { enrollments: { some: { companyId, deletedAt: null } } } : {}) } }),
   ]);
@@ -103,7 +103,7 @@ CURRENT SYSTEM DATA (live as of ${new Date().toISOString()}):`;
   const parts: string[] = [];
   if (todaySessions.length > 0) {
     parts.push(`## Today's Sessions (${todaySessions.length})`);
-    todaySessions.forEach(s => parts.push(`- ${s.refNumber}: ${s.course?.title ?? s.title} | ${new Date(s.startDate).toLocaleTimeString()} | ${s.city ?? "—"} | Trainer: ${s.trainer?.fullName ?? "Unassigned"} | ${s._count.enrollments} trainees | ${s.status}`));
+    todaySessions.forEach(s => parts.push(`- ${s.refNumber}: ${s.course?.title ?? s.title} | ${new Date(s.startDate).toLocaleTimeString()} | ${s.city ?? "—"} | Trainer: ${s.trainer?.nameEn ?? "Unassigned"} | ${s._count.enrollments} trainees | ${s.status}`));
   }
   if (upcomingSessions.length > 0) {
     parts.push(`\n## Upcoming Sessions (${upcomingSessions.length})`);

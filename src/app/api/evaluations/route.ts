@@ -27,7 +27,7 @@ export const GET = withModuleAction("evaluation", "view", async ({ req }) => {
       where,
       include: {
         session: { select: { id: true, refNumber: true, title: true } },
-        trainer: { select: { id: true, fullName: true, refNumber: true } },
+        trainer: { select: { id: true, nameEn: true, nameAr: true, refNumber: true } },
       },
       orderBy,
       skip: (q.page - 1) * q.pageSize,
@@ -44,7 +44,10 @@ export const GET = withModuleAction("evaluation", "view", async ({ req }) => {
       sessionCode: e.session?.refNumber ?? null,
       sessionTitle: e.session?.title ?? null,
       trainerId: e.trainerId,
-      trainerName: e.trainer?.fullName ?? null,
+      trainerName: e.trainer?.nameEn ?? null,
+      trainer: e.trainer
+        ? { id: e.trainer.id, nameEn: e.trainer.nameEn, nameAr: e.trainer.nameAr, refNumber: e.trainer.refNumber }
+        : null,
       trainerRef: e.trainer?.refNumber ?? null,
       traineeName: e.traineeName,
       traineeEmail: e.traineeEmail,

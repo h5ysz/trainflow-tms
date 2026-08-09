@@ -128,7 +128,7 @@ async function main() {
 
   console.log(`  Companies: A=${companyA.name}, B=${companyB.name}, C=${companyC.name}`);
   console.log(`  Course: ${course.title} (cap=20)`);
-  console.log(`  Trainers: ${trainer1.fullName}, ${trainer2.fullName}\n`);
+  console.log(`  Trainers: ${trainer1.nameEn}, ${trainer2.nameEn}\n`);
 
   // ======================================================================
   // WORKFLOW 1: CONTRACTOR — Submit, Upload Trainees, Upload Attachments

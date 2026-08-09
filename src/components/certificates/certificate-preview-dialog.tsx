@@ -39,7 +39,7 @@ interface FullCertificate {
   status: string;
   verificationToken: string | null;
   course: { title: string; code: string; durationHours: number | null } | null;
-  session: { trainer: { fullName: string } | null } | null;
+  session: { trainer: { nameEn: string; refNumber: string } | null } | null;
   company: { name: string } | null;
 }
 
@@ -105,7 +105,7 @@ export function CertificatePreviewDialog({
           validUntil: c.validUntil,
           refNumber: c.refNumber,
           companyName: c.company?.name ?? null,
-          trainerName: c.session?.trainer?.fullName ?? null,
+          trainerName: c.session?.trainer?.nameEn ?? null,
         });
         setVerifyUrl(
           c.verificationToken ? buildVerifyUrl(window.location.origin, c.verificationToken) : "",

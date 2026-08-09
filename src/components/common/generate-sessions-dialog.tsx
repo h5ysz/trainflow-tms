@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { CalendarRange, AlertCircle, Loader2, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
+import { trainerName } from "@/lib/i18n/trainer-name";
 
 interface RequestCourseOption {
   requestCourseId: string;
@@ -30,8 +31,14 @@ interface RequestCourseOption {
 
 interface TrainerOption {
   id: string;
-  fullName: string;
+  nameEn: string;
+  nameAr?: string | null;
   refNumber: string;
+}
+
+interface TrainerCertRow {
+  id: string;
+  trainer: TrainerOption | null;
 }
 
 interface GeneratePlan {
@@ -74,7 +81,7 @@ export function GenerateSessionsDialog({
   onOpenChange: (open: boolean) => void;
   onGenerated: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { toast } = useToast();
   const [plan, setPlan] = useState<GeneratePlan | null>(null);
   const [specs, setSpecs] = useState<Record<string, CourseSpec>>({});
@@ -99,12 +106,15 @@ export function GenerateSessionsDialog({
     try {
       const results = await Promise.all(
         courses.map(async (c) => {
-          const res = await api.getList<TrainerOption>("/trainer-certifications", {
+          const res = await api.getList<TrainerCertRow>("/trainer-certifications", {
             courseId: c.courseId,
             status: "VALID",
             pageSize: 200,
           });
-          return [c.courseId, res.rows] as const;
+          return [
+            c.courseId,
+            res.rows.map((r) => r.trainer).filter((tr): tr is TrainerOption => tr !== null),
+          ] as const;
         })
       );
       setTrainersByCourse(Object.fromEntries(results));
@@ -311,7 +321,7 @@ export function GenerateSessionsDialog({
                           <SelectContent>
                             {(trainersByCourse[c.courseId] ?? []).map((tr) => (
                               <SelectItem key={tr.id} value={tr.id}>
-                                {tr.fullName} · {tr.refNumber}
+                                {trainerName(tr, locale)} · {tr.refNumber}
                               </SelectItem>
                             ))}
                           </SelectContent>

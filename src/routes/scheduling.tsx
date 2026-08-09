@@ -10,6 +10,7 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { CalendarRange, ChevronLeft, ChevronRight, Plus, Loader2, ArrowRight, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api/client";
+import { trainerName } from "@/lib/i18n/trainer-name";
 import { useAppStore } from "@/lib/store/app-store";
 
 interface SessionItem {
@@ -18,6 +19,7 @@ interface SessionItem {
   title: string;
   courseTitle?: string | null;
   trainerName?: string | null;
+  trainer?: { nameEn: string; nameAr?: string | null } | null;
   startDate: string;
   endDate: string;
   status: string;
@@ -143,7 +145,7 @@ export function SchedulingRoute() {
                     <div className="text-xs text-muted-foreground">
                       <span className="font-mono">{s.sessionCode}</span>
                       {s.courseTitle && <span> · {s.courseTitle}</span>}
-                      {s.trainerName && <span> · {s.trainerName}</span>}
+                      {s.trainer ? <span> · {trainerName(s.trainer, locale)}</span> : (s.trainerName && <span> · {s.trainerName}</span>)}
                     </div>
                   </div>
                   <div className="text-xs text-muted-foreground text-end shrink-0">{new Date(s.startDate).toLocaleDateString()}</div>

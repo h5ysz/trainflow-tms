@@ -13,6 +13,7 @@ import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
 import { QrImage, qrPngDataUrl } from "@/components/common/qr-image";
 import { buildCheckInUrl } from "@/lib/qr/urls";
+import { trainerName } from "@/lib/i18n/trainer-name";
 
 interface SessionOption {
   id: string;
@@ -22,11 +23,12 @@ interface SessionOption {
   endDate: string;
   courseTitle?: string | null;
   trainerName?: string | null;
+  trainer?: { nameEn: string; nameAr?: string | null } | null;
   qrCodeToken?: string | null;
 }
 
 export function QrCodeRoute() {
-  const { t, dir } = useI18n();
+  const { t, dir, locale } = useI18n();
   const { toast } = useToast();
   const [sessions, setSessions] = useState<SessionOption[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
@@ -201,7 +203,7 @@ img{width:340px;height:340px}p{font-size:12px;color:#666;margin:6px 0}
                 </div>
                 {selected.trainerName && (
                   <div className="flex items-center gap-2 text-muted-foreground">
-                    <CalendarDays className="h-4 w-4" /> {t("sessions.trainer")}: {selected.trainerName}
+                    <CalendarDays className="h-4 w-4" /> {t("sessions.trainer")}: {selected.trainer ? trainerName(selected.trainer, locale) : selected.trainerName}
                   </div>
                 )}
               </div>

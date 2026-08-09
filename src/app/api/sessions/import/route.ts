@@ -67,11 +67,11 @@ export const POST = withModuleAction("sessions", "create", async ({ req, user })
 
       let trainerId: string | null = null;
       if (parsed.trainerName) {
-        let trainer = await db.trainer.findFirst({ where: { fullName: parsed.trainerName, deletedAt: null } });
+        let trainer = await db.trainer.findFirst({ where: { nameEn: parsed.trainerName, deletedAt: null } });
         if (!trainer) {
           const refNumber = await nextRefNumber("TRAINER");
           trainer = await db.trainer.create({
-            data: { refNumber, fullName: parsed.trainerName, createdBy: user.id, updatedBy: user.id },
+            data: { refNumber, nameEn: parsed.trainerName, createdBy: user.id, updatedBy: user.id },
           });
         }
         trainerId = trainer.id;

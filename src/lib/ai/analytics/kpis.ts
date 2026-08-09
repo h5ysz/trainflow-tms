@@ -309,12 +309,12 @@ async function getTopTrainersBySessions(scope: AnalyticsScope, range: TimeRange)
   if (rows.length === 0) return [];
   const trainers = await db.trainer.findMany({
     where: { id: { in: rows.map((r) => r.trainerId).filter((x): x is string => x !== null) } },
-    select: { id: true, fullName: true, refNumber: true },
+    select: { id: true, nameEn: true, refNumber: true },
   });
   const trainerMap = new Map(trainers.map((t) => [t.id, t]));
   return rows.map((r) => ({
     trainerId: r.trainerId,
-    trainerName: trainerMap.get(r.trainerId ?? "")?.fullName ?? "—",
+    trainerName: trainerMap.get(r.trainerId ?? "")?.nameEn ?? "—",
     trainerRef: trainerMap.get(r.trainerId ?? "")?.refNumber ?? "—",
     sessionCount: r._count,
   }));
@@ -325,14 +325,14 @@ async function getTrainerPassRates(scope: AnalyticsScope, range: TimeRange) {
   // Group test results by session → trainer
   const testResults = await db.testResult.findMany({
     where: { deletedAt: null, attemptedAt: { gte: range.from, lte: range.to } },
-    select: { passed: true, session: { select: { trainerId: true, trainer: { select: { id: true, fullName: true, refNumber: true } } } } },
+    select: { passed: true, session: { select: { trainerId: true, trainer: { select: { id: true, nameEn: true, refNumber: true } } } } },
     take: 1000,
   });
   const byTrainer = new Map<string, { name: string; ref: string; passed: number; total: number }>();
   for (const r of testResults) {
     const tid = r.session.trainerId;
     if (!tid) continue;
-    const entry = byTrainer.get(tid) ?? { name: r.session.trainer?.fullName ?? "—", ref: r.session.trainer?.refNumber ?? "—", passed: 0, total: 0 };
+    const entry = byTrainer.get(tid) ?? { name: r.session.trainer?.nameEn ?? "—", ref: r.session.trainer?.refNumber ?? "—", passed: 0, total: 0 };
     entry.total++;
     if (r.passed) entry.passed++;
     byTrainer.set(tid, entry);

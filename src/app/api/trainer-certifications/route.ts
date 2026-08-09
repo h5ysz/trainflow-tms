@@ -21,7 +21,7 @@ export const GET = withModuleAction("trainer-qualifications", "view", async ({ r
     db.trainerCertification.findMany({
       where,
       include: {
-        trainer: { select: { id: true, fullName: true, refNumber: true } },
+        trainer: { select: { id: true, nameEn: true, nameAr: true, refNumber: true } },
         course: { select: { id: true, title: true, code: true, refNumber: true } },
         qualification: { select: { id: true, title: true, credentialNumber: true } },
       },
@@ -55,7 +55,7 @@ export const POST = withModuleAction("trainer-qualifications", "create", async (
     where: { trainerId, courseId, deletedAt: null },
   });
   if (existing) {
-    return fail(`Trainer ${trainer.fullName} is already certified for ${course.title}`, 400, "DUPLICATE_CERTIFICATION");
+    return fail(`Trainer ${trainer.nameEn} is already certified for ${course.title}`, 400, "DUPLICATE_CERTIFICATION");
   }
 
   // Validate qualification belongs to trainer if provided
@@ -79,7 +79,7 @@ export const POST = withModuleAction("trainer-qualifications", "create", async (
       updatedBy: user.id,
     },
     include: {
-      trainer: { select: { fullName: true, refNumber: true } },
+      trainer: { select: { nameEn: true, refNumber: true } },
       course: { select: { title: true, code: true, refNumber: true } },
     },
   });
@@ -90,8 +90,8 @@ export const POST = withModuleAction("trainer-qualifications", "create", async (
     entity: "TRAINER",
     entityId: trainerId,
     entityRef: trainer.refNumber,
-    description: `Certified trainer ${trainer.fullName} for course ${course.title}`,
-    descriptionAr: `اعتماد المدرب ${trainer.fullName} لتدريس دورة ${course.title}`,
+    description: `Certified trainer ${trainer.nameEn} for course ${course.title}`,
+    descriptionAr: `اعتماد المدرب ${trainer.nameEn} لتدريس دورة ${course.title}`,
     req,
     metadata: { certificationId: cert.id, courseId, trainerId },
   });

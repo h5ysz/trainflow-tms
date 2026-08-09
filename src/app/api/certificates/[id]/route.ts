@@ -10,7 +10,7 @@ export const GET = withModuleAction("certificates", "view", async ({ params, use
       session: {
         include: {
           course: true,
-          trainer: { select: { fullName: true, refNumber: true } },
+          trainer: { select: { nameEn: true, refNumber: true } },
         },
       },
       course: true,

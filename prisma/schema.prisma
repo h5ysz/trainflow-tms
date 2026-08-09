@@ -381,11 +381,11 @@ model CompanyContact {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Trainer {
-  id          String    @id @default(uuid())
-  refNumber   String    @unique // TRN-000001
-  fullName    String
-  fullNameAr  String?
-  nationalId  String?   @unique
+    id          String    @id @default(uuid())
+    refNumber   String    @unique // TRN-000001
+    nameEn      String // Official English name (manually edited, never auto-translated)
+    nameAr      String? // Arabic name, shown when the system locale is Arabic
+    nationalId  String?   @unique
   email       String?   @unique
   phone       String?
   mobile      String?

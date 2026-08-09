@@ -32,7 +32,7 @@ export const GET = withErrorEnvelope(async function GET(req: Request) {
       where,
       include: {
         company: { select: { id: true, name: true, refNumber: true } },
-        trainer: { select: { id: true, fullName: true, refNumber: true } },
+        trainer: { select: { id: true, nameEn: true, refNumber: true } },
       },
       orderBy,
       skip: (q.page - 1) * q.pageSize,
@@ -57,7 +57,7 @@ export const GET = withErrorEnvelope(async function GET(req: Request) {
       companyName: u.company?.name ?? null,
       companyRef: u.company?.refNumber ?? null,
       trainerId: u.trainerId,
-      trainerName: u.trainer?.fullName ?? null,
+      trainerName: u.trainer?.nameEn ?? null,
       trainerRef: u.trainer?.refNumber ?? null,
       lastLoginAt: u.lastLoginAt,
       createdAt: u.createdAt,

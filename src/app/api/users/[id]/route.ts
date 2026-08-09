@@ -28,7 +28,7 @@ export const GET = withErrorEnvelope(async function GET(_req: Request, ctx: { pa
     companyId: target.companyId,
     companyName: target.company?.name ?? null,
     trainerId: target.trainerId,
-    trainerName: target.trainer?.fullName ?? null,
+    trainerName: target.trainer?.nameEn ?? null,
     lastLoginAt: target.lastLoginAt,
     createdAt: target.createdAt,
   });

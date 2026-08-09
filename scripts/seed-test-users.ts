@@ -142,11 +142,11 @@ async function main() {
   let testTrainer = await db.trainer.findFirst({ where: { email: "trainer@gcclab.com" } });
   if (!testTrainer) {
     testTrainer = await db.trainer.create({
-      data: { refNumber: "TRN-TEST-001", fullName: "Test Trainer", email: "trainer@gcclab.com", status: "ACTIVE" },
+      data: { refNumber: "TRN-TEST-001", nameEn: "Test Trainer", email: "trainer@gcclab.com", status: "ACTIVE" },
     });
-    console.log("   ✓ Created test trainer:", testTrainer.fullName);
+    console.log("   ✓ Created test trainer:", testTrainer.nameEn);
   } else {
-    console.log("   → Test trainer exists:", testTrainer.fullName);
+    console.log("   → Test trainer exists:", testTrainer.nameEn);
   }
 
   console.log("\n→ Step 3: Creating test users (password: Demo@1234)");

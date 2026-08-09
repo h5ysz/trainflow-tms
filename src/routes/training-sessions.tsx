@@ -19,9 +19,10 @@ import { useAppStore } from "@/lib/store/app-store";
 import { useEntityActions } from "@/hooks/use-entity-actions";
 import { useToast } from "@/hooks/use-toast";
 import { toDateTimeInput } from "@/lib/utils";
+import { trainerName } from "@/lib/i18n/trainer-name";
 
 interface CourseOption { id: string; title: string; code: string; }
-interface TrainerOption { id: string; fullName: string; }
+interface TrainerOption { id: string; nameEn: string; nameAr?: string | null; }
 interface Session {
   id: string;
   refNumber: string;
@@ -31,6 +32,7 @@ interface Session {
   courseRef?: string | null;
   trainerName?: string | null;
   trainerRef?: string | null;
+  trainer?: { nameEn: string; nameAr?: string | null } | null;
   location?: string | null;
   city?: string | null;
   region?: string | null;
@@ -67,7 +69,7 @@ const NEW_SESSION = {
 };
 
 export function TrainingSessionsRoute() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { toast } = useToast();
   const { navigate } = useAppStore();
   const [courses, setCourses] = useState<CourseOption[]>([]);
@@ -123,7 +125,7 @@ export function TrainingSessionsRoute() {
       }
       if (trainers.length === 0) {
         api.getList<TrainerOption>("/trainers", { pageSize: 100 }).then((r) => {
-          setTrainers(r.rows.map((t) => ({ id: t.id, fullName: t.fullName })));
+          setTrainers(r.rows.map((t) => ({ id: t.id, nameEn: t.nameEn, nameAr: t.nameAr })));
         }).catch(() => {});
       }
     }
@@ -161,7 +163,7 @@ export function TrainingSessionsRoute() {
     {
       key: "trainer",
       header: t("sessions.trainer"),
-      cell: (r) => <div className="flex items-center gap-2 text-sm"><GraduationCap className="h-3.5 w-3.5 text-muted-foreground" />{r.trainerName || "—"}</div>,
+      cell: (r) => <div className="flex items-center gap-2 text-sm"><GraduationCap className="h-3.5 w-3.5 text-muted-foreground" />{r.trainer ? trainerName(r.trainer, locale) : (r.trainerName || "—")}</div>,
     },
     {
       key: "location",
@@ -284,7 +286,7 @@ export function TrainingSessionsRoute() {
               <Select value={(formData.trainerId as string) ?? ""} onValueChange={(v) => setField("trainerId", v)}>
                 <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                 <SelectContent>
-                  {trainers.map((t) => <SelectItem key={t.id} value={t.id}>{t.fullName}</SelectItem>)}
+                  {trainers.map((t) => <SelectItem key={t.id} value={t.id}>{trainerName(t, locale)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </Field>

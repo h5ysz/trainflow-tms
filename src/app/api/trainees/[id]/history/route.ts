@@ -52,7 +52,7 @@ export const GET = withModuleAction("trainees", "view", async ({ params, user })
           lifecycleStatus: true,
           courseId: true,
           course: { select: { id: true, title: true, code: true, refNumber: true } },
-          trainer: { select: { id: true, fullName: true, refNumber: true } },
+          trainer: { select: { id: true, nameEn: true, nameAr: true, refNumber: true } },
           venue: true,
           city: true,
         },
@@ -126,7 +126,8 @@ export const GET = withModuleAction("trainees", "view", async ({ params, user })
       trainer: e.session.trainer
         ? {
             id: e.session.trainer.id,
-            fullName: e.session.trainer.fullName,
+            nameEn: e.session.trainer.nameEn,
+            nameAr: e.session.trainer.nameAr,
             refNumber: e.session.trainer.refNumber,
           }
         : null,

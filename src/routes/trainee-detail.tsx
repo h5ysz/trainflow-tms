@@ -31,6 +31,7 @@ import {
   Download, Eye,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { trainerName } from "@/lib/i18n/trainer-name";
 
 interface TraineeInfo {
   id: string;
@@ -90,7 +91,7 @@ interface HistoryEntry {
     city: string | null;
   };
   course: { id: string; title: string; code: string; refNumber: string } | null;
-  trainer: { id: string; fullName: string; refNumber: string } | null;
+  trainer: { id: string; nameEn: string; nameAr?: string | null; refNumber: string } | null;
   company: { id: string; name: string; refNumber: string } | null;
   attendanceStatus: string;
   preTestStatus: string;
@@ -172,7 +173,7 @@ function statusBadgeColor(status: string): string {
 }
 
 export function TraineeDetailRoute() {
-  const { t, dir } = useI18n();
+  const { t, dir, locale } = useI18n();
   const { user, routeParam, navigate } = useAppStore();
   const traineeId = routeParam;
 
@@ -390,7 +391,7 @@ export function TraineeDetailRoute() {
                         </div>
                         {entry.trainer && (
                           <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                            <GraduationCap className="h-3 w-3" /> {entry.trainer.fullName}
+                            <GraduationCap className="h-3 w-3" /> {trainerName(entry.trainer, locale)}
                           </div>
                         )}
                         {entry.company && (

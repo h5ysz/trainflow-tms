@@ -81,14 +81,14 @@ async function main() {
   );
 
   const trainersData = [
-    { fullName: "Khalid Al-Otaibi", fullNameAr: "خالد العتيبي", email: "khalid.otaibi@gcclab.test", phone: "+966555000001", nationality: "Saudi", city: "Riyadh" },
-    { fullName: "Ahmed Al-Harbi", fullNameAr: "أحمد الحربي", email: "ahmed.harbi@gcclab.test", phone: "+966555000002", nationality: "Saudi", city: "Jeddah" },
-    { fullName: "Mohammed Al-Qahtani", fullNameAr: "محمد القحطاني", email: "mohammed.qahtani@gcclab.test", phone: "+966555000003", nationality: "Saudi", city: "Dammam" },
-    { fullName: "Saeed Al-Ghamdi", fullNameAr: "سعيد الغامدي", email: "saeed.ghamdi@gcclab.test", phone: "+966555000004", nationality: "Saudi", city: "Riyadh" },
-    { fullName: "Faisal Al-Dossari", fullNameAr: "فيصل الدوسري", email: "faisal.dossari@gcclab.test", phone: "+966555000005", nationality: "Saudi", city: "Mecca" },
-    { fullName: "Nasser Al-Subaie", fullNameAr: "ناصر السبيعي", email: "nasser.subaie@gcclab.test", phone: "+966555000006", nationality: "Saudi", city: "Medina" },
-    { fullName: "Abdullah Al-Shahrani", fullNameAr: "عبدالله الشهري", email: "abdullah.shahrani@gcclab.test", phone: "+966555000007", nationality: "Saudi", city: "Khobar" },
-    { fullName: "Turki Al-Anazi", fullNameAr: "تركي العنزي", email: "turki.anazi@gcclab.test", phone: "+966555000008", nationality: "Saudi", city: "Jubail" },
+    { nameEn: "Khalid Al-Otaibi", nameAr: "خالد العتيبي", email: "khalid.otaibi@gcclab.test", phone: "+966555000001", nationality: "Saudi", city: "Riyadh" },
+    { nameEn: "Ahmed Al-Harbi", nameAr: "أحمد الحربي", email: "ahmed.harbi@gcclab.test", phone: "+966555000002", nationality: "Saudi", city: "Jeddah" },
+    { nameEn: "Mohammed Al-Qahtani", nameAr: "محمد القحطاني", email: "mohammed.qahtani@gcclab.test", phone: "+966555000003", nationality: "Saudi", city: "Dammam" },
+    { nameEn: "Saeed Al-Ghamdi", nameAr: "سعيد الغامدي", email: "saeed.ghamdi@gcclab.test", phone: "+966555000004", nationality: "Saudi", city: "Riyadh" },
+    { nameEn: "Faisal Al-Dossari", nameAr: "فيصل الدوسري", email: "faisal.dossari@gcclab.test", phone: "+966555000005", nationality: "Saudi", city: "Mecca" },
+    { nameEn: "Nasser Al-Subaie", nameAr: "ناصر السبيعي", email: "nasser.subaie@gcclab.test", phone: "+966555000006", nationality: "Saudi", city: "Medina" },
+    { nameEn: "Abdullah Al-Shahrani", nameAr: "عبدالله الشهري", email: "abdullah.shahrani@gcclab.test", phone: "+966555000007", nationality: "Saudi", city: "Khobar" },
+    { nameEn: "Turki Al-Anazi", nameAr: "تركي العنزي", email: "turki.anazi@gcclab.test", phone: "+966555000008", nationality: "Saudi", city: "Jubail" },
   ];
 
   let trainersCreated = 0;
@@ -103,8 +103,8 @@ async function main() {
     const trainer = await db.trainer.create({
       data: {
         refNumber,
-        fullName: t.fullName,
-        fullNameAr: t.fullNameAr,
+        nameEn: t.nameEn,
+        nameAr: t.nameAr,
         email: t.email,
         phone: t.phone,
         nationality: t.nationality,

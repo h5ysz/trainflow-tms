@@ -25,7 +25,7 @@ export const GET = withModuleAction("trainer-qualifications", "view", async ({ r
   const [rows, total] = await Promise.all([
     db.trainerQualification.findMany({
       where,
-      include: { trainer: { select: { id: true, fullName: true, refNumber: true } } },
+      include: { trainer: { select: { id: true, nameEn: true, nameAr: true, refNumber: true } } },
       orderBy,
       skip: (q.page - 1) * q.pageSize,
       take: q.pageSize,
@@ -67,8 +67,8 @@ export const POST = withModuleAction("trainer-qualifications", "create", async (
     entity: "TRAINER",
     entityId: trainerId,
     entityRef: trainer.refNumber,
-    description: `Added qualification "${title}" to ${trainer.fullName}`,
-    descriptionAr: `تمت إضافة مؤهل "${title}" إلى ${trainer.fullName}`,
+    description: `Added qualification "${title}" to ${trainer.nameEn}`,
+    descriptionAr: `تمت إضافة مؤهل "${title}" إلى ${trainer.nameEn}`,
     req,
   });
 

@@ -55,13 +55,13 @@ async function detectOverloadedTrainers(scope: AnalyticsScope, _range: TimeRange
   if (!scope.canSeeOperational) return [];
   const upcoming = await db.trainingSession.findMany({
     where: { deletedAt: null, status: "SCHEDULED", startDate: { gte: new Date(), lte: new Date(Date.now() + 30 * 86400000) }, trainerId: { not: null } },
-    include: { trainer: { select: { id: true, fullName: true, refNumber: true } }, course: { select: { title: true } } },
+    include: { trainer: { select: { id: true, nameEn: true, refNumber: true } }, course: { select: { title: true } } },
     take: 500,
   });
   const byTrainer = new Map<string, { name: string; ref: string; sessions: { ref: string; title: string }[] }>();
   for (const s of upcoming) {
     if (!s.trainerId) continue;
-    const e = byTrainer.get(s.trainerId) ?? { name: s.trainer?.fullName ?? "—", ref: s.trainer?.refNumber ?? "—", sessions: [] };
+    const e = byTrainer.get(s.trainerId) ?? { name: s.trainer?.nameEn ?? "—", ref: s.trainer?.refNumber ?? "—", sessions: [] };
     e.sessions.push({ ref: s.refNumber, title: s.course?.title ?? s.title });
     byTrainer.set(s.trainerId, e);
   }
@@ -288,7 +288,7 @@ async function detectIdleTrainers(_scope: AnalyticsScope, _range: TimeRange): Pr
   const busyIds = new Set(busyTrainers.map((t) => t.trainerId));
   const activeTrainers = await db.trainer.findMany({
     where: { deletedAt: null, status: "ACTIVE" },
-    select: { id: true, fullName: true, refNumber: true },
+    select: { id: true, nameEn: true, refNumber: true },
   });
   const idle = activeTrainers.filter((t) => !busyIds.has(t.id));
   if (idle.length === 0) return [];
@@ -300,7 +300,7 @@ async function detectIdleTrainers(_scope: AnalyticsScope, _range: TimeRange): Pr
     titleAr: `${idle.length} مدرب بدون جلسات قادمة`,
     description: `${idle.length} active trainer(s) have no sessions scheduled in the next 30 days. Consider assigning them to under-staffed sessions.`,
     descriptionAr: `${idle.length} مدرب نشط بدون جلسات في الـ 30 يوماً القادمة. فكر في تعيينهم لجلسات تعاني نقص المدربين.`,
-    entityRefs: idle.slice(0, 10).map((t) => ({ entity: "TRAINER", refNumber: t.refNumber, description: t.fullName })),
+    entityRefs: idle.slice(0, 10).map((t) => ({ entity: "TRAINER", refNumber: t.refNumber, description: t.nameEn })),
     impact: "low",
   }];
 }

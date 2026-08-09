@@ -16,7 +16,7 @@ export const GET = withModuleAction("evaluation", "view", async ({ params }) => 
     where: { id },
     include: {
       session: { select: { id: true, refNumber: true, title: true } },
-      trainer: { select: { id: true, fullName: true, refNumber: true } },
+      trainer: { select: { id: true, nameEn: true, refNumber: true } },
     },
   });
   if (!evaluation || evaluation.deletedAt) return notFound("Evaluation not found");

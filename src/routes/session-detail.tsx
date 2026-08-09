@@ -26,9 +26,10 @@ import { useAppStore } from "@/lib/store/app-store";
 import { canPerformAction } from "@/lib/auth/permissions";
 import { QrImage } from "@/components/common/qr-image";
 import { buildCheckInUrl } from "@/lib/qr/urls";
+import { trainerName } from "@/lib/i18n/trainer-name";
 
 interface TraineeOption { id: string; fullName: string; refNumber: string; }
-interface TrainerOption { id: string; fullName: string; }
+interface TrainerOption { id: string; nameEn: string; nameAr?: string | null; }
 
 interface Session {
   id: string;
@@ -176,7 +177,7 @@ export function SessionDetailRoute() {
   useEffect(() => {
     if (trainers.length === 0) {
       api.getList<TrainerOption>("/trainers", { pageSize: 100 })
-        .then((r) => setTrainers(r.rows.map((x) => ({ id: x.id, fullName: x.fullName }))))
+        .then((r) => setTrainers(r.rows.map((x) => ({ id: x.id, nameEn: x.nameEn, nameAr: x.nameAr }))))
         .catch(() => {});
     }
   }, [trainers.length]);
@@ -596,7 +597,7 @@ export function SessionDetailRoute() {
                 <Select value={selectedTrainer} onValueChange={setSelectedTrainer}>
                   <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                   <SelectContent>
-                    {trainers.map((x) => <SelectItem key={x.id} value={x.id}>{x.fullName}</SelectItem>)}
+                    {trainers.map((x) => <SelectItem key={x.id} value={x.id}>{trainerName(x, locale)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </Field>
@@ -811,7 +812,7 @@ export function SessionDetailRoute() {
               >
                 <SelectTrigger><SelectValue placeholder={t("session.sameTrainer") || "Same trainer"} /></SelectTrigger>
                 <SelectContent>
-                  {trainers.map((tr) => <SelectItem key={tr.id} value={tr.id}>{tr.fullName}</SelectItem>)}
+                  {trainers.map((tr) => <SelectItem key={tr.id} value={tr.id}>{trainerName(tr, locale)}</SelectItem>)}
                 </SelectContent>
               </Select>
               {user?.role === "TRAINER" && (

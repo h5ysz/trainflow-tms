@@ -59,7 +59,7 @@ export default async function WorkerPassportPage({
           refNumber: true,
           startDate: true,
           endDate: true,
-          trainer: { select: { fullName: true } },
+          trainer: { select: { nameEn: true } },
         },
       },
     },
@@ -88,7 +88,7 @@ export default async function WorkerPassportPage({
         validUntil: c.validUntil.toISOString(),
         status: c.status,
         finalScore: c.finalScore,
-        trainerName: c.session.trainer?.fullName ?? null,
+        trainerName: c.session.trainer?.nameEn ?? null,
       }))}
     />
   );

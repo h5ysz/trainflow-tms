@@ -138,7 +138,7 @@ async function collectReportData(type: ReportType, scope: AnalyticsScope, range:
   if (type === "operational" || type === "monthly" || type === "quarterly" || type === "yearly" || type === "attendance") {
     const sessions = await db.trainingSession.findMany({
       where: { deletedAt: null, startDate: { gte: range.from, lte: range.to } },
-      include: { course: { select: { title: true } }, trainer: { select: { fullName: true } } },
+      include: { course: { select: { title: true } }, trainer: { select: { nameEn: true } } },
       take: 500,
       orderBy: { startDate: "desc" },
     });
@@ -157,7 +157,7 @@ async function collectReportData(type: ReportType, scope: AnalyticsScope, range:
       rows: sessions.slice(0, 200).map((s) => ({
         ref: s.refNumber,
         title: s.course?.title ?? s.title,
-        trainer: s.trainer?.fullName ?? "—",
+        trainer: s.trainer?.nameEn ?? "—",
         startDate: s.startDate.toISOString().slice(0, 10),
         capacity: s.capacity,
         enrolled: s.expectedTrainees,
@@ -200,14 +200,14 @@ async function collectReportData(type: ReportType, scope: AnalyticsScope, range:
   if (type === "trainer") {
     const testResults = await db.testResult.findMany({
       where: { deletedAt: null, attemptedAt: { gte: range.from, lte: range.to } },
-      select: { passed: true, session: { select: { trainerId: true, trainer: { select: { id: true, fullName: true, refNumber: true } } } } },
+      select: { passed: true, session: { select: { trainerId: true, trainer: { select: { id: true, nameEn: true, refNumber: true } } } } },
       take: 5000,
     });
     const byTrainer = new Map<string, { name: string; ref: string; passed: number; total: number }>();
     for (const r of testResults) {
       const tid = r.session.trainerId;
       if (!tid) continue;
-      const e = byTrainer.get(tid) ?? { name: r.session.trainer?.fullName ?? "—", ref: r.session.trainer?.refNumber ?? "—", passed: 0, total: 0 };
+      const e = byTrainer.get(tid) ?? { name: r.session.trainer?.nameEn ?? "—", ref: r.session.trainer?.refNumber ?? "—", passed: 0, total: 0 };
       e.total++;
       if (r.passed) e.passed++;
       byTrainer.set(tid, e);

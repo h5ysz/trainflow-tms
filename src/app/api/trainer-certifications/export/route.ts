@@ -9,20 +9,20 @@ import { buildMatrixRows, type MatrixCourse } from "@/lib/certifications/import-
 export const GET = withModuleAction("trainer-qualifications", "view", async () => {
   const [courses, trainers, certs] = await Promise.all([
     db.course.findMany({ where: { deletedAt: null, status: "ACTIVE" }, orderBy: { code: "asc" } }),
-    db.trainer.findMany({ where: { deletedAt: null, status: "ACTIVE" }, orderBy: { fullName: "asc" } }),
+    db.trainer.findMany({ where: { deletedAt: null, status: "ACTIVE" }, orderBy: { nameEn: "asc" } }),
     db.trainerCertification.findMany({
       where: { deletedAt: null, status: "VALID" },
-      select: { courseId: true, trainer: { select: { fullName: true } } },
+      select: { courseId: true, trainer: { select: { nameEn: true } } },
     }),
   ]);
 
   const certifiedByCourse = new Map<string, Set<string>>();
   for (const cert of certs) {
     if (!certifiedByCourse.has(cert.courseId)) certifiedByCourse.set(cert.courseId, new Set());
-    certifiedByCourse.get(cert.courseId)!.add(cert.trainer.fullName);
+    certifiedByCourse.get(cert.courseId)!.add(cert.trainer.nameEn);
   }
 
-  const trainerNames = trainers.map((t) => t.fullName);
+  const trainerNames = trainers.map((t) => t.nameEn);
   const matrixCourses: MatrixCourse[] = courses.map((c) => ({
     code: c.code,
     title: c.title,

@@ -105,7 +105,7 @@ export async function getPassportWithCertificates(passportId: string) {
               refNumber: true,
               startDate: true,
               endDate: true,
-              trainer: { select: { fullName: true } },
+              trainer: { select: { nameEn: true } },
             },
           },
         },

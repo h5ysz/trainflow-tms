@@ -28,7 +28,7 @@ export const PUT = withModuleAction("trainers", "edit", async ({ req, params, us
   if (!existing || existing.deletedAt) return notFound("Trainer not found");
 
   const {
-    fullName, fullNameAr, nationalId, email, phone, mobile,
+    nameEn, nameAr, nationalId, email, phone, mobile,
     gender, nationality, country, city, address, bio, photoUrl,
     status, hireDate,
   } = body;
@@ -45,8 +45,8 @@ export const PUT = withModuleAction("trainers", "edit", async ({ req, params, us
   const updated = await db.trainer.update({
     where: { id },
     data: {
-      ...(fullName !== undefined && { fullName }),
-      ...(fullNameAr !== undefined && { fullNameAr }),
+      ...(nameEn !== undefined && { nameEn }),
+      ...(nameAr !== undefined && { nameAr }),
       ...(nationalId !== undefined && { nationalId }),
       ...(email !== undefined && { email }),
       ...(phone !== undefined && { phone }),
@@ -70,8 +70,8 @@ export const PUT = withModuleAction("trainers", "edit", async ({ req, params, us
     entity: "TRAINER",
     entityId: id,
     entityRef: updated.refNumber,
-    description: `Updated trainer: ${updated.fullName}`,
-    descriptionAr: `تم تحديث مدرب: ${updated.fullName}`,
+    description: `Updated trainer: ${updated.nameEn}`,
+    descriptionAr: `تم تحديث مدرب: ${updated.nameEn}`,
     req,
     metadata: { before: existing, after: updated },
   });
@@ -100,8 +100,8 @@ export const DELETE = withModuleAction("trainers", "delete", async ({ params, us
     entity: "TRAINER",
     entityId: id,
     entityRef: existing.refNumber,
-    description: `Deleted trainer: ${existing.fullName}`,
-    descriptionAr: `تم حذف مدرب: ${existing.fullName}`,
+    description: `Deleted trainer: ${existing.nameEn}`,
+    descriptionAr: `تم حذف مدرب: ${existing.nameEn}`,
     req,
   });
 

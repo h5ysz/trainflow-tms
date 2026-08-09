@@ -174,14 +174,14 @@ async function answerBestPassRateTrainer(scope: AnalyticsScope, intent: Intent):
   const yearStart = new Date(new Date().getFullYear(), 0, 1);
   const testResults = await db.testResult.findMany({
     where: { deletedAt: null, attemptedAt: { gte: yearStart } },
-    select: { passed: true, session: { select: { trainerId: true, trainer: { select: { id: true, fullName: true, refNumber: true } } } } },
+    select: { passed: true, session: { select: { trainerId: true, trainer: { select: { id: true, nameEn: true, refNumber: true } } } } },
     take: 5000,
   });
   const byTrainer = new Map<string, { name: string; ref: string; passed: number; total: number }>();
   for (const r of testResults) {
     const tid = r.session.trainerId;
     if (!tid) continue;
-    const e = byTrainer.get(tid) ?? { name: r.session.trainer?.fullName ?? "—", ref: r.session.trainer?.refNumber ?? "—", passed: 0, total: 0 };
+    const e = byTrainer.get(tid) ?? { name: r.session.trainer?.nameEn ?? "—", ref: r.session.trainer?.refNumber ?? "—", passed: 0, total: 0 };
     e.total++;
     if (r.passed) e.passed++;
     byTrainer.set(tid, e);
@@ -232,11 +232,11 @@ async function answerUnderCapacitySessions(scope: AnalyticsScope, intent: Intent
     : {};
   const upcoming = await db.trainingSession.findMany({
     where: { deletedAt: null, status: "SCHEDULED", startDate: { gte: new Date() }, ...contractorScope },
-    include: { course: { select: { title: true } }, trainer: { select: { fullName: true } } },
+    include: { course: { select: { title: true } }, trainer: { select: { nameEn: true } } },
     take: 500,
   });
   const under = upcoming
-    .map((s) => ({ ref: s.refNumber, title: s.course?.title ?? s.title, trainer: s.trainer?.fullName ?? "—", capacity: s.capacity, enrolled: s.expectedTrainees, pct: s.capacity > 0 ? Math.round((s.expectedTrainees / s.capacity) * 100) : 0 }))
+    .map((s) => ({ ref: s.refNumber, title: s.course?.title ?? s.title, trainer: s.trainer?.nameEn ?? "—", capacity: s.capacity, enrolled: s.expectedTrainees, pct: s.capacity > 0 ? Math.round((s.expectedTrainees / s.capacity) * 100) : 0 }))
     .filter((s) => s.pct < 70)
     .sort((a, b) => a.pct - b.pct);
   if (under.length === 0) return { kind: "text", answer: "No under-capacity sessions found. All upcoming sessions are at 70%+ enrollment." };
@@ -473,8 +473,8 @@ async function answerCompareTrainers(scope: AnalyticsScope, intent: Intent, ques
     return { kind: "text", answer: "Please specify two trainer names to compare, e.g. 'Compare Ahmed with Ali'." };
   }
   const trainers = await db.trainer.findMany({
-    where: { deletedAt: null, fullName: { in: names } },
-    select: { id: true, fullName: true, refNumber: true },
+    where: { deletedAt: null, nameEn: { in: names } },
+    select: { id: true, nameEn: true, refNumber: true },
   });
   if (trainers.length < 2) {
     return { kind: "text", answer: `Could not find both trainers (${names.join(", ")}). Please check the spelling.` };
@@ -487,7 +487,7 @@ async function answerCompareTrainers(scope: AnalyticsScope, intent: Intent, ques
   });
   const byTrainer = new Map<string, { name: string; ref: string; passed: number; total: number; sessions: number }>();
   for (const t of trainers) {
-    byTrainer.set(t.id, { name: t.fullName, ref: t.refNumber, passed: 0, total: 0, sessions: 0 });
+    byTrainer.set(t.id, { name: t.nameEn, ref: t.refNumber, passed: 0, total: 0, sessions: 0 });
   }
   for (const r of testResults) {
     const tid = r.session.trainerId;

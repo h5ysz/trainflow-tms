@@ -150,14 +150,14 @@ async function getTrainerPerformance(scope: AnalyticsScope, range: TimeRange): P
   if (!scope.canSeeOperational) return null;
   const testResults = await db.testResult.findMany({
     where: { deletedAt: null, attemptedAt: { gte: range.from, lte: range.to } },
-    select: { passed: true, session: { select: { trainerId: true, trainer: { select: { id: true, fullName: true } } } } },
+    select: { passed: true, session: { select: { trainerId: true, trainer: { select: { id: true, nameEn: true } } } } },
     take: 5000,
   });
   const byTrainer = new Map<string, { name: string; passed: number; total: number }>();
   for (const r of testResults) {
     const tid = r.session.trainerId;
     if (!tid) continue;
-    const e = byTrainer.get(tid) ?? { name: r.session.trainer?.fullName ?? "—", passed: 0, total: 0 };
+    const e = byTrainer.get(tid) ?? { name: r.session.trainer?.nameEn ?? "—", passed: 0, total: 0 };
     e.total++;
     if (r.passed) e.passed++;
     byTrainer.set(tid, e);

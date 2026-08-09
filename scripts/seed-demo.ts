@@ -281,7 +281,7 @@ async function main() {
     const trainer = await db.trainer.create({
       data: {
         refNumber: await refNumber("TRAINER"),
-        fullName,
+        nameEn: fullName,
         nationalId: nextNationalId(),
         email: `${slug(fullName)}@gcclab.com`,
         phone: nextMobile(),

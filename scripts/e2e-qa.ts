@@ -152,10 +152,10 @@ let courseId: string | undefined;
 let traineeIds: string[] = [];
 async function phase3() {
   console.log("\n=== PHASE 3 — Trainer + Course + Question Bank + Trainees ===");
-  // Trainer — uses fullName, not name
+  // Trainer — uses nameEn/nameAr
   const trainer = await req("POST", "/api/trainers", {
-    fullName: "Khalid Trainer",
-    fullNameAr: "خالد المدرب",
+    nameEn: "Khalid Trainer",
+    nameAr: "خالد المدرب",
     nationalId: "QA-TID-0001",
     email: "khalid.trainer@qacontractor.test",
     phone: "+966500000002",
@@ -167,7 +167,7 @@ async function phase3() {
   log({
     step: "P3.create-trainer",
     status: trainer.ok && trainerId ? "PASS" : "FAIL",
-    detail: `Created trainer: ${trainer.json?.data?.fullName ?? "FAIL"} (id=${trainerId ?? "?"}) ref=${trainer.json?.data?.refNumber ?? "?"}`,
+    detail: `Created trainer: ${trainer.json?.data?.nameEn ?? "FAIL"} (id=${trainerId ?? "?"}) ref=${trainer.json?.data?.refNumber ?? "?"}`,
     httpStatus: trainer.status, durationMs: trainer.durationMs,
   });
 

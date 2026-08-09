@@ -89,11 +89,11 @@ export const POST = withModuleAction("trainer-qualifications", "create", async (
       result.coursesProcessed++;
 
       for (const trainerName of parsed.certifiedTrainerNames) {
-        let trainer = await db.trainer.findFirst({ where: { fullName: trainerName, deletedAt: null } });
+        let trainer = await db.trainer.findFirst({ where: { nameEn: trainerName, deletedAt: null } });
         if (!trainer) {
           const refNumber = await nextRefNumber("TRAINER");
           trainer = await db.trainer.create({
-            data: { refNumber, fullName: trainerName, createdBy: user.id, updatedBy: user.id },
+            data: { refNumber, nameEn: trainerName, createdBy: user.id, updatedBy: user.id },
           });
         }
 

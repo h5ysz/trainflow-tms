@@ -26,7 +26,7 @@ export const GET = withModuleAction("attendance", "view", async ({ req }) => {
     where: { id: sessionId },
     include: {
       course: { select: { id: true, title: true, code: true, durationHours: true } },
-      trainer: { select: { id: true, fullName: true, refNumber: true } },
+      trainer: { select: { id: true, nameEn: true, refNumber: true } },
       attendance: {
         where: { deletedAt: null },
         orderBy: { traineeName: "asc" },
@@ -137,7 +137,7 @@ export const GET = withModuleAction("attendance", "view", async ({ req }) => {
   const infoPairs: Array<[string, string, string, string]> = [
     ["Training Course", session.course?.title ?? "—", "Session Number", session.refNumber ?? "—"],
     ["Training Request", session.requestId ?? "—", "Company Name", "—"],
-    ["Trainer Name", session.trainer?.fullName ?? "—", "Training Location", session.location ?? session.venue ?? session.city ?? "—"],
+    ["Trainer Name", session.trainer?.nameEn ?? "—", "Training Location", session.location ?? session.venue ?? session.city ?? "—"],
     ["Start Date", fmtDate(session.startDate), "End Date", fmtDate(session.endDate)],
     ["Start Time", fmtTime(session.startDate), "End Time", fmtTime(session.endDate)],
   ];
@@ -314,7 +314,7 @@ export const GET = withModuleAction("attendance", "view", async ({ req }) => {
   // Row: Name lines + Summary data
   sheet.mergeCells(`A${r}:C${r}`);
   const tName = sheet.getCell(`A${r}`);
-  tName.value = `Name: ${session.trainer?.fullName ?? "________________________"}`;
+  tName.value = `Name: ${session.trainer?.nameEn ?? "________________________"}`;
   tName.font = { size: 9, color: { argb: "FF666666" } };
   tName.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
   setBorder(tName, { bottom: true });

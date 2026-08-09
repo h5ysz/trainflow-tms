@@ -13,6 +13,7 @@ import {
   Building2, BookOpen, QrCode, Plus, Loader2, Check,
   type LucideIcon,
 } from "lucide-react";
+import { trainerName } from "@/lib/i18n/trainer-name";
 import { cn } from "@/lib/utils";
 import { canAccessModule, type RouteKey } from "@/lib/auth/permissions";
 import { api } from "@/lib/api/client";
@@ -53,7 +54,8 @@ interface DashboardData {
   upcomingSessions: Array<{
     id: string; sessionCode?: string; refNumber?: string; title: string;
     courseTitle?: string | null; courseCode?: string | null;
-    trainerName?: string | null; startDate: string; endDate: string; status: string;
+    trainerName?: string | null; trainer?: { nameEn: string; nameAr?: string | null } | null;
+    startDate: string; endDate: string; status: string;
   }>;
   recentActivity: Array<{
     id: string; action: string; entity: string;
@@ -105,7 +107,7 @@ function ChartCard({ title, icon: Icon, children, hint }: {
 }
 
 export function DashboardRoute() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { user, navigate } = useAppStore();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -336,7 +338,7 @@ export function DashboardRoute() {
                       <div className="text-xs text-muted-foreground flex items-center gap-2">
                         <span className="font-mono">{s.sessionCode}</span>
                         {s.courseTitle && <span>· {s.courseTitle}</span>}
-                        {s.trainerName && <span>· {s.trainerName}</span>}
+                        {s.trainer ? <span>· {trainerName(s.trainer, locale)}</span> : (s.trainerName && <span>· {s.trainerName}</span>)}
                       </div>
                     </div>
                     <div className="text-xs text-muted-foreground text-end shrink-0">

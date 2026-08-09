@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     where,
     include: {
       company: { select: { name: true, refNumber: true } },
-      trainer: { select: { fullName: true, refNumber: true } },
+      trainer: { select: { nameEn: true, refNumber: true } },
     },
     orderBy: { createdAt: "desc" },
     take: 5000,
@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
       csvEscape(u.language),
       csvEscape(u.company?.name ?? ""),
       csvEscape(u.company?.refNumber ?? ""),
-      csvEscape(u.trainer?.fullName ?? ""),
+      csvEscape(u.trainer?.nameEn ?? ""),
       csvEscape(u.trainer?.refNumber ?? ""),
       csvEscape(u.lastLoginAt ? u.lastLoginAt.toISOString() : ""),
       csvEscape(u.createdAt.toISOString()),
