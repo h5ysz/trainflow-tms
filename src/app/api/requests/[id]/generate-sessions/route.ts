@@ -80,10 +80,15 @@ export const GET = withModuleAction("sessions", "create", async ({ params }) => 
       let courseCode = rc.course?.code ?? null;
 
       if (rc.course?.deletedAt) {
+        // Search by exact title first, then by partial title match (the catalog
+        // rebuild may have changed the title slightly, e.g. "First Aid" → "Basic First Aid").
         const active = await db.course.findFirst({
           where: {
-            title: rc.course.title,
-            deletedAt: null,
+            OR: [
+              { title: rc.course.title, deletedAt: null },
+              { title: { contains: rc.course.title }, deletedAt: null },
+              { title: { contains: rc.course.title.split(" ")[0] }, deletedAt: null },
+            ],
           },
           select: { id: true, code: true, title: true },
         });
@@ -167,18 +172,22 @@ export const POST = withModuleAction("sessions", "create", async ({ req, params,
     }
 
     // Look up the course — if it was deleted (catalog rebuild), find the
-    // active replacement with the same title so trainer certifications match.
+    // active replacement by matching title (exact, contains, or first word).
     let course = await db.course.findFirst({ where: { id: spec.courseId, deletedAt: null } });
     if (!course) {
-      // Try the deleted course, then find an active one with the same title
       const deletedCourse = await db.course.findFirst({ where: { id: spec.courseId } });
       if (deletedCourse) {
         const active = await db.course.findFirst({
-          where: { title: deletedCourse.title, deletedAt: null },
+          where: {
+            OR: [
+              { title: deletedCourse.title, deletedAt: null },
+              { title: { contains: deletedCourse.title }, deletedAt: null },
+              { title: { contains: deletedCourse.title.split(" ")[0] }, deletedAt: null },
+            ],
+          },
         });
         if (active) {
           course = active;
-          // Update spec.courseId so the rest of the flow uses the active course
           spec.courseId = active.id;
         }
       }
