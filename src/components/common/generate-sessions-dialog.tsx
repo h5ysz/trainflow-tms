@@ -31,6 +31,7 @@ interface RequestCourseOption {
 
 interface TrainerOption {
   id: string;
+  fullName: string;
   nameEn: string;
   nameAr?: string | null;
   refNumber: string;
@@ -62,6 +63,10 @@ interface CourseSpec {
   capacity: number;
   trainerId: string;
   notes: string;
+  // ── Trainer qualification exception ──
+  showAllTrainers: boolean;     // toggle: show all active trainers (not just certified)
+  waiveCertification: boolean;  // confirmed waiver for the selected trainer
+  waiverReason: string;         // optional reason for the exception
 }
 
 function toDateInput(value: string | null): string {
@@ -91,6 +96,9 @@ export function GenerateSessionsDialog({
   const [trainersByCourse, setTrainersByCourse] = useState<Record<string, TrainerOption[]>>({});
   const [trainersLoading, setTrainersLoading] = useState(false);
   const [trainersError, setTrainersError] = useState<string | null>(null);
+  // All active trainers — loaded lazily when the coordinator toggles "show all trainers"
+  const [allTrainers, setAllTrainers] = useState<TrainerOption[]>([]);
+  const [allTrainersLoaded, setAllTrainersLoaded] = useState(false);
   // Which request the currently-held plan belongs to. Loading is derived from this
   // rather than tracked separately, so the effect has no synchronous state writes.
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
@@ -153,6 +161,9 @@ export function GenerateSessionsDialog({
                 capacity: c.defaultCapacity ?? c.traineeCount,
                 trainerId: "",
                 notes: "",
+                showAllTrainers: false,
+                waiveCertification: false,
+                waiverReason: "",
               },
             ])
           )
@@ -168,6 +179,19 @@ export function GenerateSessionsDialog({
       cancelled = true;
     };
   }, [open, requestId]);
+
+  // Lazy-load all active trainers when any course's showAllTrainers is toggled on
+  useEffect(() => {
+    const anyShowAll = Object.values(specs).some((s) => s.showAllTrainers);
+    if (anyShowAll && !allTrainersLoaded) {
+      api.getList<TrainerOption>("/trainers", { pageSize: 200 })
+        .then((r) => {
+          setAllTrainers(r.rows.map((t) => ({ id: t.id, fullName: t.fullName, nameEn: t.nameEn, nameAr: t.nameAr, refNumber: t.refNumber })));
+          setAllTrainersLoaded(true);
+        })
+        .catch(() => {});
+    }
+  }, [specs, allTrainersLoaded]);
 
   const setSpec = (id: string, patch: Partial<CourseSpec>) =>
     setSpecs((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
@@ -216,6 +240,8 @@ export function GenerateSessionsDialog({
             capacity: s.capacity,
             trainerId: s.trainerId || undefined,
             notes: s.notes || undefined,
+            waiveCertification: s.waiveCertification || undefined,
+            waiverReason: s.waiverReason || undefined,
           };
         }),
       });
@@ -307,7 +333,7 @@ export function GenerateSessionsDialog({
                         <div className="flex items-center gap-2 text-xs text-destructive py-1.5">
                           <AlertCircle className="h-3.5 w-3.5" /> {trainersError}
                         </div>
-                      ) : (trainersByCourse[c.courseId] ?? []).length === 0 ? (
+                      ) : !s.showAllTrainers && (trainersByCourse[c.courseId] ?? []).length === 0 ? (
                         <div className="flex items-center gap-2 text-xs text-warning py-1.5">
                           <AlertCircle className="h-3.5 w-3.5" />
                           {t("requests.generate.noTrainers")}
@@ -315,18 +341,66 @@ export function GenerateSessionsDialog({
                       ) : (
                         <Select
                           value={s.trainerId}
-                          onValueChange={(v) => setSpec(c.requestCourseId, { trainerId: v })}
+                          onValueChange={(v) => {
+                            // Check if selected trainer is certified
+                            const isCertified = (trainersByCourse[c.courseId] ?? []).some(tr => tr.id === v);
+                            setSpec(c.requestCourseId, {
+                              trainerId: v,
+                              waiveCertification: !isCertified && s.showAllTrainers,
+                            });
+                          }}
                         >
                           <SelectTrigger className="w-full"><SelectValue placeholder={t("requests.generate.selectTrainerPlaceholder")} /></SelectTrigger>
                           <SelectContent>
+                            {/* Certified trainers first */}
                             {(trainersByCourse[c.courseId] ?? []).map((tr) => (
-                              <SelectItem key={tr.id} value={tr.id}>
+                              <SelectItem key={`cert-${tr.id}`} value={tr.id}>
                                 {trainerName(tr, locale)} · {tr.refNumber}
                               </SelectItem>
                             ))}
+                            {/* If showAllTrainers is on, also show all active trainers */}
+                            {s.showAllTrainers && (allTrainers.map((tr) => {
+                              const isCertified = (trainersByCourse[c.courseId] ?? []).some(c => c.id === tr.id);
+                              if (isCertified) return null; // already shown above
+                              return (
+                                <SelectItem key={`all-${tr.id}`} value={tr.id}>
+                                  {trainerName(tr, locale)} · {tr.refNumber} ⚠️
+                                </SelectItem>
+                              );
+                            }))}
                           </SelectContent>
                         </Select>
                       )}
+
+                      {/* Certification waiver warning */}
+                      {s.waiveCertification && s.trainerId && (
+                        <div className="rounded-md border border-warning/30 bg-warning/10 p-2.5 space-y-2">
+                          <div className="flex items-center gap-2 text-xs text-warning font-medium">
+                            <AlertCircle className="h-3.5 w-3.5" />
+                            {t("requests.generate.waiverWarning") || "This trainer is not certified for this course. This assignment will be recorded as a qualification exception."}
+                          </div>
+                          <Input
+                            placeholder={t("requests.generate.waiverReasonPlaceholder") || "Reason for exception (optional)"}
+                            value={s.waiverReason}
+                            onChange={(e) => setSpec(c.requestCourseId, { waiverReason: e.target.value })}
+                            className="text-xs h-7"
+                          />
+                        </div>
+                      )}
+
+                      {/* Toggle: show all trainers (coordinator-only exception) */}
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                        <Checkbox
+                          checked={s.showAllTrainers}
+                          onCheckedChange={(checked) => setSpec(c.requestCourseId, {
+                            showAllTrainers: !!checked,
+                            // Reset waiver when toggling off
+                            waiveCertification: !checked ? false : s.waiveCertification,
+                            trainerId: !checked ? "" : s.trainerId,
+                          })}
+                        />
+                        {t("requests.generate.showAllTrainers") || "Show all trainers (exception)"}
+                      </label>
                     </div>
 
                     <FormGrid cols={3}>

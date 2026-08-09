@@ -30,6 +30,9 @@ interface SessionSpec {
   capacity?: number;
   title?: string;
   notes?: string;
+  // ── Trainer qualification exception ──
+  waiveCertification?: boolean;
+  waiverReason?: string;
 }
 
 async function loadRequest(requestId: string) {
@@ -151,6 +154,7 @@ export const POST = withModuleAction("sessions", "create", async ({ req, params,
         courseId: spec.courseId,
         startDate: start,
         endDate: end,
+        allowCertificationWaiver: spec.waiveCertification === true,
       });
       if (!validation.valid) {
         return validationErrorToResponse(validation);
@@ -198,7 +202,7 @@ export const POST = withModuleAction("sessions", "create", async ({ req, params,
         region: spec.region ?? null,
         venue: spec.venue ?? null,
         shift: spec.shift,
-        durationHours: SHIFT_DURATION_HOURS, // 6 hours for Morning/Evening
+        durationHours: SHIFT_DURATION_HOURS,
         capacity: spec.capacity ?? maxTrainees,
         language: courseLanguage,
         startDate: new Date(spec.startDate),
@@ -209,6 +213,12 @@ export const POST = withModuleAction("sessions", "create", async ({ req, params,
         status: "SCHEDULED",
         qrCodeToken: qrToken,
         qrCodeGeneratedAt: new Date(),
+        // ── Record qualification exception if applicable ──
+        ...(spec.waiveCertification && spec.trainerId ? {
+          trainerCertWaivedAt: new Date(),
+          trainerCertWaivedBy: user.id,
+          trainerCertWaiverReason: spec.waiverReason ?? "Coordinator override",
+        } : {}),
         createdBy: user.id,
         updatedBy: user.id,
       },

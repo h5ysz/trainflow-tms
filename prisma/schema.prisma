@@ -895,6 +895,13 @@ model TrainingSession {
   startedAt         DateTime?
   completedAt       DateTime?
   notes             String?
+  // ── Trainer qualification exception ──
+  // When a coordinator assigns a trainer who is NOT certified for the course,
+  // these fields record the exception for audit purposes. This is a per-session
+  // override — it does NOT grant the trainer permanent certification.
+  trainerCertWaivedAt     DateTime?
+  trainerCertWaivedBy     String?
+  trainerCertWaiverReason String?
   // Import/export fields (course schedule sheet)
   instituteName     String? // اسم المعهد المنفذ
   classification    String                 @default("COURSE") // COURSE | EXAM — دورة / اختبار

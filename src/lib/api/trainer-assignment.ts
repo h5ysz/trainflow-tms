@@ -83,6 +83,10 @@ export async function findTrainerConflicts(
 /**
  * Full validation for assigning a trainer to a session.
  * Returns either { valid: true } or { valid: false, error, errorCode, conflictSessionIds }.
+ *
+ * @param opts.allowCertificationWaiver — when true, skips the certification check
+ *   (step 2). Used when a coordinator explicitly chooses to assign a trainer
+ *   who is not certified for the course, as a one-time exception.
  */
 export async function validateTrainerAssignment(opts: {
   user: AuthUser;
@@ -91,8 +95,9 @@ export async function validateTrainerAssignment(opts: {
   startDate: Date;
   endDate: Date;
   excludeSessionId?: string;
+  allowCertificationWaiver?: boolean;
 }): Promise<TrainerAssignmentValidation> {
-  const { user, trainerId, courseId, startDate, endDate, excludeSessionId } = opts;
+  const { user, trainerId, courseId, startDate, endDate, excludeSessionId, allowCertificationWaiver } = opts;
 
   // 1. Role check
   if (!canAssignTrainer(user)) {
@@ -103,17 +108,19 @@ export async function validateTrainerAssignment(opts: {
     };
   }
 
-  // 2. Certification check
-  const certified = await isTrainerCertifiedForCourse(trainerId, courseId);
-  if (!certified) {
-    return {
-      valid: false,
-      error: "Trainer is not certified for this course",
-      errorCode: "NOT_CERTIFIED",
-    };
+  // 2. Certification check — skipped when allowCertificationWaiver is true
+  if (!allowCertificationWaiver) {
+    const certified = await isTrainerCertifiedForCourse(trainerId, courseId);
+    if (!certified) {
+      return {
+        valid: false,
+        error: "Trainer is not certified for this course",
+        errorCode: "NOT_CERTIFIED",
+      };
+    }
   }
 
-  // 3. Conflict check (no overlapping sessions)
+  // 3. Conflict check (no overlapping sessions) — always enforced, even with waiver
   const conflicts = await findTrainerConflicts(trainerId, startDate, endDate, excludeSessionId);
   if (conflicts.length > 0) {
     return {
