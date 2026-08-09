@@ -18,7 +18,8 @@ function countPages(buffer: Buffer): number {
 }
 
 const ARABIC_FONT = join(process.cwd(), "public", "fonts", "NotoNaskhArabic-Regular.ttf");
-const hasArabicFont = existsSync(ARABIC_FONT);
+const ARABIC_BOLD_FONT = join(process.cwd(), "public", "fonts", "NotoNaskhArabic-Bold.ttf");
+const hasArabicFont = existsSync(ARABIC_FONT) && existsSync(ARABIC_BOLD_FONT);
 
 function render(data: CertificateLayoutData, withArabic = false) {
   const doc = new PDFDocument({
@@ -29,12 +30,15 @@ function render(data: CertificateLayoutData, withArabic = false) {
   const chunks: Buffer[] = [];
   doc.on("data", (c: Buffer) => chunks.push(c));
   const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
-  let arabicName: string | null = null;
+  let fontName: string | null = null;
+  let fontNameBold: string | null = null;
   if (withArabic && hasArabicFont) {
-    doc.registerFont("Arabic", ARABIC_FONT);
-    arabicName = "Arabic";
+    doc.registerFont("Certificate", ARABIC_FONT);
+    doc.registerFont("Certificate-Bold", ARABIC_BOLD_FONT);
+    fontName = "Certificate";
+    fontNameBold = "Certificate-Bold";
   }
-  drawCertificateLayout(doc, data, { arabicFontName: arabicName, logoPath: null });
+  drawCertificateLayout(doc, data, { fontName, fontNameBold, logoPath: null });
   doc.end();
   return done;
 }

@@ -7,7 +7,7 @@ import { syncCertificateStatus } from "@/lib/api/enrollment-sync";
 import PDFDocument from "pdfkit";
 import { buildVerifyUrl, resolveOrigin } from "@/lib/qr/urls";
 import { renderQrPng } from "@/lib/qr/server";
-import { arabicFontPath, certificateLogoPath } from "@/lib/pdf/fonts";
+import { arabicFontPath, arabicFontBoldPath, certificateLogoPath } from "@/lib/pdf/fonts";
 import { drawCertificateLayout } from "@/lib/pdf/certificate-layout";
 import { randomBytes } from "crypto";
 
@@ -74,7 +74,12 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
   });
 
   const arabicFont = arabicFontPath();
-  if (arabicFont) doc.registerFont("Arabic", arabicFont);
+  const arabicBoldFont = arabicFontBoldPath();
+  // One embedded family renders Latin + Arabic in both weights, matching the
+  // @font-face'd files the browser preview and print use — so the downloaded PDF
+  // is the same design as the on-screen sheet.
+  if (arabicFont) doc.registerFont("Certificate", arabicFont);
+  if (arabicBoldFont) doc.registerFont("Certificate-Bold", arabicBoldFont);
 
   drawCertificateLayout(
     doc,
@@ -93,7 +98,8 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
       qrPng,
     },
     {
-      arabicFontName: arabicFont ? "Arabic" : null,
+      fontName: arabicFont ? "Certificate" : null,
+      fontNameBold: arabicBoldFont ? "Certificate-Bold" : null,
       logoPath: certificateLogoPath(),
     },
   );

@@ -19,6 +19,7 @@ import { join } from "path";
 //   https://fonts.google.com/noto/specimen/Noto+Naskh+Arabic
 
 const ARABIC_FONT_RELATIVE = join("public", "fonts", "NotoNaskhArabic-Regular.ttf");
+const ARABIC_BOLD_RELATIVE = join("public", "fonts", "NotoNaskhArabic-Bold.ttf");
 
 let cached: string | null | undefined;
 
@@ -48,6 +49,25 @@ export function arabicFontPath(): string | null {
 
 export function hasArabicFont(): boolean {
   return arabicFontPath() !== null;
+}
+
+const ARABIC_BOLD_BASE = "NotoNaskhArabic-Bold.ttf";
+
+let boldCached: string | null | undefined;
+
+/**
+ * Absolute path to the bold weight of the certificate font, or null when missing.
+ * The bold face is only used when the regular one is present — both ship together
+ * as the single certificate typeface (Latin + Arabic), so the browser preview and
+ * the pdfkit output render the exact same fonts.
+ */
+export function arabicFontBoldPath(): string | null {
+  if (boldCached !== undefined) return boldCached;
+  boldCached =
+    [join(process.cwd(), "public", "fonts", ARABIC_BOLD_BASE), join(process.cwd(), "..", "..", "public", "fonts", ARABIC_BOLD_BASE)].find(
+      (p) => existsSync(p),
+    ) ?? null;
+  return boldCached;
 }
 
 // Certificate header logo. The PNG lives in public/, resolved the same way as the

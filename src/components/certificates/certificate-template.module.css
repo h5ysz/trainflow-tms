@@ -1,164 +1,167 @@
+/*
+ * Certificate sheet — 842 x 595pt (A4 landscape), coordinates in points, mirroring
+ * src/lib/pdf/certificate-layout.ts exactly. The browser loads the SAME font files
+ * pdfkit embeds (public/fonts/NotoNaskhArabic-{Regular,Bold}.ttf), so preview,
+ * print and the downloaded PDF are one design.
+ */
+@font-face {
+  font-family: "Noto Naskh Arabic";
+  src: url("/fonts/NotoNaskhArabic-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Noto Naskh Arabic";
+  src: url("/fonts/NotoNaskhArabic-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-display: swap;
+}
+
 .sheet {
   position: relative;
-  width: 297mm;
-  height: 210mm;
+  width: 842pt;
+  height: 595pt;
   box-sizing: border-box;
   overflow: hidden;
   background: #fff;
   color: #1a1a1a;
-  font-family: Arial, "Helvetica Neue", Helvetica, "Segoe UI", "Noto Sans Arabic", sans-serif;
+  font-family: "Noto Naskh Arabic", "Segoe UI", sans-serif;
+  font-weight: 400;
 }
 
 .borderOuter {
   position: absolute;
-  inset: 5mm;
-  border: 1.2mm solid #7b1e2b;
-  border-radius: 1mm;
+  inset: 30pt;
+  border: 3pt solid #7b1e2b;
+  border-radius: 3pt;
 }
 
 .borderInner {
   position: absolute;
-  inset: 7mm;
-  border: 0.4mm solid rgba(123, 30, 43, 0.35);
-  border-radius: 0.5mm;
+  inset: 40pt;
+  border: 1pt solid rgba(123, 30, 43, 0.35);
+  border-radius: 1pt;
 }
 
-.content {
+/* ── Header ─────────────────────────────────────────────── */
+.logoWrap {
   position: absolute;
-  inset: 0;
+  top: 58pt;
+  left: 0;
+  right: 0;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 13mm 16mm 14mm;
-  box-sizing: border-box;
+  justify-content: center;
 }
 
 .logo {
-  height: 12mm;
+  height: 40pt;
   width: auto;
   object-fit: contain;
 }
 
 .brand {
-  margin-top: 2.5mm;
+  position: absolute;
+  top: 106pt;
+  left: 60pt;
+  right: 60pt;
   font-size: 13pt;
   font-weight: 700;
   color: #7b1e2b;
-  letter-spacing: 0.5px;
   text-align: center;
 }
 
 .subBrand {
-  margin-top: 1mm;
+  position: absolute;
+  top: 122pt;
+  left: 60pt;
+  right: 60pt;
   font-size: 9pt;
   color: #666;
   text-align: center;
 }
 
 .arabicBrand {
-  margin-top: 1mm;
+  position: absolute;
+  top: 136pt;
+  left: 60pt;
+  right: 60pt;
   font-size: 9pt;
   color: #666;
   text-align: center;
 }
 
+/* ── Body ───────────────────────────────────────────────── */
 .title {
-  margin-top: 5mm;
+  position: absolute;
+  top: 156pt;
+  left: 40pt;
+  right: 40pt;
   font-size: 22pt;
   font-weight: 700;
   color: #1a1a1a;
   text-transform: uppercase;
-  letter-spacing: 2.5px;
+  letter-spacing: 1.9pt;
   text-align: center;
 }
 
 .certify {
-  margin-top: 3.5mm;
+  position: absolute;
+  top: 194pt;
+  left: 40pt;
+  right: 40pt;
   font-size: 12pt;
   color: #666;
   text-align: center;
 }
 
 .name {
-  margin-top: 3.5mm;
+  top: 212pt;
   font-size: 22pt;
   font-weight: 700;
   color: #7b1e2b;
-  text-align: center;
-  width: 100%;
 }
 
 .completed {
-  margin-top: 3.5mm;
+  position: absolute;
+  top: 236pt;
+  left: 40pt;
+  right: 40pt;
   font-size: 12pt;
   color: #666;
   text-align: center;
 }
 
 .course {
-  margin-top: 2.5mm;
+  top: 254pt;
   font-size: 16pt;
   font-weight: 700;
   color: #1a1a1a;
-  text-align: center;
-  width: 100%;
 }
 
 .meta {
-  margin-top: 4mm;
+  top: 282pt;
   font-size: 10pt;
   color: #666;
-  text-align: center;
-  width: 100%;
 }
 
 .dates {
-  margin-top: 2mm;
+  top: 298pt;
   font-size: 9.5pt;
   color: #666;
-  text-align: center;
-  width: 100%;
 }
 
 .certNo {
-  margin-top: 2mm;
+  top: 314pt;
   font-size: 9pt;
   color: #999;
-  text-align: center;
-  width: 100%;
 }
 
-.qrArea {
-  margin-top: 3mm;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.scanLabel {
-  margin-top: 1mm;
-  font-size: 8pt;
-  color: #999;
+.fitLine {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   text-align: center;
-}
-
-.url {
-  margin-top: 0.5mm;
-  font-size: 7pt;
-  color: #999;
-  text-align: center;
-  max-width: 230mm;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.extra {
-  margin-top: 1.5mm;
-  font-size: 10pt;
-  color: #666;
-  text-align: center;
-  width: 100%;
 }
 
 .fitText {
@@ -166,40 +169,86 @@
   overflow: hidden;
 }
 
-.bottomRow {
+/* ── QR ─────────────────────────────────────────────────── */
+.qrArea {
   position: absolute;
-  left: 18mm;
-  right: 18mm;
-  bottom: 10mm;
+  top: 330pt;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  justify-content: center;
 }
 
+.scanLabel {
+  position: absolute;
+  top: 416pt;
+  left: 40pt;
+  right: 40pt;
+  font-size: 8pt;
+  color: #999;
+  text-align: center;
+}
+
+.url {
+  position: absolute;
+  top: 429pt;
+  left: 100pt;
+  right: 100pt;
+  font-size: 7pt;
+  color: #999;
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.extraCompany {
+  top: 448pt;
+  font-size: 10pt;
+  color: #666;
+}
+
+.extraTrainer {
+  top: 465pt;
+  font-size: 10pt;
+  color: #666;
+}
+
+/* ── Signature + seal ───────────────────────────────────── */
 .sigBlock,
 .sealBlock {
+  position: absolute;
+  top: 490pt;
+  width: 200pt;
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 62mm;
+}
+
+.sigBlock {
+  left: 140pt;
+}
+
+.sealBlock {
+  left: 502pt;
 }
 
 .sigLine,
 .sealLine {
   width: 100%;
-  border-top: 0.45mm solid #999;
+  border-top: 1pt solid #999;
 }
 
 .sigLabel,
 .sealLabel {
-  margin-top: 1.2mm;
+  margin-top: 8pt;
   font-size: 9pt;
   color: #666;
   text-align: center;
 }
 
 .sealArabic {
-  margin-top: 0.6mm;
+  margin-top: 1pt;
   font-size: 9pt;
   color: #666;
   text-align: center;

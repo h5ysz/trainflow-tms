@@ -25,7 +25,8 @@ import { useI18n } from "@/lib/i18n/context";
 import { buildVerifyUrl } from "@/lib/qr/urls";
 import { CertificateTemplate, type CertificateData } from "./certificate-template";
 
-// A4 landscape at 96dpi: 297mm x 210mm.
+// A4 landscape sheet in pixels at 96dpi (842 x 595pt). The template sizes itself in
+// points (842 x 595), which equals these pixel dimensions, so preview scaling is exact.
 const SHEET_W = 1123;
 const SHEET_H = 794;
 

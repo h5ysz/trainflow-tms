@@ -1,8 +1,17 @@
 // Shared certificate PDF layout.
 //
-// This module is the single place that decides how a certificate PDF looks. It is
-// deliberately a pure function over a pdfkit document (no DB, no Next, no "server-only")
-// so it can be unit-tested in node — including the "never more than one page" guarantee.
+// This module is the single place that decides how a certificate PDF looks, and it is
+// intentionally a mirror image of the browser template in
+// src/components/certificates/certificate-template.tsx + .module.css: same typeface
+// (the embedded Noto Naskh Arabic Regular/Bold shipped in public/fonts), same point
+// sizes, same widths, same coordinates. Preview, print and download therefore render
+// the same sheet — before this unification the PDF mixed pdfkit's Helvetica with the
+// embedded Arabic font while the browser used Arial/Segoe UI, at different sizes and
+// widths, so the outputs never matched.
+//
+// The module stays a pure function over a pdfkit document (no DB, no Next, no
+// "server-only") so it can be unit-tested in node — including the "never more than one
+// page" guarantee.
 //
 // The old inline implementation drew every block in pdfkit flow mode (`doc.text` with
 // no width/height). pdfkit wraps long text and, when the wrapped text runs past the
@@ -11,7 +20,7 @@
 // the root: every block is drawn at an explicit coordinate with an explicit width and
 // `lineBreak: false`, and font sizes auto-shrink until each line fits its box — so
 // nothing can ever overflow onto a second page. Fonts only shrink as much as the
-// content actually needs (a 24pt name stays 24pt; only a long one scales down).
+// content actually needs (a 22pt name stays 22pt; only a long one scales down).
 
 // pdfkit ships no bundled types (and @types/pdfkit is not installed), so the
 // document instance is typed `any` here. This module only reads/writes a handful of
@@ -35,8 +44,10 @@ export interface CertificateLayoutData {
 }
 
 export interface CertificateLayoutOptions {
-  /** Registered font name to use for Arabic text, or null to skip Arabic. */
-  arabicFontName?: string | null;
+  /** Registered regular font (covers Latin + Arabic); null falls back to Helvetica. */
+  fontName?: string | null;
+  /** Registered bold font; null falls back to Helvetica-Bold. */
+  fontNameBold?: string | null;
   /** Absolute path to the header logo, or null to fall back to text-only header. */
   logoPath?: string | null;
 }
@@ -45,13 +56,14 @@ export interface CertificateLayoutOptions {
 const PAGE_W = 842;
 const PAGE_H = 595;
 
-const BOLD = "Helvetica-Bold";
-const REGULAR = "Helvetica";
-
 const BURGUNDY = "#7B1E2B";
 const DARK = "#1a1a1a";
 const GRAY = "#666";
 const LIGHT = "#999";
+
+// Letter spacing (pt) on the uppercase title, matching `letter-spacing: 1.9pt` in the
+// browser template.
+const TITLE_SPACING = 1.9;
 
 function fmtDate(d: Date | null | undefined): string {
   if (!d) return "—";
@@ -66,13 +78,25 @@ function fitSize(
   start: number,
   min: number,
   maxWidth: number,
+  charSpacing = 0,
 ): number {
+  // widthOfString measures at the document's current font/size, so set them here;
+  // centerLine sets the same values again right after, so there is no drift.
   let size = start;
-  while (size > min && doc.widthOfString(text, { font, size }) > maxWidth) size -= 0.5;
+  while (size > min) {
+    doc.font(font).fontSize(size);
+    const w = doc.widthOfString(text, { characterSpacing: charSpacing });
+    if (w <= maxWidth) break;
+    size -= 0.5;
+  }
   return size;
 }
 
-/** Draw one auto-fitted, centered, single line at an explicit position. */
+/**
+ * Draw one auto-fitted, centered, single line at an explicit position.
+ * `cx` is the center x of the box (defaults to the page center) so bottom-row labels
+ * can sit under their signature/seal lines instead of the middle of the page.
+ */
 function centerLine(
   doc: Doc,
   text: string,
@@ -82,13 +106,20 @@ function centerLine(
   color: string,
   y: number,
   maxWidth: number,
+  cx: number = PAGE_W / 2,
+  charSpacing = 0,
 ) {
-  const size = fitSize(doc, text, font, startSize, minSize, maxWidth);
+  const size = fitSize(doc, text, font, startSize, minSize, maxWidth, charSpacing);
   doc
     .font(font)
     .fontSize(size)
     .fillColor(color)
-    .text(text, (PAGE_W - maxWidth) / 2, y, { width: maxWidth, align: "center", lineBreak: false });
+    .text(text, cx - maxWidth / 2, y, {
+      width: maxWidth,
+      align: "center",
+      lineBreak: false,
+      characterSpacing: charSpacing || undefined,
+    });
 }
 
 export function drawCertificateLayout(
@@ -96,38 +127,40 @@ export function drawCertificateLayout(
   data: CertificateLayoutData,
   opts: CertificateLayoutOptions = {},
 ) {
-  const arabic = opts.arabicFontName ?? null;
+  // The embedded family covers Arabic too, so a single font renders both scripts.
+  // The Helvetica pair is only the no-font fallback so tests and fontless deploys
+  // still produce a valid (English-only) PDF.
+  const REGULAR = opts.fontName ?? "Helvetica";
+  const BOLD = opts.fontNameBold ?? "Helvetica-Bold";
+  const arabic = opts.fontName ?? null;
 
   // ── Border frame (double burgundy line) ─────────────────────────────
   doc.rect(30, 30, PAGE_W - 60, PAGE_H - 60).lineWidth(3).strokeColor(BURGUNDY).stroke();
-  doc.rect(40, 40, PAGE_W - 80, PAGE_H - 80).lineWidth(1).strokeColor(BURGUNDY).opacity(0.3).stroke().opacity(1);
+  doc.rect(40, 40, PAGE_W - 80, PAGE_H - 80).lineWidth(1).strokeColor(BURGUNDY).opacity(0.35).stroke().opacity(1);
 
   // ── Header ──────────────────────────────────────────────────────────
-  // Logo first (brand identity); the text header sits below it so the page
-  // budget never depends on whether a logo file is present.
-  let headerTop = 62;
+  let headerTop = 106;
   if (opts.logoPath) {
     doc.image(opts.logoPath, (PAGE_W - 170) / 2, 58, { fit: [170, 40] });
-    headerTop = 106;
   }
 
-  centerLine(doc, "GCCLAB — Gulf Calibration Laboratory", BOLD, 14, 11, BURGUNDY, headerTop, PAGE_W - 120);
-  centerLine(doc, "Training & Certification Management System", REGULAR, 10, 8, GRAY, headerTop + 16, PAGE_W - 120);
+  centerLine(doc, "GCCLAB — Gulf Calibration Laboratory", BOLD, 13, 10.5, BURGUNDY, headerTop, PAGE_W - 120);
+  centerLine(doc, "Training & Certification Management System", REGULAR, 9, 8, GRAY, headerTop + 16, PAGE_W - 120);
   if (arabic) {
-    centerLine(doc, "المختبر الخليجي", arabic, 10, 8, GRAY, headerTop + 30, PAGE_W - 120);
+    centerLine(doc, "المختبر الخليجي", REGULAR, 9, 8, GRAY, headerTop + 30, PAGE_W - 120);
   }
 
-  // ── Title ───────────────────────────────────────────────────────────
-  centerLine(doc, "Certificate of Completion", BOLD, 30, 20, DARK, 156, PAGE_W - 80);
-  centerLine(doc, "This is to certify that", REGULAR, 13, 11, GRAY, 194, PAGE_W - 80);
+  // ── Title (uppercase + letter-spaced, like the browser template) ────
+  centerLine(doc, "CERTIFICATE OF COMPLETION", BOLD, 22, 16, DARK, 156, PAGE_W - 80, PAGE_W / 2, TITLE_SPACING);
+  centerLine(doc, "This is to certify that", REGULAR, 12, 10, GRAY, 194, PAGE_W - 80);
 
   // ── Trainee name (auto-fit, always one line) ────────────────────────
-  centerLine(doc, data.traineeName, BOLD, 26, 14, BURGUNDY, 212, PAGE_W - 120);
+  centerLine(doc, data.traineeName, BOLD, 22, 10, BURGUNDY, 212, PAGE_W - 120);
 
-  centerLine(doc, "has successfully completed the training course", REGULAR, 13, 11, GRAY, 236, PAGE_W - 80);
+  centerLine(doc, "has successfully completed the training course", REGULAR, 12, 10, GRAY, 236, PAGE_W - 80);
 
   // ── Course title (auto-fit, always one line) ────────────────────────
-  centerLine(doc, data.courseTitle, BOLD, 20, 11, DARK, 254, PAGE_W - 120);
+  centerLine(doc, data.courseTitle, BOLD, 16, 9, DARK, 254, PAGE_W - 120);
 
   // ── Course code / duration / score ──────────────────────────────────
   const infoLine = [
@@ -135,14 +168,14 @@ export function drawCertificateLayout(
     `Duration: ${data.durationHours ?? 0} hours`,
     `Score: ${data.finalScore ?? 0}%`,
   ].join("  |  ");
-  centerLine(doc, infoLine, REGULAR, 11, 8, GRAY, 282, PAGE_W - 160);
+  centerLine(doc, infoLine, REGULAR, 10, 7.5, GRAY, 282, PAGE_W - 160);
 
   // ── Issue + expiry dates ────────────────────────────────────────────
   const dateLine = `Issued: ${fmtDate(data.issuedAt)}  |  Valid Until: ${fmtDate(data.validUntil)}`;
-  centerLine(doc, dateLine, REGULAR, 10.5, 8, GRAY, 298, PAGE_W - 160);
+  centerLine(doc, dateLine, REGULAR, 9.5, 7.5, GRAY, 298, PAGE_W - 160);
 
   // ── Certificate ref number ──────────────────────────────────────────
-  centerLine(doc, `Certificate No: ${data.refNumber}`, REGULAR, 10, 8, LIGHT, 314, PAGE_W - 160);
+  centerLine(doc, `Certificate No: ${data.refNumber}`, REGULAR, 9, 7, LIGHT, 314, PAGE_W - 160);
 
   // ── Verification QR + URL ───────────────────────────────────────────
   if (data.qrPng) {
@@ -153,10 +186,10 @@ export function drawCertificateLayout(
 
   // ── Company / trainer (only when present) ───────────────────────────
   if (data.companyName) {
-    centerLine(doc, `Company: ${data.companyName}`, REGULAR, 11, 8, GRAY, 448, PAGE_W - 160);
+    centerLine(doc, `Company: ${data.companyName}`, REGULAR, 10, 7.5, GRAY, 448, PAGE_W - 160);
   }
   if (data.trainerName) {
-    centerLine(doc, `Trainer: ${data.trainerName}`, REGULAR, 11, 8, GRAY, 465, PAGE_W - 160);
+    centerLine(doc, `Trainer: ${data.trainerName}`, REGULAR, 10, 7.5, GRAY, 465, PAGE_W - 160);
   }
 
   // ── Signature (bottom-left) + GCCLAB seal (bottom-right) ────────────
@@ -170,11 +203,11 @@ export function drawCertificateLayout(
     .lineWidth(1)
     .strokeColor("#999")
     .stroke();
-  centerLine(doc, "Authorized Signature", REGULAR, 10, 8, GRAY, 498, 200);
+  centerLine(doc, "Authorized Signature", REGULAR, 9, 8, GRAY, 498, 200, 240);
 
   doc.moveTo(PAGE_W - 340, bottomY).lineTo(PAGE_W - 140, bottomY).lineWidth(1).stroke();
-  centerLine(doc, "GCCLAB", BOLD, 10, 8, GRAY, 498, 180);
+  centerLine(doc, "GCCLAB", BOLD, 9, 8, GRAY, 498, 200, PAGE_W - 240);
   if (arabic) {
-    centerLine(doc, "المختبر الخليجي", arabic, 10, 8, GRAY, 512, 180);
+    centerLine(doc, "المختبر الخليجي", REGULAR, 9, 8, GRAY, 512, 200, PAGE_W - 240);
   }
 }
