@@ -425,6 +425,20 @@ export function TrainingRequestsRoute() {
     }
   }, [companies.length, courses.length, contacts.length, user?.role]);
 
+  // ── Auto-set companyId for contractors ──
+  // The company selector is hidden for contractors, but formData.companyId
+  // must be set so that:
+  //   1. The "From Company Records" tab in TraineeEntrySection can load
+  //      existing trainees from the contractor's company.
+  //   2. The POST /api/requests receives the correct companyId (though the
+  //      server also auto-scopes it from user.companyId, this ensures the
+  //      client-side TraineeEntrySection works correctly).
+  useEffect(() => {
+    if (user?.role === "CONTRACTOR" && user.companyId && !formData.companyId) {
+      setField("companyId", user.companyId);
+    }
+  }, [user?.role, user?.companyId, formData.companyId]);
+
   // ── Fetch eligible coordinators when region changes ──
   useEffect(() => {
     const region = formData.region as string;
