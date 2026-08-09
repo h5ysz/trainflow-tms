@@ -29,6 +29,7 @@ interface SessionSpec {
   trainerId?: string;
   capacity?: number;
   title?: string;
+  notes?: string;
 }
 
 async function loadRequest(requestId: string) {
@@ -166,9 +167,21 @@ export const POST = withModuleAction("sessions", "create", async ({ req, params,
   }
 
   // ── Create ────────────────────────────────────────────────────────────────
+  // Never create a duplicate: if a non-deleted session already exists for a
+  // requestCourseId, skip it instead of generating a second one.
+  const existingForRequestCourse = await db.trainingSession.findMany({
+    where: { requestId, deletedAt: null },
+    select: { requestCourseId: true },
+  });
+  const existingRequestCourseIds = new Set(
+    existingForRequestCourse.map((s) => s.requestCourseId).filter(Boolean) as string[]
+  );
+
   const created: TrainingSession[] = [];
 
   for (const { spec, traineeCount, courseTitle, courseLanguage, maxTrainees } of resolved) {
+    if (existingRequestCourseIds.has(spec.requestCourseId)) continue;
+
     const refNumber = await nextRefNumber("SESSION");
     const qrToken = genQrToken();
 
@@ -192,6 +205,7 @@ export const POST = withModuleAction("sessions", "create", async ({ req, params,
         endDate: new Date(spec.endDate),
         expectedTrainees: traineeCount,
         actualTrainees: 0,
+        notes: spec.notes ?? null,
         status: "SCHEDULED",
         qrCodeToken: qrToken,
         qrCodeGeneratedAt: new Date(),
@@ -208,6 +222,33 @@ export const POST = withModuleAction("sessions", "create", async ({ req, params,
     where: { id: requestId },
     data: { status: "SCHEDULED", scheduledAt: new Date(), updatedBy: user.id },
   });
+
+  // ── Notify the assigned trainer(s) that they've been scheduled ──────────
+  const assignedTrainerIds = Array.from(
+    new Set(created.map((s) => s.trainerId).filter(Boolean) as string[])
+  );
+  if (assignedTrainerIds.length > 0) {
+    const trainerUsers = await db.user.findMany({
+      where: { trainerId: { in: assignedTrainerIds }, isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+    if (trainerUsers.length > 0) {
+      await db.notification.createMany({
+        data: trainerUsers.map((tu) => ({
+          id: randomBytes(12).toString("hex"),
+          userId: tu.id,
+          title: "Training Session Scheduled",
+          titleAr: "تم جدولة جلسة تدريبية",
+          message: `You have been scheduled for training request ${request.refNumber} (${created.length} session(s)).`,
+          messageAr: `تمت جدولتك لطلب التدريب ${request.refNumber} (${created.length} جلسة).`,
+          type: "SUCCESS",
+          category: "SESSION",
+          link: `/sessions`,
+          updatedAt: new Date(),
+        })),
+      });
+    }
+  }
 
   await audit({
     user,

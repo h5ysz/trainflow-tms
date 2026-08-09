@@ -12,6 +12,7 @@ import { TrainersRoute } from "./trainers";
 import { TrainerQualificationsRoute } from "./trainer-qualifications";
 import { TraineesRoute } from "./trainees";
 import { CoursesRoute } from "./courses";
+import { WorkshopsRoute } from "./workshops";
 import { TrainingRequestsRoute } from "./training-requests";
 import { TrainingSessionsRoute } from "./training-sessions";
 import { SessionDetailRoute } from "./session-detail";
@@ -54,6 +55,7 @@ const ROUTES: Record<RouteKey, React.ComponentType> = {
   "trainer-qualifications": TrainerQualificationsRoute,
   trainees: TraineesRoute,
   courses: CoursesRoute,
+  workshops: WorkshopsRoute,
   requests: TrainingRequestsRoute,
   sessions: TrainingSessionsRoute,
   // Reached from the sessions list; intentionally absent from navItems.

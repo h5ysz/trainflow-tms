@@ -15,6 +15,7 @@ export type RouteKey =
   | "trainer-qualifications"
   | "trainees"
   | "courses"
+  | "workshops"
   | "requests"
   | "sessions"
   | "session-detail"
@@ -65,7 +66,7 @@ export const ACTIONS: Action[] = ["view", "create", "edit", "delete"];
  */
 export const ALL_MODULES: RouteKey[] = [
   "dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
-  "trainees", "courses", "requests", "sessions", "scheduling", "attendance", "qr-code",
+  "trainees", "courses", "workshops", "requests", "sessions", "scheduling", "attendance", "qr-code",
   "pre-test", "final-test", "evaluation", "certificates", "reports", "report-schedules",
   "notifications", "audit-log", "settings", "user-approvals", "user-management", "roles",
   "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard", "session-detail", "trainee-detail", "ai-dashboard",
@@ -89,6 +90,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "trainer-qualifications",
     "trainees",
     "courses",
+    "workshops",
     "requests",
     "sessions",
     "session-detail",
@@ -115,7 +117,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
   ],
   COMPANY_ADMIN: [
     "dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
-    "trainees", "courses", "requests", "sessions", "session-detail", "trainee-detail",
+    "trainees", "courses", "workshops", "requests", "sessions", "session-detail", "trainee-detail",
     "scheduling", "attendance", "certificates", "reports", "report-schedules",
     "notifications", "audit-log", "user-approvals", "user-management",
     "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard",
@@ -132,6 +134,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "trainer-qualifications",
     "trainees",
     "courses",
+    "workshops",
     "requests",
     "sessions",
     "session-detail",
@@ -162,6 +165,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "trainer-qualifications",
     "trainees",
     "courses",
+    "workshops",
     "requests",
     "sessions",
     "session-detail",
@@ -190,6 +194,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "trainer-qualifications",
     "trainees",
     "courses",
+    "workshops",
     "requests",
     "sessions",
     "session-detail",
@@ -207,7 +212,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
   ],
   AUDITOR: [
     "dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
-    "trainees", "courses", "requests", "sessions", "session-detail", "trainee-detail",
+    "trainees", "courses", "workshops", "requests", "sessions", "session-detail", "trainee-detail",
     "scheduling", "attendance", "qr-code", "pre-test", "final-test", "exam-attempts",
     "evaluation", "certificates", "reports", "notifications", "audit-log",
     "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard", "session-detail", "trainee-detail", "ai-dashboard",
@@ -240,6 +245,7 @@ const OPERATIONAL_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
   "trainer-qualifications": ["view", "create", "edit", "delete"],
   trainees: ["view", "create", "edit", "delete"],
   courses: ["view", "create", "edit", "delete"],
+  workshops: ["view", "create", "edit", "delete"],
   requests: ["view", "create", "edit", "delete"],
   sessions: ["view", "create", "edit", "delete"],
   scheduling: ["view", "create", "edit", "delete"],
@@ -376,6 +382,7 @@ export const navItems: NavItem[] = [
   { key: "trainers", labelKey: "nav.trainers", icon: "Users", group: "training" },
   { key: "trainer-qualifications", labelKey: "nav.trainerQualifications", icon: "Award", group: "training" },
   { key: "courses", labelKey: "nav.courses", icon: "BookOpen", group: "training" },
+  { key: "workshops", labelKey: "nav.workshops", icon: "Wrench", group: "training" },
   { key: "requests", labelKey: "nav.requests", icon: "ClipboardList", group: "training" },
   { key: "sessions", labelKey: "nav.sessions", icon: "CalendarDays", group: "training" },
   { key: "scheduling", labelKey: "nav.scheduling", icon: "CalendarRange", group: "training" },

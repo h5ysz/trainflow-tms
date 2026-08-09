@@ -377,24 +377,28 @@ model Trainer {
   country     String?
   city        String?
   address     String?
-  bio         String?
-  photoUrl    String?
-  status      String    @default("ACTIVE")
-  hireDate    DateTime?
-  tenantId    String?
+  bio                   String?
+  photoUrl              String?
+  status                String    @default("ACTIVE")
+  hireDate              DateTime?
+  tenantId              String?
+  // Derived from the Excel authorization baseline (14 July 2026). Display-only;
+  // the authoritative grants live in TrainerCertification + WorkshopTrainerAuthorization.
+  primarySpecialization String?
   // Audit
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  createdBy   String?
-  updatedBy   String?
-  deletedAt   DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  createdBy             String?
+  updatedBy             String?
+  deletedAt             DateTime?
 
-  tenant         Tenant?                @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  qualifications TrainerQualification[]
-  certifications TrainerCertification[]
-  user           User?
-  sessions       TrainingSession[]
-  evaluations    CourseEvaluation[]
+  tenant                Tenant?                    @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  qualifications        TrainerQualification[]
+  certifications        TrainerCertification[]
+  workshopAuthorizations WorkshopTrainerAuthorization[]
+  user                  User?
+  sessions              TrainingSession[]
+  evaluations           CourseEvaluation[]
 
   @@index([status])
   @@index([tenantId])
@@ -500,6 +504,61 @@ model Course {
   @@index([status])
   @@index([category])
   @@index([tenantId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WORKSHOPS (catalog, separate from Courses) — e.g. Technical Certification Tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Workshop {
+  id             String   @id @default(uuid())
+  refNumber      String   @unique // WSH-000001
+  code           String   @unique // CTCT06 etc.
+  title          String
+  description    String?
+  category       String?
+  durationDays   Int      @default(1)
+  durationText   String? // verbatim duration from the source sheet, e.g. "1 Day joint"
+  durationHours  Int      @default(8)
+  status         String   @default("ACTIVE") // ACTIVE | INACTIVE
+  isActive       Boolean  @default(true)
+  // Audit
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  createdBy      String?
+  updatedBy      String?
+  deletedAt      DateTime?
+
+  authorizations WorkshopTrainerAuthorization[]
+
+  @@index([status])
+  @@index([category])
+  @@index([deletedAt])
+}
+
+// Trainer ↔ Workshop authorization link — mirrors TrainerCertification for courses.
+model WorkshopTrainerAuthorization {
+  id         String    @id @default(uuid())
+  workshopId String
+  trainerId  String
+  validFrom  DateTime  @default(now())
+  validUntil DateTime?
+  status     String    @default("VALID") // VALID | EXPIRED | REVOKED
+  notes      String?
+  // Audit
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  createdBy  String?
+  updatedBy  String?
+  deletedAt  DateTime?
+
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  trainer  Trainer  @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+
+  @@unique([workshopId, trainerId, deletedAt])
+  @@index([trainerId])
+  @@index([workshopId])
+  @@index([status])
 }
 
 // Sprint 6: Course Resources — external materials (PDF, PPT, URL, QR link)

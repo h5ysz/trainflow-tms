@@ -52,6 +52,7 @@ export type AuditEntity =
   | "TRAINER"
   | "TRAINEE"
   | "COURSE"
+  | "WORKSHOP"
   | "REQUEST"
   | "SESSION"
   | "CERTIFICATE"

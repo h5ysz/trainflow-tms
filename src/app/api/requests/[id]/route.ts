@@ -18,7 +18,7 @@ export const GET = withModuleAction("requests", "view", async ({ params, user })
       requestCourses: {
         where: { deletedAt: null },
         include: {
-          course: { select: { id: true, title: true, code: true, refNumber: true } },
+          course: { select: { id: true, title: true, code: true, refNumber: true, durationHours: true } },
           trainees: {
             where: { deletedAt: null },
             include: {

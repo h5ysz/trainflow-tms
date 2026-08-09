@@ -84,7 +84,7 @@ interface RequestCourseDetail {
   id: string;
   courseId: string;
   traineeCount: number;
-  course: { id: string; title: string; code?: string; refNumber?: string; titleAr?: string | null };
+  course: { id: string; title: string; code?: string; refNumber?: string; titleAr?: string | null; durationHours?: number };
   trainees: Array<{ trainee: RequestTrainee }>;
 }
 interface RequestDetail extends Request {
@@ -105,6 +105,22 @@ const SELF_SERVICE_TRANSITIONS: Record<string, string[]> = {
   REJECTED: ["SUBMITTED"],
   REQUIRES_MODIFICATION: ["SUBMITTED", "CANCELLED"],
 };
+
+// The real request lifecycle statuses (TrainingRequestStatus enum) — used to build
+// the server-side status filter without inventing new names.
+const REQUEST_STATUSES = [
+  "DRAFT",
+  "SUBMITTED",
+  "UNDER_REVIEW",
+  "APPROVED",
+  "SCHEDULED",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "CANCELLED",
+  "REJECTED",
+  "REQUIRES_MODIFICATION",
+  "CLOSED",
+];
 
 // Workflow transition matrix (mirror of backend).
 // Maps each status → the array of action buttons that can transition out of it.
@@ -276,8 +292,17 @@ export function TrainingRequestsRoute() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
-  const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
-    useList<Request>("/requests");
+  // ── Server-side filters: status (required) + company/course (optional) ──
+  const [companyFilter, setCompanyFilter] = useState("");
+  const [courseFilter, setCourseFilter] = useState("");
+
+  const { data, pagination, loading, error, page, setPage, search, setSearch, status, setStatus, refetch } =
+    useList<Request>("/requests", {
+      extraParams: {
+        companyId: companyFilter || undefined,
+        courseId: courseFilter || undefined,
+      },
+    });
 
   const canCreate = user ? canPerformAction(user.permissions, "requests", "create") : false;
   const canEdit = user ? canPerformAction(user.permissions, "requests", "edit") : false;
@@ -300,23 +325,19 @@ export function TrainingRequestsRoute() {
   }
 
   useEffect(() => {
-    if (dialogOpen) {
-      // Contractors don't see the Company selector (their companyId is set
-      // server-side from their session). Skip the /api/companies fetch
-      // entirely — it returns 403 for contractors and pollutes the console
-      // with a forbidden-error.
-      if (user?.role !== "CONTRACTOR" && companies.length === 0) {
-        api.getList<CompanyOption>("/companies", { pageSize: 100 }).then((r) => {
-          setCompanies(r.rows.map((c) => ({ id: c.id, name: c.name, refNumber: c.refNumber })));
-        }).catch(() => {});
-      }
-      if (courses.length === 0) {
-        api.getList<CourseOption>("/courses", { pageSize: 100 }).then((r) => {
-          setCourses(r.rows.map((c) => ({ id: c.id, title: c.title, code: c.code, refNumber: c.refNumber })));
-        }).catch(() => {});
-      }
+    // Loaded eagerly (not just when the create dialog opens) because the
+    // company/course filter dropdowns in the list toolbar need these lists too.
+    if (user?.role !== "CONTRACTOR" && companies.length === 0) {
+      api.getList<CompanyOption>("/companies", { pageSize: 100 }).then((r) => {
+        setCompanies(r.rows.map((c) => ({ id: c.id, name: c.name, refNumber: c.refNumber })));
+      }).catch(() => {});
     }
-  }, [dialogOpen, companies.length, courses.length, user?.role]);
+    if (courses.length === 0) {
+      api.getList<CourseOption>("/courses", { pageSize: 100 }).then((r) => {
+        setCourses(r.rows.map((c) => ({ id: c.id, title: c.title, code: c.code, refNumber: c.refNumber })));
+      }).catch(() => {});
+    }
+  }, [companies.length, courses.length, user?.role]);
 
   const handleTransition = async (req: Request, newStatus: string) => {
     if (newStatus === "REJECTED") {
@@ -1029,6 +1050,63 @@ export function TrainingRequestsRoute() {
         </div>
       )}
 
+      {/* ── Server-side filters: status (required) + company/course (optional) ── */}
+      <div className="flex flex-wrap items-end gap-2 rounded-md border bg-card p-3">
+        <div className="w-full sm:w-52">
+          <label className="mb-1 block text-xs font-medium text-foreground">{t("requests.filterStatus")}</label>
+          <Select value={status} onValueChange={(v) => { setStatus(v === "__all__" ? "" : v); setPage(1); }}>
+            <SelectTrigger><SelectValue placeholder={t("requests.allStatuses")} /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">{t("requests.allStatuses")}</SelectItem>
+              {REQUEST_STATUSES.map((s) => (
+                <SelectItem key={s} value={s}>{t(`status.${s}` as never)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {user?.role !== "CONTRACTOR" && (
+          <div className="w-full sm:w-52">
+            <label className="mb-1 block text-xs font-medium text-foreground">{t("requests.filterCompany")}</label>
+            <Select value={companyFilter} onValueChange={(v) => { setCompanyFilter(v === "__all__" ? "" : v); setPage(1); }}>
+              <SelectTrigger><SelectValue placeholder={t("requests.allCompanies")} /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">{t("requests.allCompanies")}</SelectItem>
+                {companies.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        <div className="w-full sm:w-52">
+          <label className="mb-1 block text-xs font-medium text-foreground">{t("requests.filterCourse")}</label>
+          <Select value={courseFilter} onValueChange={(v) => { setCourseFilter(v === "__all__" ? "" : v); setPage(1); }}>
+            <SelectTrigger><SelectValue placeholder={t("requests.allCourses")} /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">{t("requests.allCourses")}</SelectItem>
+              {courses.map((c) => (
+                <SelectItem key={c.id} value={c.id}>{c.code} · {c.title}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {(status || companyFilter || courseFilter) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9"
+            onClick={() => {
+              setStatus("");
+              setCompanyFilter("");
+              setCourseFilter("");
+              setPage(1);
+            }}
+          >
+            <X className="h-3.5 w-3.5 me-1.5" />{t("action.clear")}
+          </Button>
+        )}
+      </div>
+
       <DataTable
         columns={columns}
         data={data}
@@ -1328,6 +1406,31 @@ export function TrainingRequestsRoute() {
                   </span>
                 )}
               </div>
+
+              {/* ── Courses summary: code · title · duration · trainees ── */}
+              {previewDetail?.requestCourses && previewDetail.requestCourses.length > 0 && (
+                <div className="mb-2 space-y-1.5">
+                  {previewDetail.requestCourses.map((rc) => (
+                    <div
+                      key={rc.id}
+                      className="flex items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-xs"
+                    >
+                      <span className="flex items-center gap-2 min-w-0">
+                        <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="font-mono text-muted-foreground">{rc.course.code}</span>
+                        <span className="truncate font-medium">{rc.course.title}</span>
+                      </span>
+                      <span className="flex items-center gap-3 shrink-0 text-muted-foreground">
+                        {typeof rc.course.durationHours === "number" && (
+                          <span>{t("courses.durationHours")}: {rc.course.durationHours}</span>
+                        )}
+                        <span>{t("requests.traineeCount")}: {rc.traineeCount}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {previewLoading ? (
                 <div className="text-xs text-muted-foreground py-3 text-center">Loading trainees…</div>
               ) : previewDetail?.requestCourses && previewDetail.requestCourses.length > 0 ? (
@@ -1535,6 +1638,31 @@ export function TrainingRequestsRoute() {
                     </span>
                   )}
                 </div>
+
+                {/* Courses summary: code · title · duration · trainees */}
+                {drawerDetail?.requestCourses && drawerDetail.requestCourses.length > 0 && (
+                  <div className="mb-2 space-y-1.5">
+                    {drawerDetail.requestCourses.map((rc) => (
+                      <div
+                        key={rc.id}
+                        className="flex items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-xs"
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
+                          <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <span className="font-mono text-muted-foreground">{rc.course.code}</span>
+                          <span className="truncate font-medium">{rc.course.title}</span>
+                        </span>
+                        <span className="flex items-center gap-3 shrink-0 text-muted-foreground">
+                          {typeof rc.course.durationHours === "number" && (
+                            <span>{t("courses.durationHours")}: {rc.course.durationHours}</span>
+                          )}
+                          <span>{t("requests.traineeCount")}: {rc.traineeCount}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {drawerLoading ? (
                   <div className="flex items-center justify-center gap-2 py-4 text-xs text-muted-foreground">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…

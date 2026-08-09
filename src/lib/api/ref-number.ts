@@ -24,6 +24,7 @@ export type RefEntityType =
   | "TRAINER"
   | "COMPANY"
   | "COURSE"
+  | "WORKSHOP"
   | "SESSION"
   | "TRAINEE"
   | "WORKER_PASSPORT"
@@ -40,6 +41,7 @@ const PREFIX: Record<RefEntityType, string> = {
   TRAINER: "TRN",
   COMPANY: "COM",
   COURSE: "CRS",
+  WORKSHOP: "WSH",
   SESSION: "SES",
   TRAINEE: "TRA",
   WORKER_PASSPORT: "WP",

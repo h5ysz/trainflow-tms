@@ -31,7 +31,11 @@ export const GET = withModuleAction("trainers", "view", async ({ req }) => {
       where,
       include: {
         _count: {
-          select: { qualifications: true, sessions: true },
+          select: {
+            qualifications: true,
+            sessions: true,
+            certifications: { where: { status: "VALID", deletedAt: null } },
+          },
         },
       },
       orderBy,
@@ -53,6 +57,7 @@ export const GET = withModuleAction("trainers", "view", async ({ req }) => {
       mobile: t.mobile,
       gender: t.gender,
       nationality: t.nationality,
+      primarySpecialization: t.primarySpecialization,
       country: t.country,
       city: t.city,
       address: t.address,
@@ -63,6 +68,7 @@ export const GET = withModuleAction("trainers", "view", async ({ req }) => {
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
       qualificationsCount: t._count.qualifications,
+      certifiedCoursesCount: t._count.certifications,
       sessionsCount: t._count.sessions,
     })),
     buildListMeta(total, q)
