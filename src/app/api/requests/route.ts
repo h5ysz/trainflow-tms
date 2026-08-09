@@ -5,6 +5,7 @@ import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
+import { parseRegionsCovered } from "@/lib/api/region-scope";
 import type { TrainingRequestStatus } from "@prisma/client";
 
 const ALLOWED_SORT_FIELDS = ["refNumber", "createdAt", "updatedAt", "status", "priority", "traineeCount"];
@@ -109,13 +110,11 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
     companyId, courseId, traineeCount, preferredDateFrom, preferredDateTo,
     preferredLocation, preferredLanguage, notes, priority,
     status: requestedStatus,
-    // ── New: trainee list (Manual/Copy-Paste/Excel import) ──
-    // Each item is the client-side TraineeEntry: { fullName, nationalId, nationality?, jobTitle?, documents? }
     trainees,
-    // ── New: request-level additional documents metadata ──
-    // Each item is { url, filename, type, uploadedAt } — files were already
-    // POSTed to /api/requests/upload-doc by the time this runs.
     additionalDocuments,
+    // ── Coordinator assignment (smart routing) ──
+    region: requestedRegion,
+    preferredCoordinatorId,
   } = body;
 
   // Contractors auto-create their own company's request
@@ -130,9 +129,85 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
   if (!company) return fail("Company not found", 404);
   if (!course) return fail("Course not found", 404);
 
+  // ── Resolve the request region ──
+  // Use the contractor-selected region if provided, otherwise fall back to the company's region.
+  const requestRegion = requestedRegion || company.region || null;
+
   // Initial status: DRAFT unless explicitly set to SUBMITTED
   const initialStatus: TrainingRequestStatus =
     requestedStatus === "SUBMITTED" ? "SUBMITTED" : "DRAFT";
+
+  // ── Smart coordinator assignment ──
+  let assignedCoordinatorId: string | null = null;
+
+  if (preferredCoordinatorId) {
+    // Contractor chose a specific coordinator — verify they're eligible for the region.
+    const preferred = await db.user.findFirst({
+      where: { id: preferredCoordinatorId, role: "COORDINATOR", isActive: true, deletedAt: null },
+      select: { id: true, region: true, regionsCovered: true },
+    });
+    if (!preferred) {
+      return fail("Selected coordinator not found or inactive", 422, "COORDINATOR_NOT_FOUND");
+    }
+    // Check region eligibility: coordinator's primary region matches OR regionsCovered includes the request region.
+    if (requestRegion) {
+      const covered = parseRegionsCovered(preferred.regionsCovered);
+      if (preferred.region !== requestRegion && !covered.includes(requestRegion)) {
+        return fail(
+          "Selected coordinator is not authorized for the request region",
+          422,
+          "COORDINATOR_REGION_MISMATCH",
+          { coordinatorRegion: preferred.region, requestRegion },
+        );
+      }
+    }
+    assignedCoordinatorId = preferred.id;
+  } else if (requestRegion) {
+    // Auto-assign: find the best coordinator for this region.
+    // Priority: 1) primary region match, 2) regionsCovered match, 3) least load (fewest assigned requests).
+    const allCoordinators = await db.user.findMany({
+      where: { role: "COORDINATOR", isActive: true, deletedAt: null },
+      select: { id: true, region: true, regionsCovered: true },
+    });
+
+    // Filter to coordinators who cover this region
+    const eligible = allCoordinators.filter((c) => {
+      if (c.region === requestRegion) return true;
+      const covered = parseRegionsCovered(c.regionsCovered);
+      return covered.includes(requestRegion);
+    });
+
+    if (eligible.length > 0) {
+      // Load-balance: pick the coordinator with the fewest assigned requests.
+      // Primary-region coordinators get priority over regionsCovered coordinators.
+      const coordinatorIds = eligible.map((c) => c.id);
+      const requestCounts = await db.trainingRequest.groupBy({
+        by: ["coordinatorId"],
+        where: {
+          coordinatorId: { in: coordinatorIds },
+          deletedAt: null,
+          status: { in: ["SUBMITTED", "UNDER_REVIEW", "APPROVED", "SCHEDULED", "IN_PROGRESS"] },
+        },
+        _count: true,
+      });
+      const countMap = new Map<string, number>();
+      for (const r of requestCounts) {
+        if (r.coordinatorId) countMap.set(r.coordinatorId, r._count);
+      }
+
+      // Sort: primary-region first, then by load (fewest requests first)
+      const sorted = eligible.sort((a, b) => {
+        const aPrimary = a.region === requestRegion ? 0 : 1;
+        const bPrimary = b.region === requestRegion ? 0 : 1;
+        if (aPrimary !== bPrimary) return aPrimary - bPrimary;
+        const aLoad = countMap.get(a.id) || 0;
+        const bLoad = countMap.get(b.id) || 0;
+        return aLoad - bLoad;
+      });
+
+      assignedCoordinatorId = sorted[0].id;
+    }
+  }
 
   const refNumber = await nextRefNumber("TRAINING_REQUEST");
 
@@ -163,10 +238,12 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
       preferredLocation: preferredLocation ?? null,
       preferredLanguage: preferredLanguage ?? null,
       notes: notes ?? null,
-      // Persist additional request-level documents as JSON (or null if none).
       documents: Array.isArray(additionalDocuments) && additionalDocuments.length > 0
         ? JSON.stringify(additionalDocuments)
         : null,
+      // ── Smart routing fields ──
+      region: requestRegion,
+      coordinatorId: assignedCoordinatorId,
       status: initialStatus,
       priority: priority ?? "NORMAL",
       ...(initialStatus === "SUBMITTED" && { submittedAt: now }),
@@ -283,18 +360,44 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
     metadata: { initialStatus, traineeCount: effectiveTraineeCount, additionalDocs: Array.isArray(additionalDocuments) ? additionalDocuments.length : 0 },
   });
 
-  // ── Notify coordinators when a new request is submitted (not draft) ──
+  // ── Notify the assigned coordinator (or region-eligible coordinators) ──
   if (initialStatus === "SUBMITTED") {
-    const coordinators = await db.user.findMany({
-      where: { role: "COORDINATOR", isActive: true, deletedAt: null },
-      select: { id: true },
-    });
-    if (coordinators.length > 0) {
+    let notifyUserIds: string[] = [];
+
+    if (assignedCoordinatorId) {
+      // Notify only the assigned coordinator
+      notifyUserIds = [assignedCoordinatorId];
+    } else if (requestRegion) {
+      // No specific coordinator — notify all coordinators who cover this region
+      const regionCoordinators = await db.user.findMany({
+        where: { role: "COORDINATOR", isActive: true, deletedAt: null },
+        select: { id: true, region: true, regionsCovered: true },
+      });
+      notifyUserIds = regionCoordinators
+        .filter((c) => {
+          if (c.region === requestRegion) return true;
+          const covered = parseRegionsCovered(c.regionsCovered);
+          return covered.includes(requestRegion);
+        })
+        .map((c) => c.id);
+    }
+
+    // Fallback: if no coordinator was found (no region or no eligible coordinators),
+    // notify ALL active coordinators so the request isn't orphaned.
+    if (notifyUserIds.length === 0) {
+      const allCoords = await db.user.findMany({
+        where: { role: "COORDINATOR", isActive: true, deletedAt: null },
+        select: { id: true },
+      });
+      notifyUserIds = allCoords.map((c) => c.id);
+    }
+
+    if (notifyUserIds.length > 0) {
       const notifNow = new Date();
       await db.notification.createMany({
-        data: coordinators.map((c) => ({
+        data: notifyUserIds.map((uid) => ({
           id: crypto.randomUUID(),
-          userId: c.id,
+          userId: uid,
           title: "New Training Request Submitted",
           titleAr: "طلب تدريب جديد",
           message: `Training request ${request.refNumber} has been submitted and is awaiting your review.`,

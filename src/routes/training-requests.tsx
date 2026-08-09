@@ -26,6 +26,7 @@ import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/lib/store/app-store";
 import { canPerformAction } from "@/lib/auth/permissions";
+import { REGIONS, REGION_LABELS } from "@/lib/regions";
 import { ImportDialog, ExportDialog } from "@/components/common/import-export-dialogs";
 import { ExportExcelButton } from "@/components/common/export-excel-button";
 import { CourseFullScreenView, type FullScreenCourse, type FullScreenRequestInfo } from "@/components/common/course-fullscreen-view";
@@ -359,6 +360,7 @@ export function TrainingRequestsRoute() {
   const [additionalDocs, setAdditionalDocs] = useState<AdditionalDocument[]>([]);
   const [companies, setCompanies] = useReactState<CompanyOption[]>([]);
   const [courses, setCourses] = useReactState<CourseOption[]>([]);
+  const [eligibleCoordinators, setEligibleCoordinators] = useState<Array<{ id: string; fullName: string; email: string; isPrimary: boolean }>>([]);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -410,6 +412,22 @@ export function TrainingRequestsRoute() {
       }).catch(() => {});
     }
   }, [companies.length, courses.length, user?.role]);
+
+  // ── Fetch eligible coordinators when region changes ──
+  useEffect(() => {
+    const region = formData.region as string;
+    if (!region) {
+      setEligibleCoordinators([]);
+      return;
+    }
+    api.get<{ data: Array<{ id: string; fullName: string; email: string; isPrimary: boolean }> }>(
+      `/coordinators/eligible?region=${region}`
+    ).then((res) => {
+      setEligibleCoordinators(res.data || []);
+    }).catch(() => {
+      setEligibleCoordinators([]);
+    });
+  }, [formData.region]);
 
   const handleTransition = async (req: Request, newStatus: string) => {
     if (newStatus === "REJECTED") {
@@ -1251,6 +1269,35 @@ export function TrainingRequestsRoute() {
                 </SelectContent>
               </Select>
             </Field>
+            <Field label={t("requests.region") || "Region"} required>
+              <Select value={(formData.region as string) || undefined} onValueChange={(v) => {
+                setField("region", v);
+                setField("preferredCoordinatorId", undefined);
+                setEligibleCoordinators([]);
+              }}>
+                <SelectTrigger><SelectValue placeholder={t("requests.region") || "Select region"} /></SelectTrigger>
+                <SelectContent>
+                  {REGIONS.map((r) => <SelectItem key={r} value={r}>{REGION_LABELS[r][locale]}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+            {eligibleCoordinators.length > 0 && (
+              <Field label={t("requests.preferredCoordinator") || "Preferred Coordinator (optional)"}>
+                <Select
+                  value={(formData.preferredCoordinatorId as string) || undefined}
+                  onValueChange={(v) => setField("preferredCoordinatorId", v)}
+                >
+                  <SelectTrigger><SelectValue placeholder={t("requests.autoAssign") || "Auto-assign"} /></SelectTrigger>
+                  <SelectContent>
+                    {eligibleCoordinators.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.fullName}{c.isPrimary ? ` (${t("requests.primaryRegion") || "Primary"})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
             <Field label={t("requests.priority")}>
               <Select value={(formData.priority as string) ?? "NORMAL"} onValueChange={(v) => setField("priority", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>

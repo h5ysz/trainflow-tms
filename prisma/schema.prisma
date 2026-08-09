@@ -197,9 +197,10 @@ model User {
   trainer    Trainer? @relation(fields: [trainerId], references: [id], onDelete: SetNull)
   roleRecord Role?    @relation("UserRole", fields: [roleId], references: [id], onDelete: SetNull)
 
-  auditLogs     AuditLog[]
-  notifications Notification[]
-  loginHistory  LoginHistory[]
+  auditLogs          AuditLog[]
+  notifications      Notification[]
+  loginHistory       LoginHistory[]
+  assignedRequests   TrainingRequest[] @relation("AssignedCoordinator")
 
   @@index([role])
   @@index([companyId])
@@ -655,18 +656,25 @@ model TrainingRequest {
   priority          String                @default("NORMAL") // LOW | NORMAL | HIGH | URGENT
   rejectionReason   String?
   approvedAt        DateTime?
-  approvedBy        String?
+  approvedBy         String?
   submittedAt       DateTime?
   reviewedAt        DateTime?
   scheduledAt       DateTime?
   startedAt         DateTime?
-  completedAt       DateTime?
+  completedAt      DateTime?
   cancelledAt       DateTime?
   rejectedAt        DateTime?
   // JSON-encoded array of additional request-level documents
   // (medical certificate, vaccination, work permit, company letter, etc.).
   // Each entry: { url, filename, type, uploadedAt, uploadedById }.
   documents         String?
+  // ── Coordinator assignment (smart routing) ──
+  // The region the contractor selected for this request (CENTRAL/EASTERN/WESTERN/SOUTHERN).
+  // Stored on the request so it survives even if the company's region changes later.
+  region            String?
+  // The coordinator assigned to handle this request. NULL = auto-assigned or not yet assigned.
+  // Set when the contractor picks a specific coordinator OR when the system auto-assigns.
+  coordinatorId     String?
   // Audit
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
@@ -676,6 +684,7 @@ model TrainingRequest {
 
   company        Company                 @relation(fields: [companyId], references: [id])
   course         Course?                 @relation(fields: [courseId], references: [id])
+  coordinator    User?                   @relation("AssignedCoordinator", fields: [coordinatorId], references: [id])
   sessions       TrainingSession[]
   requestCourses TrainingRequestCourse[]
   quotations     Quotation[]
@@ -684,6 +693,8 @@ model TrainingRequest {
   @@index([status])
   @@index([companyId])
   @@index([courseId])
+  @@index([coordinatorId])
+  @@index([region])
 }
 
 // Junction: a Training Request contains multiple courses, each with its own trainee list
