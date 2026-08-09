@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge, PriorityBadge } from "@/components/common/status-badge";
-import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Check, X, RotateCcw, ArrowRight, FileText, Download, Upload, Eye, Pencil, Printer, MoreVertical, FileText as FileTextIcon, Send } from "lucide-react";
+import { ClipboardList, Plus, Building2, BookOpen, Users, Calendar, AlertCircle, Check, X, RotateCcw, ArrowRight, FileText, Download, Upload, Eye, Pencil, Printer, MoreVertical, Maximize, FileText as FileTextIcon, Send } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription, DrawerClose } from "@/components/ui/drawer";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -28,6 +28,7 @@ import { useAppStore } from "@/lib/store/app-store";
 import { canPerformAction } from "@/lib/auth/permissions";
 import { ImportDialog, ExportDialog } from "@/components/common/import-export-dialogs";
 import { ExportExcelButton } from "@/components/common/export-excel-button";
+import { CourseFullScreenView, type FullScreenCourse, type FullScreenRequestInfo } from "@/components/common/course-fullscreen-view";
 
 interface RequestImportResult {
   requestsCreated: number;
@@ -236,6 +237,11 @@ export function TrainingRequestsRoute() {
   const [drawerTarget, setDrawerTarget] = useState<Request | null>(null);
   const [drawerDetail, setDrawerDetail] = useState<RequestDetail | null>(null);
   const [drawerLoading, setDrawerLoading] = useState(false);
+  const [fullscreenView, setFullscreenView] = useState<{ courses: FullScreenCourse[]; requestInfo: FullScreenRequestInfo; initialCourseId?: string | null } | null>(null);
+  // When the full-screen view is open the drawer is closed (its modal sets
+  // `pointer-events: none` on <body>, which would swallow every click on the
+  // portal overlay). Keep the request so the drawer can be reopened on close.
+  const [fullscreenReturnTo, setFullscreenReturnTo] = useState<Request | null>(null);
 
   // isCoordinator is defined after canEdit/canCreate below
   // (see const isCoordinator = canEdit; after the hook calls)
@@ -268,6 +274,72 @@ export function TrainingRequestsRoute() {
     } finally {
       setDrawerLoading(false);
     }
+  };
+
+  // Full-screen course display: opens the course so the coordinator can see every
+  // detail of the request and every trainee large across the whole screen
+  // (per-course, or all courses at once).
+  const openCourseFullscreen = (courseId?: string) => {
+    if (!drawerDetail?.requestCourses?.length) return;
+    // Remember the request so the drawer can be restored after closing.
+    const reopenTarget = drawerTarget;
+    const courses: FullScreenCourse[] = drawerDetail.requestCourses.map((rc) => ({
+      course: {
+        id: rc.course.id,
+        title: rc.course.title,
+        titleAr: rc.course.titleAr ?? null,
+        code: rc.course.code ?? null,
+        refNumber: rc.course.refNumber ?? null,
+        durationHours: rc.course.durationHours ?? null,
+      },
+      trainees: (rc.trainees ?? []).map((t) => ({
+        trainee: {
+          refNumber: t.trainee.refNumber ?? null,
+          fullName: t.trainee.fullName,
+          nationalId: t.trainee.nationalId,
+          nationality: t.trainee.nationality ?? null,
+          jobTitle: t.trainee.jobTitle ?? null,
+          mobile: t.trainee.mobile ?? null,
+          email: t.trainee.email ?? null,
+          documents: t.trainee.documents ?? null,
+        },
+      })),
+    }));
+    setFullscreenView({
+      courses,
+      initialCourseId: courseId ?? courses[0].course.id,
+      requestInfo: {
+        requestRef: drawerTarget?.refNumber ?? null,
+        priority: drawerTarget?.priority ?? null,
+        status: drawerTarget?.status ?? null,
+        company: drawerDetail.company
+          ? {
+              name: drawerDetail.company.name ?? null,
+              nameAr: drawerDetail.company.nameAr ?? null,
+              refNumber: drawerDetail.company.refNumber ?? null,
+            }
+          : null,
+        preferredLocation: drawerDetail.preferredLocation ?? null,
+        preferredDateFrom: drawerDetail.preferredDateFrom ?? null,
+        preferredDateTo: drawerDetail.preferredDateTo ?? null,
+        preferredLanguage: drawerDetail.preferredLanguage ?? null,
+        notes: drawerDetail.notes ?? null,
+        documents: drawerDetail.documents ?? null,
+        sessions: (drawerDetail.sessions ?? []).map((s) => ({
+          id: s.id,
+          refNumber: s.refNumber,
+          title: s.title,
+          startDate: s.startDate,
+          endDate: s.endDate,
+          status: s.status,
+        })),
+      },
+    });
+    // Close the modal drawer so its body-level `pointer-events: none` doesn't
+    // block clicks on the full-screen overlay.
+    setFullscreenReturnTo(reopenTarget);
+    setDrawerTarget(null);
+    setDrawerDetail(null);
   };
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState<Record<string, unknown>>({
@@ -1638,6 +1710,16 @@ export function TrainingRequestsRoute() {
                       ({drawerDetail.requestCourses.reduce((sum, rc) => sum + (rc.trainees?.length ?? 0), 0)})
                     </span>
                   )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="ms-auto h-6 gap-1 px-2 text-[10px]"
+                    onClick={() => openCourseFullscreen()}
+                    disabled={drawerLoading || !drawerDetail?.requestCourses?.length}
+                  >
+                    <Maximize className="h-3 w-3" />
+                    {locale === "ar" ? "عرض بملء الشاشة" : "Full screen"}
+                  </Button>
                 </div>
 
                 {/* Courses summary: code · title · duration · trainees */}
@@ -1659,6 +1741,15 @@ export function TrainingRequestsRoute() {
                           )}
                           <span>{t("requests.traineeCount")}: {rc.traineeCount}</span>
                         </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
+                          title={locale === "ar" ? `فتح "${rc.course.title}" بملء الشاشة` : `Open "${rc.course.title}" full screen`}
+                          onClick={() => openCourseFullscreen(rc.course.id)}
+                        >
+                          <Maximize className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                     ))}
                   </div>
@@ -1823,6 +1914,21 @@ export function TrainingRequestsRoute() {
           )}
         </DrawerContent>
       </Drawer>
+
+      {/* Full-screen course view: coordinator opens the course to see everything large */}
+      <CourseFullScreenView
+        open={fullscreenView !== null}
+        onClose={() => {
+          setFullscreenView(null);
+          const ret = fullscreenReturnTo;
+          setFullscreenReturnTo(null);
+          // Restore the drawer the full-screen view was opened from.
+          if (ret) void openDrawer(ret);
+        }}
+        requestInfo={fullscreenView?.requestInfo}
+        courses={fullscreenView?.courses ?? []}
+        initialCourseId={fullscreenView?.initialCourseId ?? null}
+      />
     </div>
   );
 }
