@@ -72,14 +72,37 @@ export const GET = withModuleAction("sessions", "create", async ({ params }) => 
     preferredDateFrom: request.preferredDateFrom ?? null,
     preferredDateTo: request.preferredDateTo ?? null,
     preferredLocation: request.preferredLocation ?? null,
-    courses: request.requestCourses.map((rc) => ({
-      requestCourseId: rc.id,
-      courseId: rc.courseId,
-      courseTitle: rc.course?.title ?? null,
-      courseCode: rc.course?.code ?? null,
-      traineeCount: rc.traineeCount,
-      defaultCapacity: rc.maxTrainees,
-      alreadyGenerated: generatedFor.has(rc.id),
+    courses: await Promise.all(request.requestCourses.map(async (rc) => {
+      // If the original course was deleted (catalog rebuild), find the active
+      // replacement with the same title so trainer certifications still match.
+      let effectiveCourseId = rc.courseId;
+      let courseTitle = rc.course?.title ?? null;
+      let courseCode = rc.course?.code ?? null;
+
+      if (rc.course?.deletedAt) {
+        const active = await db.course.findFirst({
+          where: {
+            title: rc.course.title,
+            deletedAt: null,
+          },
+          select: { id: true, code: true, title: true },
+        });
+        if (active) {
+          effectiveCourseId = active.id;
+          courseTitle = active.title;
+          courseCode = active.code;
+        }
+      }
+
+      return {
+        requestCourseId: rc.id,
+        courseId: effectiveCourseId,
+        courseTitle,
+        courseCode,
+        traineeCount: rc.traineeCount,
+        defaultCapacity: rc.maxTrainees,
+        alreadyGenerated: generatedFor.has(rc.id),
+      };
     })),
     existingSessions: existing,
   });
@@ -143,10 +166,26 @@ export const POST = withModuleAction("sessions", "create", async ({ req, params,
       return fail(`requestCourseId ${spec.requestCourseId} not found in this request`, 404);
     }
 
-    const course = await db.course.findFirst({ where: { id: spec.courseId, deletedAt: null } });
+    // Look up the course — if it was deleted (catalog rebuild), find the
+    // active replacement with the same title so trainer certifications match.
+    let course = await db.course.findFirst({ where: { id: spec.courseId, deletedAt: null } });
+    if (!course) {
+      // Try the deleted course, then find an active one with the same title
+      const deletedCourse = await db.course.findFirst({ where: { id: spec.courseId } });
+      if (deletedCourse) {
+        const active = await db.course.findFirst({
+          where: { title: deletedCourse.title, deletedAt: null },
+        });
+        if (active) {
+          course = active;
+          // Update spec.courseId so the rest of the flow uses the active course
+          spec.courseId = active.id;
+        }
+      }
+    }
     if (!course) return fail(`Course ${spec.courseId} not found`, 404);
 
-    // Validate trainer assignment if specified
+    // Validate trainer assignment if specified — uses the effective (active) courseId
     if (spec.trainerId) {
       const validation = await validateTrainerAssignment({
         user,
