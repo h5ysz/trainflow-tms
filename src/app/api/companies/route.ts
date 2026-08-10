@@ -47,6 +47,12 @@ export const GET = withModuleAction("companies", "view", async ({ req, user }) =
     db.company.findMany({
       where,
       include: {
+        contacts: {
+          where: { deletedAt: null, isActive: true },
+          orderBy: [{ isPrimary: "desc" }, { createdAt: "desc" }],
+          take: 3,
+          select: { id: true, fullName: true, fullNameAr: true, jobTitle: true, email: true, phone: true, mobile: true, preferredContact: true, isPrimary: true },
+        },
         _count: { select: { contacts: true, trainingRequests: true, users: true } },
       },
       orderBy,
@@ -81,6 +87,17 @@ export const GET = withModuleAction("companies", "view", async ({ req, user }) =
       logoUrl: c.logoUrl,
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
+      contacts: c.contacts.map((ct) => ({
+        id: ct.id,
+        fullName: ct.fullName,
+        fullNameAr: ct.fullNameAr,
+        jobTitle: ct.jobTitle,
+        email: ct.email,
+        phone: ct.phone,
+        mobile: ct.mobile,
+        preferredContact: ct.preferredContact,
+        isPrimary: ct.isPrimary,
+      })),
       contactsCount: c._count.contacts,
       requestsCount: c._count.trainingRequests,
       usersCount: c._count.users,

@@ -35,11 +35,17 @@ interface TrainerOption {
   nameEn: string;
   nameAr?: string | null;
   refNumber: string;
+  certStatus?: string;
+  validUntil?: string | null;
+  qualificationTitle?: string | null;
 }
 
 interface TrainerCertRow {
   id: string;
+  status: string;
+  validUntil: string | null;
   trainer: TrainerOption | null;
+  qualification: { id: string; title: string; credentialNumber: string | null } | null;
 }
 
 interface GeneratePlan {
@@ -73,6 +79,20 @@ function toDateInput(value: string | null): string {
   if (!value) return "";
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+}
+
+function certStatusChip(status?: string) {
+  if (!status) return null;
+  const styles: Record<string, string> = {
+    VALID: "bg-emerald-500/10 text-emerald-600",
+    EXPIRED: "bg-destructive/10 text-destructive",
+    REVOKED: "bg-destructive/10 text-destructive",
+  };
+  return (
+    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${styles[status] ?? "bg-muted text-muted-foreground"}`}>
+      {status}
+    </span>
+  );
 }
 
 export function GenerateSessionsDialog({
@@ -119,10 +139,15 @@ export function GenerateSessionsDialog({
             status: "VALID",
             pageSize: 200,
           });
-          return [
-            c.courseId,
-            res.rows.map((r) => r.trainer).filter((tr): tr is TrainerOption => tr !== null),
-          ] as const;
+          const trainers = res.rows
+            .filter((r): r is TrainerCertRow & { trainer: TrainerOption } => r.trainer !== null)
+            .map((r) => ({
+              ...r.trainer,
+              certStatus: r.status,
+              validUntil: r.validUntil,
+              qualificationTitle: r.qualification?.title ?? null,
+            }));
+          return [c.courseId, trainers] as const;
         })
       );
       setTrainersByCourse(Object.fromEntries(results));
@@ -355,7 +380,29 @@ export function GenerateSessionsDialog({
                             {/* Certified trainers first */}
                             {(trainersByCourse[c.courseId] ?? []).map((tr) => (
                               <SelectItem key={`cert-${tr.id}`} value={tr.id}>
-                                {trainerName(tr, locale)} · {tr.refNumber}
+                                <div className="py-0.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-medium">{trainerName(tr, locale)}</span>
+                                    <span className="text-xs text-muted-foreground">{tr.refNumber}</span>
+                                    {certStatusChip(tr.certStatus)}
+                                  </div>
+                                  {(tr.qualificationTitle || tr.validUntil) && (
+                                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                                      {tr.qualificationTitle && (
+                                        <span className="inline-flex items-center gap-1">
+                                          <ShieldCheck className="h-3 w-3 text-primary" />
+                                          {t("requests.generate.qualification")}: {tr.qualificationTitle}
+                                        </span>
+                                      )}
+                                      {tr.validUntil && (
+                                        <span className="inline-flex items-center gap-1">
+                                          <CalendarRange className="h-3 w-3" />
+                                          {t("requests.generate.validUntil")}: {new Date(tr.validUntil).toLocaleDateString()}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
                               </SelectItem>
                             ))}
                             {/* If showAllTrainers is on, also show all active trainers */}

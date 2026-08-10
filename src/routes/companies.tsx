@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
@@ -11,10 +12,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Plus, Mail, Phone, MapPin, AlertCircle } from "lucide-react";
+import { Building2, Plus, Mail, Phone, MapPin, AlertCircle, Contact as ContactIcon, Star } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { useEntityActions } from "@/hooks/use-entity-actions";
+import { useAppStore } from "@/lib/store/app-store";
 import { REGIONS, REGION_LABELS } from "@/lib/regions";
+import { CompanyProfileDialog } from "@/components/company/company-profile-dialog";
 
 interface Company {
   id: string;
@@ -28,6 +31,16 @@ interface Company {
   email?: string | null;
   phone?: string | null;
   status: string;
+  contacts?: Array<{
+    id: string;
+    fullName: string;
+    fullNameAr?: string | null;
+    jobTitle?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    mobile?: string | null;
+    isPrimary: boolean;
+  }>;
   contactsCount: number;
   requestsCount: number;
   usersCount: number;
@@ -38,6 +51,7 @@ const STATUS_OPTIONS = ["ACTIVE", "INACTIVE", "SUSPENDED"];
 
 export function CompaniesRoute() {
   const { t, locale } = useI18n();
+  const { navigate } = useAppStore();
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
     useList<Company>("/companies", { pageSize: 10 });
@@ -53,6 +67,8 @@ export function CompaniesRoute() {
     refetch,
     fetchOnEdit: true,
   });
+
+  const [profileCompany, setProfileCompany] = useState<Company | null>(null);
 
   const columns: Column<Company>[] = [
     {
@@ -94,31 +110,91 @@ export function CompaniesRoute() {
     },
     {
       key: "contact",
-      header: t("companies.email"),
-      cell: (row) => (
-        <div className="space-y-0.5">
-          {row.email && (
-            <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-              <Mail className="h-3 w-3" /> {row.email}
-            </div>
-          )}
-          {row.phone && (
-            <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-              <Phone className="h-3 w-3" /> {row.phone}
-            </div>
-          )}
-        </div>
-      ),
+      header: t("companies.contacts"),
+      cell: (row) => {
+        const contacts = row.contacts ?? [];
+        const fallback = !contacts.length && (row.email || row.phone);
+        return (
+          <div className="space-y-1.5 max-w-[260px]">
+            {contacts.length > 0 ? (
+              contacts.map((ct) => (
+                <button
+                  key={ct.id}
+                  type="button"
+                  onClick={() => navigate("company-contacts", row.id)}
+                  className="block w-full text-start rounded-md px-1.5 -mx-1.5 py-1 hover:bg-muted/60 transition-colors"
+                  title={t("companies.openProfile")}
+                >
+                  <div className="text-xs font-medium flex items-center gap-1">
+                    <span className="truncate">{ct.fullName}</span>
+                    {ct.isPrimary && <Star className="h-3 w-3 text-warning fill-warning shrink-0" />}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                    {ct.mobile && (
+                      <a
+                        href={`tel:${ct.mobile}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1 hover:text-primary"
+                      >
+                        <Phone className="h-3 w-3" />{ct.mobile}
+                      </a>
+                    )}
+                    {ct.phone && !ct.mobile && (
+                      <a
+                        href={`tel:${ct.phone}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1 hover:text-primary"
+                      >
+                        <Phone className="h-3 w-3" />{ct.phone}
+                      </a>
+                    )}
+                    {ct.email && (
+                      <a
+                        href={`mailto:${ct.email}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1 hover:text-primary"
+                      >
+                        <Mail className="h-3 w-3" />{ct.email}
+                      </a>
+                    )}
+                  </div>
+                </button>
+              ))
+            ) : (
+              <div className="space-y-0.5">
+                {row.email && (
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Mail className="h-3 w-3" /> {row.email}
+                  </div>
+                )}
+                {row.phone && (
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Phone className="h-3 w-3" /> {row.phone}
+                  </div>
+                )}
+                {!fallback && (
+                  <div className="text-xs text-muted-foreground">—</div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: "stats",
       header: t("companies.contacts"),
       cell: (row) => (
         <div className="flex gap-3 text-xs">
-          <div>
+          <button
+            type="button"
+            onClick={() => navigate("company-contacts", row.id)}
+            className="text-start rounded-md px-1 -mx-1 hover:bg-muted/60 transition-colors"
+            title={t("companies.openProfile")}
+          >
             <div className="font-semibold tabular-nums">{row.contactsCount}</div>
-            <div className="text-muted-foreground">{t("companies.contacts")}</div>
-          </div>
+            <div className="text-muted-foreground underline decoration-dotted underline-offset-2">{t("companies.contacts")}</div>
+          </button>
           <div>
             <div className="font-semibold tabular-nums">{row.requestsCount}</div>
             <div className="text-muted-foreground">{t("companies.requests")}</div>
@@ -137,12 +213,32 @@ export function CompaniesRoute() {
       headerClassName: "text-end",
       className: "text-end",
       cell: (row) => (
-        <RowActions
-          canEdit={canEdit}
-          canDelete={canDelete}
-          onEdit={() => void openEdit(row)}
-          onDelete={() => setDeleteTarget(row)}
-        />
+        <div className="flex items-center justify-end gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            title={t("companies.contacts")}
+            onClick={() => navigate("company-contacts", row.id)}
+          >
+            <ContactIcon className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            title={t("companies.profile")}
+            onClick={() => setProfileCompany(row)}
+          >
+            <Building2 className="h-4 w-4" />
+          </Button>
+          <RowActions
+            canEdit={canEdit}
+            canDelete={canDelete}
+            onEdit={() => void openEdit(row)}
+            onDelete={() => setDeleteTarget(row)}
+          />
+        </div>
       ),
     },
   ];
@@ -160,12 +256,18 @@ export function CompaniesRoute() {
         subtitle={t("companies.subtitle")}
         icon={Building2}
         actions={
-          canCreate && (
-            <Button onClick={() => openCreate({ status: "ACTIVE" })}>
-              <Plus className="h-4 w-4 me-1.5" />
-              {t("companies.new")}
+          <>
+            <Button variant="outline" onClick={() => navigate("company-contacts")}>
+              <ContactIcon className="h-4 w-4 me-1.5" />
+              {t("contacts.title")}
             </Button>
-          )
+            {canCreate && (
+              <Button onClick={() => openCreate({ status: "ACTIVE" })}>
+                <Plus className="h-4 w-4 me-1.5" />
+                {t("companies.new")}
+              </Button>
+            )}
+          </>
         }
       />
 
@@ -376,6 +478,12 @@ export function CompaniesRoute() {
           </div>
         </div>
       </FormDialog>
+
+      <CompanyProfileDialog
+        companyId={profileCompany?.id ?? null}
+        onOpenChange={(o) => !o && setProfileCompany(null)}
+        onChanged={refetch}
+      />
 
       <ConfirmDialog
         open={deleteTarget !== null}

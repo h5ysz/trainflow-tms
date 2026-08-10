@@ -15,6 +15,7 @@ export const GET = withModuleAction("requests", "view", async ({ params, user })
     include: {
       company: true,
       course: true,
+      contact: { select: { id: true, fullName: true, fullNameAr: true, jobTitle: true, email: true, phone: true, mobile: true, contactType: true, isPrimary: true, isActive: true } },
       requestCourses: {
         where: { deletedAt: null },
         include: {
@@ -99,6 +100,7 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
   const {
     traineeCount, preferredDateFrom, preferredDateTo,
     preferredLocation, preferredLanguage, notes, priority,
+    contactId,
     status: newStatus, rejectionReason,
     trainees: submittedTrainees,
     additionalDocuments,
@@ -165,6 +167,17 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
   if (preferredLanguage !== undefined) updates.preferredLanguage = preferredLanguage;
   if (notes !== undefined) updates.notes = notes;
   if (priority !== undefined) updates.priority = priority;
+
+  // The linked contact (optional) must belong to the request's company.
+  if (contactId !== undefined) {
+    if (contactId) {
+      const contact = await db.companyContact.findFirst({
+        where: { id: contactId, companyId: existing.companyId, isActive: true, deletedAt: null },
+      });
+      if (!contact) return fail("Contact not found for this company", 422, "CONTACT_NOT_FOUND");
+    }
+    updates.contactId = contactId || null;
+  }
 
   // Workflow timestamps
   if (newStatus === "SUBMITTED") {

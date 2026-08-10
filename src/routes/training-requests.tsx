@@ -39,6 +39,7 @@ interface RequestImportResult {
 
 interface CompanyOption { id: string; name: string; refNumber: string; }
 interface CourseOption { id: string; title: string; code: string; refNumber: string; }
+interface ContactOption { id: string; fullName: string; fullNameAr?: string | null; jobTitle?: string | null; companyId: string; }
 interface Request {
   id: string;
   refNumber: string;
@@ -49,6 +50,8 @@ interface Request {
   courseTitle?: string | null;
   courseCode?: string | null;
   courseRef?: string | null;
+  contactId?: string | null;
+  contactName?: string | null;
   traineeCount: number;
   preferredDateFrom?: string | null;
   preferredDateTo?: string | null;
@@ -92,6 +95,7 @@ interface RequestCourseDetail {
 interface RequestDetail extends Request {
   company?: { id: string; name: string; refNumber?: string; nameAr?: string | null };
   course?: { id: string; title: string; code?: string; refNumber?: string; titleAr?: string | null; durationHours?: number };
+  contact?: { id: string; fullName: string; fullNameAr?: string | null; jobTitle?: string | null; email?: string | null; phone?: string | null; mobile?: string | null; contactType?: string | null; isPrimary: boolean; isActive: boolean };
   requestCourses?: RequestCourseDetail[];
   sessions?: Array<{ id: string; refNumber: string; title: string; startDate: string; endDate: string; status: string }>;
   documents?: string | null; // request-level documents (JSON array)
@@ -361,6 +365,7 @@ export function TrainingRequestsRoute() {
   const [companies, setCompanies] = useReactState<CompanyOption[]>([]);
   const [courses, setCourses] = useReactState<CourseOption[]>([]);
   const [eligibleCoordinators, setEligibleCoordinators] = useState<Array<{ id: string; fullName: string; email: string; isPrimary: boolean }>>([]);
+  const [contacts, setContacts] = useReactState<ContactOption[]>([]);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -411,7 +416,14 @@ export function TrainingRequestsRoute() {
         setCourses(r.rows.map((c) => ({ id: c.id, title: c.title, code: c.code, refNumber: c.refNumber })));
       }).catch(() => {});
     }
-  }, [companies.length, courses.length, user?.role]);
+    if (contacts.length === 0) {
+      // Contacts are loaded once and filtered client-side by the selected
+      // company. Contractors are scoped server-side to their own company.
+      api.getList<ContactOption>("/company-contacts", { pageSize: 100, isActive: true }).then((r) => {
+        setContacts(r.rows);
+      }).catch(() => {});
+    }
+  }, [companies.length, courses.length, contacts.length, user?.role]);
 
   // ── Fetch eligible coordinators when region changes ──
   useEffect(() => {
@@ -1000,8 +1012,9 @@ export function TrainingRequestsRoute() {
         } catch { /* ignore */ }
       }
 
-      // ── Update formData with any richer data from the detail (course title, etc.) ──
+      // ── Update formData with any richer data from the detail (course title, contact, etc.) ──
       if (detail.courseId) setFormData((p) => ({ ...p, courseId: detail.courseId }));
+      if (detail.contactId) setFormData((p) => ({ ...p, contactId: detail.contactId }));
     } catch {
       // If the fetch fails, the dialog still opens with the basic row data
       // (trainees will be empty, but at least the form fields are populated)
@@ -1045,6 +1058,11 @@ export function TrainingRequestsRoute() {
       setSubmitting(false);
     }
   };
+
+  const effectiveCompanyId = (formData.companyId as string) || user?.companyId || "";
+  const companyContacts = effectiveCompanyId
+    ? contacts.filter((c) => c.companyId === effectiveCompanyId)
+    : [];
 
   return (
     <div className="space-y-5">
@@ -1253,7 +1271,7 @@ export function TrainingRequestsRoute() {
           <FormGrid>
             {user?.role !== "CONTRACTOR" && (
               <Field label={t("requests.company")} required>
-                <Select onValueChange={(v) => setField("companyId", v)}>
+                <Select value={(formData.companyId as string) || undefined} onValueChange={(v) => { setField("companyId", v); setField("contactId", null); }}>
                   <SelectTrigger><SelectValue placeholder={t("requests.company")} /></SelectTrigger>
                   <SelectContent>
                     {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.name} ({c.refNumber})</SelectItem>)}
@@ -1298,6 +1316,19 @@ export function TrainingRequestsRoute() {
                 </Select>
               </Field>
             )}
+            <Field label={t("requests.contact")}>
+              <Select value={(formData.contactId as string) ?? ""} onValueChange={(v) => setField("contactId", v === "__none__" ? null : v)}>
+                <SelectTrigger><SelectValue placeholder={t("requests.contactNotSet")} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">{t("requests.contactNotSet")}</SelectItem>
+                  {companyContacts.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.fullName}{c.jobTitle ? ` — ${c.jobTitle}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
             <Field label={t("requests.priority")}>
               <Select value={(formData.priority as string) ?? "NORMAL"} onValueChange={(v) => setField("priority", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -1437,6 +1468,7 @@ export function TrainingRequestsRoute() {
             <FormGrid>
               <DetailRow label={t("requests.company")} value={detailsTarget.companyName} />
               <DetailRow label={t("requests.course")} value={detailsTarget.courseTitle} />
+              <DetailRow label={t("requests.contact")} value={detailsTarget.contactName} />
               <DetailRow label={t("requests.traineeCount")} value={detailsTarget.traineeCount} />
               <DetailRow label={t("requests.preferredLocation")} value={detailsTarget.preferredLocation} />
               <DetailRow label={t("requests.preferredDateFrom")} value={fmtDate(detailsTarget.preferredDateFrom)} />
@@ -1505,6 +1537,7 @@ export function TrainingRequestsRoute() {
             <FormGrid>
               <DetailRow label={t("requests.company")} value={previewDetail?.company?.name ?? previewTarget.companyName} />
               <DetailRow label={t("requests.course")} value={previewDetail?.course?.title ?? previewTarget.courseTitle} />
+              <DetailRow label={t("requests.contact")} value={contactLabel(previewDetail?.contact, locale) ?? previewTarget.contactName} />
               <DetailRow label={t("requests.traineeCount")} value={String(previewTarget.traineeCount)} />
               <DetailRow label={t("requests.priority")} value={previewTarget.priority} />
               <DetailRow label={t("requests.preferredLocation")} value={previewTarget.preferredLocation} />
@@ -1737,6 +1770,7 @@ export function TrainingRequestsRoute() {
               <FormGrid>
                 <DetailRow label={t("requests.company")} value={drawerDetail?.company?.name ?? drawerTarget.companyName} />
                 <DetailRow label={t("requests.course")} value={drawerDetail?.course?.title ?? drawerTarget.courseTitle} />
+                <DetailRow label={t("requests.contact")} value={contactLabel(drawerDetail?.contact, locale) ?? drawerTarget.contactName} />
                 <DetailRow label={t("requests.traineeCount")} value={String(drawerTarget.traineeCount)} />
                 <DetailRow label={t("requests.priority")} value={drawerTarget.priority} />
                 <DetailRow label={t("requests.preferredLocation")} value={drawerTarget.preferredLocation} />
@@ -1982,6 +2016,12 @@ export function TrainingRequestsRoute() {
 
 function fmtDate(value?: string | null) {
   return value ? new Date(value).toLocaleDateString() : null;
+}
+
+// Contact display name: prefer the Arabic name in the Arabic UI.
+function contactLabel(contact?: { fullName: string; fullNameAr?: string | null } | null, locale?: string): string | null {
+  if (!contact) return null;
+  return locale === "ar" && contact.fullNameAr ? contact.fullNameAr : contact.fullName;
 }
 
 function fmtDateTime(value?: string | null) {

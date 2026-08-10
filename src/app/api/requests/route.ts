@@ -57,6 +57,7 @@ export const GET = withModuleAction("requests", "view", async ({ req, user }) =>
       include: {
         company: { select: { id: true, name: true, refNumber: true } },
         course: { select: { id: true, title: true, code: true, refNumber: true } },
+        contact: { select: { id: true, fullName: true, fullNameAr: true, jobTitle: true, mobile: true, email: true } },
         sessions: { select: { id: true, refNumber: true } },
       },
       orderBy,
@@ -77,6 +78,8 @@ export const GET = withModuleAction("requests", "view", async ({ req, user }) =>
       courseTitle: r.course?.title ?? null,
       courseCode: r.course?.code ?? null,
       courseRef: r.course?.refNumber ?? null,
+      contactId: r.contactId,
+      contactName: r.contact ? (r.contact.fullNameAr ?? r.contact.fullName) : null,
       traineeCount: r.traineeCount,
       preferredDateFrom: r.preferredDateFrom,
       preferredDateTo: r.preferredDateTo,
@@ -109,6 +112,7 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
   const {
     companyId, courseId, traineeCount, preferredDateFrom, preferredDateTo,
     preferredLocation, preferredLanguage, notes, priority,
+    contactId,
     status: requestedStatus,
     trainees,
     additionalDocuments,
@@ -128,6 +132,14 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
   ]);
   if (!company) return fail("Company not found", 404);
   if (!course) return fail("Course not found", 404);
+
+  // The linked contact (optional) must belong to the same company and be active.
+  if (contactId) {
+    const contact = await db.companyContact.findFirst({
+      where: { id: contactId, companyId: finalCompanyId, isActive: true, deletedAt: null },
+    });
+    if (!contact) return fail("Contact not found for this company", 422, "CONTACT_NOT_FOUND");
+  }
 
   // ── Resolve the request region ──
   // Use the contractor-selected region if provided, otherwise fall back to the company's region.
@@ -231,6 +243,7 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
       refNumber,
       companyId: finalCompanyId,
       courseId,
+      contactId: contactId ?? null,
       requestedBy: user.id,
       traineeCount: effectiveTraineeCount,
       preferredDateFrom: preferredDateFrom ? new Date(preferredDateFrom) : null,

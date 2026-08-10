@@ -18,22 +18,34 @@ export const PUT = withModuleAction("company-contacts", "edit", async ({ req, pa
   const existing = await db.companyContact.findUnique({ where: { id } });
   if (!existing || existing.deletedAt) return notFound("Contact not found");
 
-  const { fullName, jobTitle, email, phone, mobile, preferredContact, isPrimary, isActive, notes, companyId } = body;
-  const updated = await db.companyContact.update({
-    where: { id },
-    data: {
-      ...(fullName !== undefined && { fullName }),
-      ...(jobTitle !== undefined && { jobTitle }),
-      ...(email !== undefined && { email }),
-      ...(phone !== undefined && { phone }),
-      ...(mobile !== undefined && { mobile }),
-      ...(preferredContact !== undefined && { preferredContact }),
-      ...(isPrimary !== undefined && { isPrimary }),
-      ...(isActive !== undefined && { isActive }),
-      ...(notes !== undefined && { notes }),
-      ...(companyId !== undefined && { companyId }),
-      updatedBy: user.id,
-    },
+  const { fullName, fullNameAr, jobTitle, email, phone, mobile, contactType, preferredContact, isPrimary, isActive, notes, companyId } = body;
+  const updated = await db.$transaction(async (tx) => {
+    const result = await tx.companyContact.update({
+      where: { id },
+      data: {
+        ...(fullName !== undefined && { fullName }),
+        ...(fullNameAr !== undefined && { fullNameAr }),
+        ...(jobTitle !== undefined && { jobTitle }),
+        ...(email !== undefined && { email }),
+        ...(phone !== undefined && { phone }),
+        ...(mobile !== undefined && { mobile }),
+        ...(contactType !== undefined && { contactType }),
+        ...(preferredContact !== undefined && { preferredContact }),
+        ...(isPrimary !== undefined && { isPrimary }),
+        ...(isActive !== undefined && { isActive }),
+        ...(notes !== undefined && { notes }),
+        ...(companyId !== undefined && { companyId }),
+        updatedBy: user.id,
+      },
+    });
+    if (result.isPrimary) {
+      const targetCompanyId = companyId ?? existing.companyId;
+      await tx.companyContact.updateMany({
+        where: { companyId: targetCompanyId, id: { not: result.id }, deletedAt: null },
+        data: { isPrimary: false },
+      });
+    }
+    return result;
   });
 
   await audit({

@@ -356,11 +356,13 @@ model Trainee {
 model CompanyContact {
   id               String    @id @default(uuid())
   companyId        String
-  fullName         String
+  fullName         String // English name
+  fullNameAr       String? // Arabic name — shown in Arabic UI
   jobTitle         String? // Position
   email            String?
   phone            String?
   mobile           String?
+  contactType      String? // Optional type/purpose: OPERATIONS | HR | ADMIN | PAYROLL | QUALITY | OTHER
   preferredContact String? // PHONE | MOBILE | EMAIL | WHATSAPP
   isPrimary        Boolean   @default(false)
   isActive         Boolean   @default(true)
@@ -372,9 +374,11 @@ model CompanyContact {
   updatedBy        String?
   deletedAt        DateTime?
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  trainingRequests TrainingRequest[]
 
   @@index([companyId])
+  @@index([contactType])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -645,6 +649,7 @@ model TrainingRequest {
   refNumber         String                @unique // TR-YYYY-000001
   companyId         String
   courseId          String? // optional primary course (legacy single-course field)
+  contactId         String? // linked company contact (the request's contact person)
   requestedBy       String? // user id
   traineeCount      Int                   @default(0) // total across all courses
   preferredDateFrom DateTime?
@@ -685,6 +690,7 @@ model TrainingRequest {
   company        Company                 @relation(fields: [companyId], references: [id])
   course         Course?                 @relation(fields: [courseId], references: [id])
   coordinator    User?                   @relation("AssignedCoordinator", fields: [coordinatorId], references: [id])
+  contact        CompanyContact?         @relation(fields: [contactId], references: [id], onDelete: SetNull)
   sessions       TrainingSession[]
   requestCourses TrainingRequestCourse[]
   quotations     Quotation[]
@@ -695,6 +701,7 @@ model TrainingRequest {
   @@index([courseId])
   @@index([coordinatorId])
   @@index([region])
+  @@index([contactId])
 }
 
 // Junction: a Training Request contains multiple courses, each with its own trainee list
