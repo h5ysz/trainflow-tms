@@ -235,6 +235,20 @@ function emptyRow(partial?: Partial<TraineeEntry>): TraineeEntry {
   };
 }
 
+// A fully-empty placeholder row (nothing typed, no documents) is not a trainee
+// yet: it must not count toward any stat (total / valid / invalid / duplicates /
+// missing attachment). Once ANY field or document is filled, the row becomes a
+// real candidate and is validated exactly like before.
+function isBlankTrainee(r: TraineeEntry): boolean {
+  return (
+    !r.fullName.trim() &&
+    !r.nationalId.trim() &&
+    !r.jobTitle.trim() &&
+    !r.nationality.trim() &&
+    r.documents.length === 0
+  );
+}
+
 // ── Phase 1: documents[] is the single source of truth ────────────────────
 // The legacy `idAttachmentUrl` field is no longer written by any client
 // callback. All ID uploads go into `documents[]` as `{type:"id"}` entries.
@@ -364,15 +378,15 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, companyId
       const id = r.nationalId.trim();
       if (id) idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
     }
-    const total = trainees.length;
-    const valid = trainees.filter((r) => r.valid).length;
-    const invalid = total - valid;
+    const total = trainees.filter((r) => !isBlankTrainee(r)).length;
+    const valid = trainees.filter((r) => !isBlankTrainee(r) && r.valid).length;
+    const invalid = trainees.filter((r) => !isBlankTrainee(r) && !r.valid).length;
     const duplicates = trainees.filter((r) => {
       const id = r.nationalId.trim();
-      return id && (idCounts.get(id) ?? 0) > 1;
+      return !isBlankTrainee(r) && id && (idCounts.get(id) ?? 0) > 1;
     }).length;
     const missingAttachment = trainees.filter(
-      (r) => r.fullName.trim() && r.nationalId.trim() && !hasIdDocument(r)
+      (r) => !isBlankTrainee(r) && r.fullName.trim() && r.nationalId.trim() && !hasIdDocument(r)
     ).length;
     return { total, valid, invalid, duplicates, missingAttachment };
   }, [trainees]);
@@ -392,7 +406,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, companyId
       }
       switch (filter) {
         case "valid": return r.valid;
-        case "invalid": return !r.valid;
+        case "invalid": return !r.valid && !isBlankTrainee(r);
         case "duplicates": {
           const id = r.nationalId.trim();
           return id ? (idCounts.get(id) ?? 0) > 1 : false;
@@ -829,7 +843,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, companyId
               onJump={null}
             />
             <StatCard
-              icon={<AlertCircle className="h-4 w-4 text-destructive" />}
+              icon={<AlertCircle className={cn("h-4 w-4", stats.invalid > 0 ? "text-destructive" : "text-muted-foreground")} />}
               label={t("requests.stats.invalid")}
               value={stats.invalid}
               active={filter === "invalid"}
@@ -1424,10 +1438,12 @@ function StatCard({
   onJump: (() => void) | null;
 }) {
   const { t } = useI18n();
+  // Only colour the card when there's actually something to report. A 0-count
+  // card (e.g. "غير صالح" = 0) is a neutral state, not an error.
   const toneClass =
-    tone === "success" ? "border-emerald-200 bg-emerald-50/50"
-    : tone === "destructive" ? "border-destructive/30 bg-destructive/5"
-    : tone === "warning" ? "border-amber-200 bg-amber-50/50"
+    value > 0 && tone === "success" ? "border-emerald-200 bg-emerald-50/50"
+    : value > 0 && tone === "destructive" ? "border-destructive/30 bg-destructive/5"
+    : value > 0 && tone === "warning" ? "border-amber-200 bg-amber-50/50"
     : "";
 
   return (
