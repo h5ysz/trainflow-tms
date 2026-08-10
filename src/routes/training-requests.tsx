@@ -435,7 +435,7 @@ export function TrainingRequestsRoute() {
   //      client-side TraineeEntrySection works correctly).
   useEffect(() => {
     if (user?.role === "CONTRACTOR" && user.companyId && !formData.companyId) {
-      setField("companyId", user.companyId);
+      setFormData((p) => ({ ...p, companyId: user.companyId }));
     }
   }, [user?.role, user?.companyId, formData.companyId]);
 

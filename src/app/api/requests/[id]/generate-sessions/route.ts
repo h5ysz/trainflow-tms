@@ -81,7 +81,7 @@ export const GET = withModuleAction("sessions", "create", async ({ params }) => 
 
       if (rc.course?.deletedAt) {
         // Search by exact title first, then by partial title match (the catalog
-        // rebuild may have changed the title slightly, e.g. "First Aid" → "Basic First Aid").
+        // rebuild may have renamed or re-titled a course).
         const active = await db.course.findFirst({
           where: {
             OR: [

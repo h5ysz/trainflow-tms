@@ -21,7 +21,7 @@ export const GET = withModuleAction("trainer-qualifications", "view", async ({ r
     db.trainerCertification.findMany({
       where,
       include: {
-        trainer: { select: { id: true, nameEn: true, nameAr: true, refNumber: true } },
+        trainer: { select: { id: true, nameEn: true, nameAr: true, refNumber: true, deletedAt: true } },
         course: { select: { id: true, title: true, code: true, refNumber: true } },
         qualification: { select: { id: true, title: true, credentialNumber: true } },
       },

@@ -38,6 +38,7 @@ interface TrainerOption {
   certStatus?: string;
   validUntil?: string | null;
   qualificationTitle?: string | null;
+  deletedAt?: string | null;
 }
 
 interface TrainerCertRow {
@@ -132,6 +133,7 @@ export function GenerateSessionsDialog({
     setTrainersLoading(true);
     setTrainersError(null);
     try {
+      const now = Date.now();
       const results = await Promise.all(
         courses.map(async (c) => {
           const res = await api.getList<TrainerCertRow>("/trainer-certifications", {
@@ -139,8 +141,15 @@ export function GenerateSessionsDialog({
             status: "VALID",
             pageSize: 200,
           });
+          // A trainer is "qualified" only when the certification is VALID, not
+          // expired, and the trainer still exists — mirroring the backend
+          // isTrainerCertifiedForCourse check so the list never shows a trainer
+          // the server would reject.
           const trainers = res.rows
-            .filter((r): r is TrainerCertRow & { trainer: TrainerOption } => r.trainer !== null)
+            .filter((r): r is TrainerCertRow & { trainer: TrainerOption } =>
+              r.trainer !== null && !r.trainer.deletedAt
+            )
+            .filter((r) => !r.validUntil || new Date(r.validUntil).getTime() >= now)
             .map((r) => ({
               ...r.trainer,
               certStatus: r.status,
