@@ -1440,10 +1440,16 @@ function StatCard({
   const { t } = useI18n();
   // Only colour the card when there's actually something to report. A 0-count
   // card (e.g. "غير صالح" = 0) is a neutral state, not an error.
+  const hasTone = value > 0;
   const toneClass =
-    value > 0 && tone === "success" ? "border-emerald-200 bg-emerald-50/50"
-    : value > 0 && tone === "destructive" ? "border-destructive/30 bg-destructive/5"
-    : value > 0 && tone === "warning" ? "border-amber-200 bg-amber-50/50"
+    hasTone && tone === "success" ? "border-emerald-300 bg-emerald-100/70 dark:border-emerald-500/60 dark:bg-emerald-500/15"
+    : hasTone && tone === "destructive" ? "border-destructive/60 bg-destructive/10 dark:border-destructive/70 dark:bg-destructive/20"
+    : hasTone && tone === "warning" ? "border-amber-300 bg-amber-100/70 dark:border-amber-500/60 dark:bg-amber-500/15"
+    : "";
+  const valueClass =
+    hasTone && tone === "success" ? "text-emerald-700 dark:text-emerald-400"
+    : hasTone && tone === "destructive" ? "text-destructive"
+    : hasTone && tone === "warning" ? "text-amber-700 dark:text-amber-400"
     : "";
 
   return (
@@ -1462,7 +1468,7 @@ function StatCard({
         <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
         {icon}
       </div>
-      <div className="text-2xl font-semibold tabular-nums">{value}</div>
+      <div className={cn("text-2xl font-semibold tabular-nums", valueClass)}>{value}</div>
       {onJump && value > 0 && (
         <button
           type="button"
