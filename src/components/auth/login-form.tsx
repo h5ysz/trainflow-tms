@@ -14,7 +14,7 @@ import { api } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
 export function LoginForm() {
-  const { t, locale, setLocale } = useI18n();
+  const { t, locale, setLocale, dir } = useI18n();
   const { signIn, authLoading, authError } = useAppStore();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -87,7 +87,7 @@ export function LoginForm() {
         </div>
       )}
 
-      <div className="min-h-screen flex">
+      <div dir="ltr" className="min-h-screen flex">
         {/* Language toggle */}
         <div className="absolute top-5 end-5 z-20">
           <Button
@@ -102,9 +102,9 @@ export function LoginForm() {
         </div>
 
         {/* LEFT — Brand panel */}
-        <div className="hidden lg:flex lg:flex-1 flex-col justify-between p-12 xl:p-16 bg-primary text-primary-foreground relative overflow-hidden tf-industrial-bg">
+        <div dir={dir} className="hidden lg:flex lg:flex-1 flex-col justify-between p-12 xl:p-16 bg-primary text-primary-foreground relative overflow-hidden tf-industrial-bg rtl:order-last">
           {/* Top — Logo */}
-          <div className="relative z-10">
+          <div className="relative z-10 flex flex-col items-center text-center">
             <Image
               src="/gcclab-logo-white.png"
               alt="GCC Lab"
@@ -119,13 +119,13 @@ export function LoginForm() {
           </div>
 
           {/* Center — Description */}
-          <div className="relative z-10 max-w-lg">
+          <div className="relative z-10 max-w-lg mx-auto text-center">
             <h1 className="text-4xl xl:text-5xl font-bold leading-tight mb-4">
               {locale === "en"
                 ? "Training Management System"
                 : "نظام إدارة التدريب"}
             </h1>
-            <p className="text-base text-primary-foreground/75 leading-relaxed">
+            <p className="text-base text-primary-foreground/75 leading-relaxed max-w-md mx-auto">
               {locale === "en"
                 ? "Enterprise platform for managing corporate safety training, calibration certifications, and compliance — from training request to certificate issuance."
                 : "منصة مؤسسية لإدارة التدريب على السلامة المهنية وشهادات المعايرة والامتثال — من طلب التدريب حتى إصدار الشهادة."}
@@ -133,7 +133,7 @@ export function LoginForm() {
           </div>
 
           {/* Bottom — Industrial elements */}
-          <div className="relative z-10 flex items-center gap-6 text-xs text-primary-foreground/50">
+          <div className="relative z-10 flex items-center justify-center gap-6 text-xs text-primary-foreground/50">
             <div className="flex items-center gap-2">
               <div className="h-1.5 w-1.5 rounded-full bg-primary-foreground/60" />
               <span>{locale === "en" ? "Electrical Safety" : "سلامة الكهرباء"}</span>
@@ -159,7 +159,7 @@ export function LoginForm() {
         </div>
 
         {/* RIGHT — Login form */}
-        <div className="flex-1 flex items-center justify-center p-8 lg:p-12 bg-background">
+        <div dir={dir} className="flex-1 flex items-center justify-center p-8 lg:p-12 bg-background rtl:order-first">
           <div className="w-full max-w-sm space-y-6">
             {/* Mobile logo */}
             <div className="flex lg:hidden items-center gap-3 mb-8">
