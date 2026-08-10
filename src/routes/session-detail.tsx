@@ -387,6 +387,13 @@ export function SessionDetailRoute() {
   const lifecycleStatus = session?.lifecycleStatus ?? "NOT_STARTED";
   const allowed = LIFECYCLE_TRANSITIONS[lifecycleStatus] ?? [];
 
+  // Delivery-only lifecycle events the coordinator cannot trigger. Mirrors the
+  // role guard in src/app/api/sessions/[id]/lifecycle/route.ts.
+  const coordinatorBlockedEvents =
+    user?.role === "COORDINATOR"
+      ? new Set(Object.keys(EVENT_ICONS) as LifecycleEvent[])
+      : new Set<LifecycleEvent>();
+
   const enrollmentColumns: Column<Enrollment>[] = [
     {
       key: "trainee",
@@ -570,6 +577,7 @@ export function SessionDetailRoute() {
 
               <div className="flex flex-wrap gap-2">
                 {(Object.keys(EVENT_ICONS) as LifecycleEvent[])
+                  .filter((ev) => !coordinatorBlockedEvents.has(ev))
                   .map((ev) => {
                   const Icon = EVENT_ICONS[ev];
                   const enabled = canEdit && allowed.includes(ev);

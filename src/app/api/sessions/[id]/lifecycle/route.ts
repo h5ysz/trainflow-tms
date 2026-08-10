@@ -38,6 +38,14 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
   const session = await db.trainingSession.findUnique({ where: { id } });
   if (!session || session.deletedAt) return fail("Session not found", 404);
 
+  // Delivery-only transitions: the coordinator manages sessions but cannot
+  // start, break, resume, or complete them — those are trainer/delivery
+  // actions. Enforced here server-side so it can't be bypassed by calling the
+  // API directly.
+  if (user.role === "COORDINATOR") {
+    return fail("Coordinators cannot perform lifecycle actions on a session", 403, "FORBIDDEN");
+  }
+
   // Validate transition
   const currentStatus = session.lifecycleStatus ?? "NOT_STARTED";
   const allowed = LIFECYCLE_TRANSITIONS[currentStatus] ?? [];
