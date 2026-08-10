@@ -10,23 +10,26 @@
 //   - Release certificates (when all requirements met)
 //
 // Contractors see a read-only view with locked certificates until released.
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import { useI18n } from "@/lib/i18n/context";
-import { api } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
+import {
+  Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
+} from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/lib/store/app-store";
 import { canPerformAction } from "@/lib/auth/permissions";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
+import { api, downloadFile } from "@/lib/api/client";
+import { CertificatePreviewDialog } from "@/components/certificates/certificate-preview-dialog";
 import {
   CheckCircle2, XCircle, Lock, Unlock, Download, Loader2, AlertTriangle,
-  FileText, ShieldCheck, RefreshCw, Plus,
+  FileText, ShieldCheck, RefreshCw, Plus, Clock, Eye,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -73,12 +76,18 @@ interface SessionPayment {
   paymentPercentage: number;
   paymentStatus: "UNPAID" | "PARTIALLY_PAID" | "PAID";
   currency: string;
+  sessionRef?: string | null;
+  traineeCount?: number;
   invoiceRef?: string | null;
   invoiceIssuedAt?: string | null;
   invoiceDueDate?: string | null;
   verificationStatus?: string | null;
   verifiedAt?: string | null;
+  verifiedByName?: string | null;
   printingReleased?: boolean | null;
+  printingReleasedBy?: string | null;
+  printingReleasedAt?: string | null;
+  printingReleasedByName?: string | null;
   notes?: string | null;
 }
 
@@ -95,6 +104,7 @@ export function CertReleasePanel({ sessionId }: CertReleasePanelProps) {
   const [releasePrintingBusy, setReleasePrintingBusy] = useState<string | null>(null);
   const [checklists, setChecklists] = useState<ReleaseChecklist[]>([]);
   const [payments, setPayments] = useState<SessionPayment[]>([]);
+  const [companyRows, setCompanyRows] = useState<Array<{ companyId: string; companyName: string; companyRef: string | null; traineeCount: number }>>([]);
   const [companies, setCompanies] = useState<SearchableSelectOption[]>([]);
   // Payment form
   const [showPaymentForm, setShowPaymentForm] = useState(false);
@@ -110,6 +120,7 @@ export function CertReleasePanel({ sessionId }: CertReleasePanelProps) {
   const [verifyDialog, setVerifyDialog] = useState<{ certId: string; certRef: string; traineeName: string } | null>(null);
   const [verifyNotes, setVerifyNotes] = useState("");
   const [verifyAttachment, setVerifyAttachment] = useState("");
+  const [previewCert, setPreviewCert] = useState<{ id: string; refNumber: string; traineeName: string; releaseStatus: string } | null>(null);
 
   const canRelease = user?.role === "COORDINATOR" || user?.role === "SUPER_ADMIN";
   const canEditPayments = canRelease;
@@ -122,18 +133,25 @@ export function CertReleasePanel({ sessionId }: CertReleasePanelProps) {
         api.get<ReleaseChecklist[]>(`/sessions/${sessionId}/release-checklist`).catch(() => []),
         canEditPayments ? api.get<SessionPayment[]>(`/sessions/${sessionId}/payments`).catch(() => []) : Promise.resolve([]),
         api
-          .get<{ companies: Array<{ companyId: string; companyName: string | null; companyRef: string | null }> }>(
+          .get<{ companies: Array<{ companyId: string; companyName: string | null; companyRef: string | null; traineeCount: number }> }>(
             `/sessions/${sessionId}/enrollments`,
           )
           .catch(() => ({ companies: [] })),
       ]);
       setChecklists(checks);
       setPayments(pays);
+      const rows = (comps.companies ?? []).map((c) => ({
+        companyId: c.companyId,
+        companyName: c.companyName ?? c.companyId,
+        companyRef: c.companyRef,
+        traineeCount: c.traineeCount ?? 0,
+      }));
+      setCompanyRows(rows);
       setCompanies(
-        (comps.companies ?? []).map((c) => ({
+        rows.map((c) => ({
           value: c.companyId,
-          label: c.companyRef ? `${c.companyName} (${c.companyRef})` : (c.companyName ?? c.companyId),
-          keywords: `${c.companyName ?? ""} ${c.companyRef ?? ""}`.toLowerCase(),
+          label: c.companyRef ? `${c.companyName} (${c.companyRef})` : c.companyName,
+          keywords: `${c.companyName} ${c.companyRef ?? ""}`.toLowerCase(),
         })),
       );
     } catch (e) {
@@ -218,11 +236,12 @@ export function CertReleasePanel({ sessionId }: CertReleasePanelProps) {
     }
   };
 
-  const handleDownload = async (certId: string) => {
+  const handleDownload = async (cl: ReleaseChecklist) => {
     try {
-      // Mark as downloaded, then trigger PDF download
-      await api.post(`/certificates/${certId}/mark-downloaded`, {});
-      window.open(`/api/certificates/${certId}/generate-pdf`, "_blank");
+      await downloadFile(`/certificates/${cl.certificateId}/generate-pdf`, `certificate-${cl.certificateRef}.pdf`);
+      if (isContractor && cl.released) {
+        await api.post(`/certificates/${cl.certificateId}/mark-downloaded`, {}).catch(() => {});
+      }
       await load();
     } catch (e) {
       toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
@@ -236,6 +255,8 @@ export function CertReleasePanel({ sessionId }: CertReleasePanelProps) {
       </div>
     );
   }
+
+  const paymentByCompany = new Map(payments.map((p) => [p.companyId, p]));
 
   return (
     <div className="space-y-4">
@@ -319,108 +340,128 @@ export function CertReleasePanel({ sessionId }: CertReleasePanelProps) {
           )}
 
           {/* Payment list */}
-          {payments.length === 0 ? (
+          {companyRows.length === 0 ? (
             <p className="text-xs text-muted-foreground">{t("certRelease.payment.noRecord")}</p>
           ) : (
-            <div className="space-y-2">
-              {payments.map((p) => (
-                <div key={p.id} className="rounded-lg border p-3 space-y-2">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="text-sm font-medium flex items-center gap-2">
-                      {p.companyName} ({p.companyRef})
-                      {p.verificationStatus === "VERIFIED" && (
-                        <span className="inline-flex items-center rounded-full border border-green-600/20 bg-green-600/10 px-2 py-0.5 text-[10px] font-medium text-green-600">
-                          <CheckCircle2 className="h-3 w-3 me-0.5" />
-                          {locale === "ar" ? "تم التحقق" : "Verified"}
-                        </span>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("certRelease.field.company")}</TableHead>
+                  <TableHead>{t("certRelease.field.traineeCount")}</TableHead>
+                  <TableHead>{t("certRelease.field.paymentStatus")}</TableHead>
+                  <TableHead>{t("certRelease.field.verification")}</TableHead>
+                  <TableHead>{t("certRelease.field.printing")}</TableHead>
+                  <TableHead className="text-end">{t("action.actions")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {companyRows.map((c) => {
+                  const p = paymentByCompany.get(c.companyId);
+                  return (
+                    <Fragment key={c.companyId}>
+                      <TableRow>
+                        <TableCell>
+                          <div className="font-medium">{c.companyName}</div>
+                          <div className="text-xs text-muted-foreground font-mono">{c.companyRef ?? "—"}</div>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm font-semibold tabular-nums">{c.traineeCount}</span>
+                        </TableCell>
+                        <TableCell>
+                          {p
+                            ? <PaymentStatusBadge status={p.paymentStatus} t={t} />
+                            : (
+                              <span className="inline-flex items-center rounded-full border border-muted bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                {t("certRelease.payment.noRecordShort")}
+                              </span>
+                            )}
+                        </TableCell>
+                        <TableCell>
+                          {p
+                            ? <VerificationBadge status={p.verificationStatus ?? "PENDING"} t={t} />
+                            : <span className="text-xs text-muted-foreground">—</span>}
+                        </TableCell>
+                        <TableCell>
+                          {p
+                            ? <PrintingBadge released={p.printingReleased ?? false} t={t} />
+                            : <PrintingBadge released={false} t={t} />}
+                        </TableCell>
+                        <TableCell className="text-end">
+                          <div className="flex items-center justify-end gap-1">
+                            {p ? (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2 text-xs"
+                                  onClick={() => setViewPaymentId(viewPaymentId === p.id ? null : p.id)}
+                                >
+                                  {viewPaymentId === p.id ? t("action.cancel") : t("certRelease.viewRecord")}
+                                </Button>
+                                {canEditPayments && p.paymentStatus === "PAID" && !p.printingReleased && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 px-2 text-xs"
+                                    disabled={releasePrintingBusy === p.id}
+                                    onClick={() => void handleReleasePrinting(p.id)}
+                                  >
+                                    {releasePrintingBusy === p.id ? (
+                                      <Loader2 className="h-3 w-3 me-1 animate-spin" />
+                                    ) : (
+                                      <Unlock className="h-3 w-3 me-1" />
+                                    )}
+                                    {locale === "ar" ? "السماح بالطباعة" : "Release printing"}
+                                  </Button>
+                                )}
+                              </>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => {
+                                  setPaymentForm((f) => ({ ...f, companyId: c.companyId }));
+                                  setShowPaymentForm(true);
+                                }}
+                              >
+                                <Plus className="h-3 w-3 me-1" />
+                                {locale === "ar" ? "إنشاء سجل" : "Create record"}
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      {p && viewPaymentId === p.id && (
+                        <TableRow>
+                          <TableCell colSpan={6} className="bg-muted/30">
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 py-2">
+                              <Field label={t("certRelease.field.company")} value={`${p.companyName} (${p.companyRef})`} />
+                              <Field label={t("certRelease.field.session")} value={p.sessionRef ?? "—"} mono />
+                              <Field label={t("certRelease.field.traineeCount")} value={String(p.traineeCount ?? c.traineeCount ?? "—")} />
+                              <Field label={t("certRelease.field.invoiceRef")} value={p.invoiceRef ?? "—"} mono />
+                              <Field label={t("certRelease.payment.total")} value={`${p.totalAmount.toLocaleString()} ${p.currency}`} />
+                              <Field label={t("certRelease.payment.paid")} value={`${p.paidAmount.toLocaleString()} ${p.currency}`} />
+                              <Field label={t("certRelease.payment.remaining")} value={`${p.remainingBalance.toLocaleString()} ${p.currency}`} />
+                              <Field label={t("certRelease.field.paymentStatus")} node={<PaymentStatusBadge status={p.paymentStatus} t={t} />} />
+                              <Field label={t("certRelease.field.verificationStatus")} node={<VerificationBadge status={p.verificationStatus ?? "PENDING"} t={t} />} />
+                              <Field label={t("certRelease.field.verifiedBy")} value={p.verifiedByName ?? "—"} />
+                              <Field label={t("certRelease.field.verificationDate")} value={p.verifiedAt ? new Date(p.verifiedAt).toLocaleDateString() : "—"} />
+                              <Field label={t("certRelease.field.printingReleased")} node={<PrintingBadge released={p.printingReleased ?? false} t={t} />} />
+                              <Field label={t("certRelease.field.releasedBy")} value={p.printingReleasedByName ?? "—"} />
+                              <Field label={t("certRelease.field.releasedAt")} value={p.printingReleasedAt ? new Date(p.printingReleasedAt).toLocaleDateString() : "—"} />
+                              <Field label={t("certRelease.field.invoiceDate")} value={p.invoiceIssuedAt ? new Date(p.invoiceIssuedAt).toLocaleDateString() : "—"} />
+                              <Field label={t("certRelease.field.dueDate")} value={p.invoiceDueDate ? new Date(p.invoiceDueDate).toLocaleDateString() : "—"} />
+                              {p.notes && <Field label={t("certRelease.field.notes")} value={p.notes} wide />}
+                            </div>
+                          </TableCell>
+                        </TableRow>
                       )}
-                      {p.printingReleased && (
-                        <span className="inline-flex items-center rounded-full border border-blue-600/20 bg-blue-600/10 px-2 py-0.5 text-[10px] font-medium text-blue-600">
-                          <Unlock className="h-3 w-3 me-0.5" />
-                          {locale === "ar" ? "الطباعة متاحة" : "Printing released"}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <PaymentStatusBadge status={p.paymentStatus} t={t} />
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 px-2 text-xs"
-                        onClick={() => setViewPaymentId(viewPaymentId === p.id ? null : p.id)}
-                      >
-                        {viewPaymentId === p.id ? t("action.cancel") : (locale === "ar" ? "عرض السجل" : "View record")}
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-4 gap-2 text-xs">
-                    <div>
-                      <div className="text-muted-foreground">{t("certRelease.payment.total")}</div>
-                      <div className="font-medium">{p.totalAmount.toLocaleString()} {p.currency}</div>
-                    </div>
-                    <div>
-                      <div className="text-muted-foreground">{t("certRelease.payment.paid")}</div>
-                      <div className="font-medium text-green-600">{p.paidAmount.toLocaleString()} {p.currency}</div>
-                    </div>
-                    <div>
-                      <div className="text-muted-foreground">{t("certRelease.payment.remaining")}</div>
-                      <div className="font-medium text-red-600">{p.remainingBalance.toLocaleString()} {p.currency}</div>
-                    </div>
-                    <div>
-                      <div className="text-muted-foreground">{t("certRelease.payment.percentage")}</div>
-                      <div className="font-medium">{p.paymentPercentage}%</div>
-                    </div>
-                  </div>
-                  <Progress value={p.paymentPercentage} className="h-2" />
-
-                  {viewPaymentId === p.id && (
-                    <div className="rounded-md bg-muted/40 p-2 space-y-1 text-xs">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <div className="text-muted-foreground">{t("certRelease.field.invoiceRef")}</div>
-                          <div className="font-mono">{p.invoiceRef ?? "—"}</div>
-                        </div>
-                        <div>
-                          <div className="text-muted-foreground">{locale === "ar" ? "تاريخ الفاتورة" : "Invoice date"}</div>
-                          <div>{p.invoiceIssuedAt ? new Date(p.invoiceIssuedAt).toLocaleDateString() : "—"}</div>
-                        </div>
-                        <div>
-                          <div className="text-muted-foreground">{locale === "ar" ? "تاريخ الاستحقاق" : "Due date"}</div>
-                          <div>{p.invoiceDueDate ? new Date(p.invoiceDueDate).toLocaleDateString() : "—"}</div>
-                        </div>
-                        <div>
-                          <div className="text-muted-foreground">{locale === "ar" ? "تاريخ التحقق" : "Verified at"}</div>
-                          <div>{p.verifiedAt ? new Date(p.verifiedAt).toLocaleDateString() : "—"}</div>
-                        </div>
-                      </div>
-                      {p.notes && (
-                        <div>
-                          <div className="text-muted-foreground">{t("certRelease.field.notes")}</div>
-                          <div>{p.notes}</div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {canEditPayments && p.paymentStatus === "PAID" && !p.printingReleased && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs"
-                      disabled={releasePrintingBusy === p.id}
-                      onClick={() => void handleReleasePrinting(p.id)}
-                    >
-                      {releasePrintingBusy === p.id ? (
-                        <Loader2 className="h-3 w-3 me-1 animate-spin" />
-                      ) : (
-                        <Unlock className="h-3 w-3 me-1" />
-                      )}
-                      {locale === "ar" ? "السماح بالطباعة" : "Release printing"}
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
+                    </Fragment>
+                  );
+                })}
+              </TableBody>
+            </Table>
           )}
         </Card>
       )}
@@ -460,6 +501,23 @@ export function CertReleasePanel({ sessionId }: CertReleasePanelProps) {
                     <span className="text-xs text-muted-foreground font-mono">{cl.certificateRef}</span>
                   </div>
                   <div className="flex gap-1">
+                    {/* Preview button (all roles) */}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={() =>
+                        setPreviewCert({
+                          id: cl.certificateId,
+                          refNumber: cl.certificateRef,
+                          traineeName: cl.traineeName,
+                          releaseStatus: cl.releaseStatus,
+                        })
+                      }
+                    >
+                      <Eye className="h-3 w-3 me-1" />
+                      {t("certificates.preview")}
+                    </Button>
                     {/* Profession verify button (coordinator + course requires it) */}
                     {canRelease && cl.courseRequiresProfessionVerification && (
                       <Button
@@ -481,9 +539,9 @@ export function CertReleasePanel({ sessionId }: CertReleasePanelProps) {
                           : t("certRelease.button.verifyProfession")}
                       </Button>
                     )}
-                    {/* Download button (contractor + released) */}
-                    {isContractor && cl.released && (
-                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => void handleDownload(cl.certificateId)}>
+                    {/* Download button (contractor + released, coordinator anytime) */}
+                    {(canRelease || (isContractor && cl.released)) && (
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => void handleDownload(cl)}>
                         <Download className="h-3 w-3 me-1" />
                         {t("certRelease.button.download")}
                       </Button>
@@ -572,6 +630,12 @@ export function CertReleasePanel({ sessionId }: CertReleasePanelProps) {
           </Card>
         </div>
       )}
+
+      <CertificatePreviewDialog
+        cert={previewCert}
+        onOpenChange={(o) => { if (!o) setPreviewCert(null); }}
+        onDownload={previewCert ? () => void handleDownload(checklists.find((c) => c.certificateId === previewCert.id)!) : undefined}
+      />
     </div>
   );
 }
@@ -579,6 +643,56 @@ export function CertReleasePanel({ sessionId }: CertReleasePanelProps) {
 // ─── Sub-components ───────────────────────────────────────────────────────
 
 type TFunc = ReturnType<typeof useI18n>["t"];
+
+function Field({
+  label,
+  value,
+  node,
+  mono,
+  wide,
+}: {
+  label: string;
+  value?: React.ReactNode;
+  node?: React.ReactNode;
+  mono?: boolean;
+  wide?: boolean;
+}) {
+  return (
+    <div className={wide ? "col-span-full" : undefined}>
+      <div className="text-muted-foreground">{label}</div>
+      <div className={mono ? "font-mono font-medium" : "font-medium"}>{node ?? value ?? "—"}</div>
+    </div>
+  );
+}
+
+function VerificationBadge({ status, t }: { status: string; t: TFunc }) {
+  const map: Record<string, { cls: string; label: string }> = {
+    VERIFIED: { cls: "border-green-600/20 bg-green-600/10 text-green-600", label: t("certRelease.verification.VERIFIED") },
+    PARTIALLY_VERIFIED: { cls: "border-amber-600/20 bg-amber-600/10 text-amber-600", label: t("certRelease.verification.PARTIALLY_VERIFIED") },
+    PENDING: { cls: "border-muted bg-muted text-muted-foreground", label: t("certRelease.verification.PENDING") },
+  };
+  const s = map[status] ?? map.PENDING;
+  return (
+    <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium", s.cls)}>
+      {status === "VERIFIED" ? <CheckCircle2 className="h-3 w-3 me-1" /> : <Clock className="h-3 w-3 me-1" />}
+      {s.label}
+    </span>
+  );
+}
+
+function PrintingBadge({ released, t }: { released: boolean; t: TFunc }) {
+  return released ? (
+    <span className="inline-flex items-center rounded-full border border-blue-600/20 bg-blue-600/10 px-2 py-0.5 text-[10px] font-medium text-blue-600">
+      <Unlock className="h-3 w-3 me-1" />
+      {t("certRelease.printing.available")}
+    </span>
+  ) : (
+    <span className="inline-flex items-center rounded-full border border-muted bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+      <Lock className="h-3 w-3 me-1" />
+      {t("certRelease.printing.notAvailable")}
+    </span>
+  );
+}
 
 function PaymentStatusBadge({ status, t }: { status: "UNPAID" | "PARTIALLY_PAID" | "PAID"; t: TFunc }) {
   const variant = status === "PAID" ? "default" : status === "PARTIALLY_PAID" ? "secondary" : "destructive";
@@ -609,6 +723,3 @@ function ReleaseStatusBadge({ status, t }: { status: string; t: TFunc }) {
     </span>
   );
 }
-
-// Import Clock icon (used in ReleaseStatusBadge)
-import { Clock } from "lucide-react";

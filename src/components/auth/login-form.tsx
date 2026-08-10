@@ -102,7 +102,7 @@ export function LoginForm() {
         </div>
 
         {/* LEFT — Brand panel */}
-        <div dir={dir} className="hidden lg:flex lg:flex-1 flex-col justify-between p-12 xl:p-16 bg-primary text-primary-foreground relative overflow-hidden tf-industrial-bg rtl:order-last">
+        <div dir={dir} className="hidden lg:flex lg:flex-1 flex-col justify-between p-12 xl:p-16 bg-primary text-primary-foreground relative overflow-hidden tf-industrial-bg">
           {/* Top — Logo */}
           <div className="relative z-10 flex flex-col items-center text-center">
             <Image
@@ -159,7 +159,7 @@ export function LoginForm() {
         </div>
 
         {/* RIGHT — Login form */}
-        <div dir={dir} className="flex-1 flex items-center justify-center p-8 lg:p-12 bg-background rtl:order-first">
+        <div dir={dir} className="flex-1 flex items-center justify-center p-8 lg:p-12 bg-background">
           <div className="w-full max-w-sm space-y-6">
             {/* Mobile logo */}
             <div className="flex lg:hidden items-center gap-3 mb-8">

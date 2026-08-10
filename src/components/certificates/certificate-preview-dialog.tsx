@@ -22,6 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api/client";
 import { useI18n } from "@/lib/i18n/context";
+import { useAppStore } from "@/lib/store/app-store";
 import { buildVerifyUrl } from "@/lib/qr/urls";
 import { CertificateTemplate, type CertificateData } from "./certificate-template";
 
@@ -48,6 +49,7 @@ export interface CertificatePreviewRow {
   id: string;
   refNumber: string;
   traineeName: string;
+  releaseStatus?: string;
 }
 
 const PRINT_CSS = `
@@ -73,6 +75,7 @@ export function CertificatePreviewDialog({
   onDownload?: () => void;
 }) {
   const { t } = useI18n();
+  const { user } = useAppStore();
   const [data, setData] = useState<CertificateData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +84,14 @@ export function CertificatePreviewDialog({
   const [scale, setScale] = useState(1);
 
   const open = cert !== null;
+
+  // Printing is a browser-only action (no server round-trip), so the same gate
+  // that protects the PDF download is enforced here: contractors may only print
+  // certificates whose releaseStatus is RELEASED or DOWNLOADED. The release
+  // flow itself only reaches those states after the company payment + printing
+  // permission gates passed on the server.
+  const released = cert?.releaseStatus === "RELEASED" || cert?.releaseStatus === "DOWNLOADED";
+  const canPrint = user?.role === "CONTRACTOR" ? released : true;
 
   useEffect(() => {
     if (!cert) {
@@ -176,7 +187,7 @@ export function CertificatePreviewDialog({
           )}
 
           <DialogFooter className="gap-2">
-            <Button variant="outline" disabled={!data} onClick={() => window.print()}>
+            <Button variant="outline" disabled={!data || !canPrint} onClick={() => window.print()}>
               <Printer className="h-4 w-4 me-2" />
               {t("certificates.print")}
             </Button>

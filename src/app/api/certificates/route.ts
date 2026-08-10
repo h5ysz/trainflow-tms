@@ -86,6 +86,11 @@ export const GET = withModuleAction("certificates", "view", async ({ req, user }
       verificationToken: c.verificationToken,
       verificationCount: c.verificationCount,
       lastVerifiedAt: c.lastVerifiedAt,
+      releaseStatus: c.releaseStatus,
+      releasedAt: c.releasedAt,
+      releasedBy: c.releasedBy,
+      downloadedAt: c.downloadedAt,
+      professionVerified: c.professionVerified,
     })),
     buildListMeta(total, q)
   );

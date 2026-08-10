@@ -59,8 +59,13 @@ workspace-*.tar
 # Chat-pasted screenshots — scratch artifacts, never served or built.
 # Only the images: upload/ also holds the real .xlsx attendance/registration
 # forms the Excel importer was built against, and those stay tracked.
-# Anchored so it cannot catch public/uploads/, which IS committed.
+# Anchored so it cannot catch public/uploads/.
 /upload/*.png
+
+# User-uploaded content (trainee IDs, documents, payment receipts) — runtime
+# files that may hold personal data. Never tracked. Existing ones were removed
+# from tracking with `git rm --cached`; they stay on disk.
+/public/uploads/
 
 # database backups and sqlite sidecar files (db/custom.db itself is committed)
 *.bak-*

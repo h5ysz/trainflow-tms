@@ -18,6 +18,45 @@ import { withModuleAction, ok, fail, audit } from "@/lib/auth/api";
 import { autoUpdateReleaseStatus } from "@/lib/certificates/release-checklist";
 import { randomUUID } from "node:crypto";
 
+// Enrich payment rows with derived values + per-company trainee count + the
+// names of the users who verified / released printing.
+async function enrichPayments(payments: Array<{
+  sessionId: string;
+  companyId: string;
+  totalAmount: number;
+  paidAmount: number;
+  verifiedBy?: string | null;
+  printingReleasedBy?: string | null;
+  session?: { refNumber: string } | null;
+}>) {
+  const sessionIds = [...new Set(payments.map((p) => p.sessionId))];
+  const companies = await db.sessionCompany.findMany({ where: { sessionId: { in: sessionIds } } });
+  const userIds = [
+    ...new Set(payments.flatMap((p) => [p.verifiedBy, p.printingReleasedBy]).filter(Boolean)),
+  ] as string[];
+  const users = userIds.length
+    ? await db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, fullName: true } })
+    : [];
+  const userMap = new Map(users.map((u) => [u.id, u.fullName]));
+  const countMap = new Map(companies.map((c) => [`${c.sessionId}:${c.companyId}`, c.traineeCount]));
+
+  return payments.map((p) => {
+    const remaining = Math.max(0, p.totalAmount - p.paidAmount);
+    const pct = p.totalAmount > 0 ? Math.round((p.paidAmount / p.totalAmount) * 100) : (p.paidAmount > 0 ? 100 : 0);
+    const status = remaining <= 0.01 ? "PAID" : p.paidAmount > 0 ? "PARTIALLY_PAID" : "UNPAID";
+    return {
+      ...p,
+      sessionRef: p.session?.refNumber ?? null,
+      traineeCount: countMap.get(`${p.sessionId}:${p.companyId}`) ?? 0,
+      verifiedByName: p.verifiedBy ? (userMap.get(p.verifiedBy) ?? p.verifiedBy) : null,
+      printingReleasedByName: p.printingReleasedBy ? (userMap.get(p.printingReleasedBy) ?? p.printingReleasedBy) : null,
+      remainingBalance: remaining,
+      paymentPercentage: pct,
+      paymentStatus: status,
+    };
+  });
+}
+
 export const GET = withModuleAction("sessions", "view", async ({ req, params }) => {
   const sessionId = params.id as string;
   const url = new URL(req.url);
@@ -28,19 +67,14 @@ export const GET = withModuleAction("sessions", "view", async ({ req, params }) 
 
   const payments = await db.sessionPayment.findMany({
     where,
-    include: { company: { select: { id: true, name: true, refNumber: true } } },
+    include: {
+      company: { select: { id: true, name: true, refNumber: true } },
+      session: { select: { refNumber: true } },
+    },
     orderBy: { createdAt: "asc" },
   });
 
-  // Compute derived fields
-  const enriched = payments.map((p) => {
-    const remaining = Math.max(0, p.totalAmount - p.paidAmount);
-    const pct = p.totalAmount > 0 ? Math.round((p.paidAmount / p.totalAmount) * 100) : (p.paidAmount > 0 ? 100 : 0);
-    const status = remaining <= 0.01 ? "PAID" : p.paidAmount > 0 ? "PARTIALLY_PAID" : "UNPAID";
-    return { ...p, remainingBalance: remaining, paymentPercentage: pct, paymentStatus: status };
-  });
-
-  return ok(enriched);
+  return ok(await enrichPayments(payments));
 });
 
 export const POST = withModuleAction("sessions", "edit", async ({ req, params, user }) => {
@@ -72,6 +106,12 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
   ]);
   if (!session) return fail("Session not found", 404, "NOT_FOUND");
   if (!company) return fail("Company not found", 404, "NOT_FOUND");
+
+  // Payment records are a coordinator/admin responsibility. Same hard gate as
+  // the verify + release-printing routes so trainers cannot alter amounts.
+  if (user.role !== "COORDINATOR" && user.role !== "SUPER_ADMIN") {
+    return fail("Only coordinators can manage payment records", 403, "FORBIDDEN");
+  }
 
   // Upsert payment record
   const existing = await db.sessionPayment.findUnique({
@@ -156,10 +196,21 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
   const pct = payment.totalAmount > 0 ? Math.round((payment.paidAmount / payment.totalAmount) * 100) : 0;
   const status = remaining <= 0.01 ? "PAID" : payment.paidAmount > 0 ? "PARTIALLY_PAID" : "UNPAID";
 
+  const enriched = await enrichPayments([
+    {
+      sessionId: payment.sessionId,
+      companyId: payment.companyId,
+      totalAmount: payment.totalAmount,
+      paidAmount: payment.paidAmount,
+      verifiedBy: payment.verifiedBy,
+      printingReleasedBy: payment.printingReleasedBy,
+      session: { refNumber: session.refNumber },
+    },
+  ]);
+
   return ok({
     ...payment,
-    remainingBalance: remaining,
-    paymentPercentage: pct,
+    ...enriched[0],
     paymentStatus: status,
     certificatesChecked: certs.length,
   });

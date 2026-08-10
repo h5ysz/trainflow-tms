@@ -11,9 +11,12 @@ import { arabicFontPath, arabicFontBoldPath, certificateLogoPath } from "@/lib/p
 import { drawCertificateLayout } from "@/lib/pdf/certificate-layout";
 import { randomBytes } from "crypto";
 
-// Gated on `create`, not `view`: this handler writes `pdfGeneratedAt` and transitions
-// the certificate to ISSUED, so read-only roles must not be able to trigger it.
-export const POST = withModuleAction("certificates", "create", async ({ req, params, user }) => {
+// Gated on `view`: anyone who can see a certificate may render its PDF. Security is
+// enforced inside — contractors may only render their own company's certificates,
+// and only after the coordinator released them (releaseStatus RELEASED/DOWNLOADED).
+// The handler also writes `pdfGeneratedAt` and syncs the enrollment to ISSUED, but
+// that is metadata, not an authorization boundary.
+export const POST = withModuleAction("certificates", "view", async ({ req, params, user }) => {
   const id = params.id as string;
   const cert = await db.certificate.findUnique({
     where: { id },
