@@ -5,6 +5,8 @@ import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
 import { FormDialog, Field, FormGrid } from "@/components/common/form-dialog";
+import { EnrollTraineeDialog } from "@/components/common/enroll-trainee-dialog";
+import { CompanyTraineePicker } from "@/components/common/company-trainee-picker";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { EmptyState } from "@/components/common/empty-state";
 import { StatusBadge } from "@/components/common/status-badge";
@@ -17,7 +19,7 @@ import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   CalendarDays, ArrowLeft, ArrowRight, Users, Play, Pause, RotateCcw, CheckCircle2,
-  GraduationCap, QrCode, BadgeCheck, Plus, Trash2, AlertCircle, Loader2, Building2,
+  GraduationCap, QrCode, BadgeCheck, Plus, Trash2, AlertCircle, Loader2, Building2, Fingerprint,
   RefreshCw, ArrowRightLeft, ClipboardCheck, Zap,
 } from "lucide-react";
 import { api } from "@/lib/api/client";
@@ -28,7 +30,6 @@ import { QrImage } from "@/components/common/qr-image";
 import { buildCheckInUrl } from "@/lib/qr/urls";
 import { trainerName } from "@/lib/i18n/trainer-name";
 
-interface TraineeOption { id: string; fullName: string; refNumber: string; }
 interface TrainerOption { id: string; nameEn: string; nameAr?: string | null; }
 
 interface Session {
@@ -41,13 +42,23 @@ interface Session {
   endDate: string;
   trainerId?: string | null;
   qrToken?: string | null;
+  courseId?: string | null;
   courseTitle?: string | null;
 }
 
 interface Enrollment {
   id: string;
   traineeId: string;
-  trainee?: { id: string; fullName: string; refNumber: string } | null;
+  trainee?: {
+    id: string;
+    fullName: string;
+    refNumber: string;
+    nationalId?: string | null;
+    nationality?: string | null;
+    jobTitle?: string | null;
+    mobile?: string | null;
+    email?: string | null;
+  } | null;
   company?: { id: string; name: string } | null;
   attendanceStatus?: string | null;
   preTestStatus?: string | null;
@@ -102,9 +113,7 @@ export function SessionDetailRoute() {
 
   const [busy, setBusy] = useState<string | null>(null);
   const [enrollOpen, setEnrollOpen] = useState(false);
-  const [trainees, setTrainees] = useState<TraineeOption[]>([]);
   const [trainers, setTrainers] = useState<TrainerOption[]>([]);
-  const [selectedTrainee, setSelectedTrainee] = useState("");
   const [selectedTrainer, setSelectedTrainer] = useState("");
   const [removeTarget, setRemoveTarget] = useState<Enrollment | null>(null);
   const [certResults, setCertResults] = useState<CertResult[] | null>(null);
@@ -118,7 +127,7 @@ export function SessionDetailRoute() {
   const [moveTarget, setMoveTarget] = useState<Enrollment | null>(null);
   const [selectedEnrollmentIds, setSelectedEnrollmentIds] = useState<Set<string>>(new Set());
   const [targetSessionId, setTargetSessionId] = useState("");
-  const [availableSessions, setAvailableSessions] = useState<{ id: string; refNumber: string; title: string }[]>([]);
+  const [availableSessions, setAvailableSessions] = useState<{ id: string; refNumber: string; title: string; startDate: string; courseId: string; courseTitle: string | null }[]>([]);
 
   // ── Retest state ──
   const [retestTarget, setRetestTarget] = useState<Enrollment | null>(null);
@@ -166,15 +175,6 @@ export function SessionDetailRoute() {
   }, [load]);
 
   useEffect(() => {
-    if (!enrollOpen && !replaceTarget) return;
-    if (trainees.length === 0) {
-      api.getList<TraineeOption>("/trainees", { pageSize: 100 })
-        .then((r) => setTrainees(r.rows.map((x) => ({ id: x.id, fullName: x.fullName, refNumber: x.refNumber }))))
-        .catch(() => {});
-    }
-  }, [enrollOpen, replaceTarget, trainees.length]);
-
-  useEffect(() => {
     if (trainers.length === 0) {
       api.getList<TrainerOption>("/trainers", { pageSize: 100 })
         .then((r) => setTrainers(r.rows.map((x) => ({ id: x.id, nameEn: x.nameEn, nameAr: x.nameAr }))))
@@ -186,11 +186,11 @@ export function SessionDetailRoute() {
   useEffect(() => {
     if (!moveTarget && selectedEnrollmentIds.size === 0 && !retestTarget) return;
     if (availableSessions.length > 0) return;
-    api.getList<{ id: string; refNumber: string; title: string }>("/sessions", { pageSize: 100 })
+    api.getList<{ id: string; refNumber: string; title: string; startDate: string; courseId: string; courseTitle: string | null }>("/sessions", { pageSize: 100 })
       .then((r) => setAvailableSessions(
         r.rows
           .filter((s) => s.id !== sessionId)
-          .map((s) => ({ id: s.id, refNumber: s.refNumber, title: s.title }))
+          .map((s) => ({ id: s.id, refNumber: s.refNumber, title: s.title, startDate: s.startDate, courseId: s.courseId, courseTitle: s.courseTitle }))
       ))
       .catch(() => {});
   }, [moveTarget, selectedEnrollmentIds, retestTarget, availableSessions.length, sessionId]);
@@ -233,15 +233,6 @@ export function SessionDetailRoute() {
         title: t("misc.success"),
         description: extra.length ? extra.join(" · ") : res.lifecycleStatus,
       });
-      await load();
-    });
-
-  const enroll = () =>
-    run("enroll", async () => {
-      await api.post(`/sessions/${sessionId}/enrollments`, { traineeId: selectedTrainee });
-      toast({ title: t("misc.success"), description: t("misc.createSuccess") });
-      setEnrollOpen(false);
-      setSelectedTrainee("");
       await load();
     });
 
@@ -404,6 +395,17 @@ export function SessionDetailRoute() {
         <div>
           <div className="text-sm font-medium">{r.trainee?.fullName ?? "—"}</div>
           <div className="text-[10px] font-mono text-muted-foreground">{r.trainee?.refNumber}</div>
+          {r.trainee?.nationalId && (
+            <div className="text-[10px] font-mono text-muted-foreground flex items-center gap-1">
+              <Fingerprint className="h-3 w-3 shrink-0" />
+              {r.trainee.nationalId}
+            </div>
+          )}
+          {r.trainee?.nationality && (
+            <div className="text-[10px] text-muted-foreground">
+              {t("trainees.nationality")}: {r.trainee.nationality}
+            </div>
+          )}
         </div>
       ),
     },
@@ -567,7 +569,8 @@ export function SessionDetailRoute() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                {(Object.keys(EVENT_ICONS) as LifecycleEvent[]).map((ev) => {
+                {(Object.keys(EVENT_ICONS) as LifecycleEvent[])
+                  .map((ev) => {
                   const Icon = EVENT_ICONS[ev];
                   const enabled = canEdit && allowed.includes(ev);
                   return (
@@ -671,26 +674,13 @@ export function SessionDetailRoute() {
         </Tabs>
       )}
 
-      <FormDialog
+      <EnrollTraineeDialog
         open={enrollOpen}
         onOpenChange={setEnrollOpen}
-        title={t("session.enroll")}
-        icon={Users}
-        size="sm"
-        isSubmitting={busy === "enroll"}
-        onSubmit={() => selectedTrainee && void enroll()}
-      >
-        <Field label={t("evaluation.trainee")} required>
-          <Select value={selectedTrainee} onValueChange={setSelectedTrainee}>
-            <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
-            <SelectContent>
-              {trainees.map((x) => (
-                <SelectItem key={x.id} value={x.id}>{x.fullName} ({x.refNumber})</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      </FormDialog>
+        sessionId={sessionId}
+        onEnrolled={() => void load()}
+        enrolledTraineeIds={enrollments.map((e) => e.traineeId)}
+      />
 
       <ConfirmDialog
         open={removeTarget !== null}
@@ -717,20 +707,12 @@ export function SessionDetailRoute() {
             <div className="font-medium text-foreground mb-1">{replaceTarget?.trainee?.fullName ?? "—"}</div>
             <div>{t("session.replaceHint") || "Select a new trainee to replace the above. The old enrollment will be cancelled."}</div>
           </div>
-          <Field label={t("session.newTrainee") || "New Trainee"} required>
-            <Select value={replaceTraineeId} onValueChange={setReplaceTraineeId}>
-              <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
-              <SelectContent>
-                {trainees
-                  .filter((tr) => tr.id !== replaceTarget?.traineeId)
-                  .map((tr) => (
-                    <SelectItem key={tr.id} value={tr.id}>
-                      {tr.fullName} {tr.refNumber ? `(${tr.refNumber})` : ""}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-          </Field>
+          <CompanyTraineePicker
+            key={replaceTarget?.id ?? "none"}
+            value={replaceTraineeId}
+            onChange={setReplaceTraineeId}
+            excludeTraineeId={replaceTarget?.traineeId}
+          />
           <Field label={t("session.reason") || "Reason (optional)"}>
             <Input
               value={replaceReason}
@@ -758,17 +740,84 @@ export function SessionDetailRoute() {
       >
         <div className="space-y-4">
           <div className="rounded-md border bg-amber-50 dark:bg-amber-950/20 p-3 text-xs text-amber-700 dark:text-amber-400">
-            {t("session.moveHint") || "Trainees can only be moved to sessions of the same course. Capacity will be checked."}
+            <div>{t("session.moveHint") || "Trainees can only be moved to sessions of the same course. Capacity will be checked."}</div>
+            {session?.courseTitle && (
+              <div className="mt-1 flex items-center gap-1.5 font-medium">
+                <GraduationCap className="h-3.5 w-3.5" />
+                {t("sessions.course") || "Course"}: {session.courseTitle}
+              </div>
+            )}
           </div>
+
+          {/* Companies of the trainee(s) being moved */}
+          {(() => {
+            const moving = moveTarget
+              ? [moveTarget]
+              : enrollments.filter((e) => selectedEnrollmentIds.has(e.id));
+            return (
+              <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+                <div className="text-[11px] font-medium text-muted-foreground">
+                  {t("trainees.company") || "Company"}
+                </div>
+                {moving.map((e) => (
+                  <div key={e.id} className="rounded-md border bg-background/60 p-2.5 space-y-1.5">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="font-medium truncate">{e.trainee?.fullName ?? "—"}</span>
+                      <span className="flex items-center gap-1 text-muted-foreground shrink-0">
+                        <Building2 className="h-3 w-3" />
+                        {e.company?.name ?? "—"}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 text-[11px] text-muted-foreground">
+                      {e.trainee?.nationalId && (
+                        <span className="truncate">
+                          {t("trainees.nationalId")}: <span className="font-mono">{e.trainee.nationalId}</span>
+                        </span>
+                      )}
+                      {e.trainee?.nationality && (
+                        <span className="truncate">{t("trainees.nationality")}: {e.trainee.nationality}</span>
+                      )}
+                      {e.trainee?.jobTitle && (
+                        <span className="truncate">{t("trainees.jobTitle")}: {e.trainee.jobTitle}</span>
+                      )}
+                      {e.trainee?.mobile && (
+                        <span className="truncate" dir="ltr">{t("trainees.mobile")}: {e.trainee.mobile}</span>
+                      )}
+                      {e.trainee?.email && (
+                        <span className="truncate" dir="ltr">{t("trainees.email")}: {e.trainee.email}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
           <Field label={t("session.targetSession") || "Target Session"} required>
             <Select value={targetSessionId} onValueChange={setTargetSessionId}>
               <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
               <SelectContent>
-                {availableSessions.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.refNumber} — {s.title}
-                  </SelectItem>
-                ))}
+                {(() => {
+                  const sameCourse = (s: { courseId: string }) =>
+                    !session?.courseId || s.courseId === session.courseId;
+                  const laterOrSameDate = (s: { startDate: string }) =>
+                    !session?.startDate || new Date(s.startDate) >= new Date(session.startDate);
+                  const opts = availableSessions.filter((s) => sameCourse(s) && laterOrSameDate(s));
+                  return (
+                    <>
+                      {opts.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.refNumber} — {s.title} · {s.courseTitle ?? ""} · {new Date(s.startDate).toLocaleDateString()}
+                        </SelectItem>
+                      ))}
+                      {opts.length === 0 && (
+                        <div className="px-2 py-4 text-xs text-muted-foreground">
+                          {t("session.moveNoFutureSessions") || "No later sessions available for this course."}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </SelectContent>
             </Select>
           </Field>

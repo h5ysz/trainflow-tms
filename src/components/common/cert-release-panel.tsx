@@ -23,9 +23,10 @@ import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/lib/store/app-store";
 import { canPerformAction } from "@/lib/auth/permissions";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import {
   CheckCircle2, XCircle, Lock, Unlock, Download, Loader2, AlertTriangle,
-  FileText, ShieldCheck, RefreshCw,
+  FileText, ShieldCheck, RefreshCw, Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -73,6 +74,12 @@ interface SessionPayment {
   paymentStatus: "UNPAID" | "PARTIALLY_PAID" | "PAID";
   currency: string;
   invoiceRef?: string | null;
+  invoiceIssuedAt?: string | null;
+  invoiceDueDate?: string | null;
+  verificationStatus?: string | null;
+  verifiedAt?: string | null;
+  printingReleased?: boolean | null;
+  notes?: string | null;
 }
 
 interface CertReleasePanelProps {
@@ -85,10 +92,13 @@ export function CertReleasePanel({ sessionId }: CertReleasePanelProps) {
   const { user } = useAppStore();
   const [loading, setLoading] = useState(true);
   const [releasing, setReleasing] = useState(false);
+  const [releasePrintingBusy, setReleasePrintingBusy] = useState<string | null>(null);
   const [checklists, setChecklists] = useState<ReleaseChecklist[]>([]);
   const [payments, setPayments] = useState<SessionPayment[]>([]);
+  const [companies, setCompanies] = useState<SearchableSelectOption[]>([]);
   // Payment form
   const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [viewPaymentId, setViewPaymentId] = useState<string | null>(null);
   const [paymentForm, setPaymentForm] = useState({
     companyId: "",
     totalAmount: "",
@@ -108,12 +118,24 @@ export function CertReleasePanel({ sessionId }: CertReleasePanelProps) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [checks, pays] = await Promise.all([
+      const [checks, pays, comps] = await Promise.all([
         api.get<ReleaseChecklist[]>(`/sessions/${sessionId}/release-checklist`).catch(() => []),
         canEditPayments ? api.get<SessionPayment[]>(`/sessions/${sessionId}/payments`).catch(() => []) : Promise.resolve([]),
+        api
+          .get<{ companies: Array<{ companyId: string; companyName: string | null; companyRef: string | null }> }>(
+            `/sessions/${sessionId}/enrollments`,
+          )
+          .catch(() => ({ companies: [] })),
       ]);
       setChecklists(checks);
       setPayments(pays);
+      setCompanies(
+        (comps.companies ?? []).map((c) => ({
+          value: c.companyId,
+          label: c.companyRef ? `${c.companyName} (${c.companyRef})` : (c.companyName ?? c.companyId),
+          keywords: `${c.companyName ?? ""} ${c.companyRef ?? ""}`.toLowerCase(),
+        })),
+      );
     } catch (e) {
       console.error("Failed to load release data:", e);
     } finally {
@@ -183,6 +205,19 @@ export function CertReleasePanel({ sessionId }: CertReleasePanelProps) {
     }
   };
 
+  const handleReleasePrinting = async (paymentId: string) => {
+    setReleasePrintingBusy(paymentId);
+    try {
+      await api.post(`/session-payments/${paymentId}/release-printing`, {});
+      toast({ title: t("misc.success"), description: t("certRelease.success.printingReleased") });
+      await load();
+    } catch (e) {
+      toast({ title: t("misc.error"), description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setReleasePrintingBusy(null);
+    }
+  };
+
   const handleDownload = async (certId: string) => {
     try {
       // Mark as downloaded, then trigger PDF download
@@ -229,11 +264,14 @@ export function CertReleasePanel({ sessionId }: CertReleasePanelProps) {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <Label className="text-xs">{locale === "ar" ? "الشركة" : "Company"}</Label>
-                  <Input
+                  <SearchableSelect
                     value={paymentForm.companyId}
-                    onChange={(e) => setPaymentForm({ ...paymentForm, companyId: e.target.value })}
-                    placeholder="Company ID"
-                    className="h-8 text-xs"
+                    onChange={(v) => setPaymentForm({ ...paymentForm, companyId: v })}
+                    options={companies}
+                    placeholder={locale === "ar" ? "اختر الشركة…" : "Select company…"}
+                    searchPlaceholder={locale === "ar" ? "بحث عن شركة…" : "Search company…"}
+                    emptyText={locale === "ar" ? "لا توجد شركات" : "No companies"}
+                    className="h-8"
                   />
                 </div>
                 <div>
@@ -287,9 +325,33 @@ export function CertReleasePanel({ sessionId }: CertReleasePanelProps) {
             <div className="space-y-2">
               {payments.map((p) => (
                 <div key={p.id} className="rounded-lg border p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-medium">{p.companyName} ({p.companyRef})</div>
-                    <PaymentStatusBadge status={p.paymentStatus} t={t} />
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="text-sm font-medium flex items-center gap-2">
+                      {p.companyName} ({p.companyRef})
+                      {p.verificationStatus === "VERIFIED" && (
+                        <span className="inline-flex items-center rounded-full border border-green-600/20 bg-green-600/10 px-2 py-0.5 text-[10px] font-medium text-green-600">
+                          <CheckCircle2 className="h-3 w-3 me-0.5" />
+                          {locale === "ar" ? "تم التحقق" : "Verified"}
+                        </span>
+                      )}
+                      {p.printingReleased && (
+                        <span className="inline-flex items-center rounded-full border border-blue-600/20 bg-blue-600/10 px-2 py-0.5 text-[10px] font-medium text-blue-600">
+                          <Unlock className="h-3 w-3 me-0.5" />
+                          {locale === "ar" ? "الطباعة متاحة" : "Printing released"}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <PaymentStatusBadge status={p.paymentStatus} t={t} />
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => setViewPaymentId(viewPaymentId === p.id ? null : p.id)}
+                      >
+                        {viewPaymentId === p.id ? t("action.cancel") : (locale === "ar" ? "عرض السجل" : "View record")}
+                      </Button>
+                    </div>
                   </div>
                   <div className="grid grid-cols-4 gap-2 text-xs">
                     <div>
@@ -310,6 +372,52 @@ export function CertReleasePanel({ sessionId }: CertReleasePanelProps) {
                     </div>
                   </div>
                   <Progress value={p.paymentPercentage} className="h-2" />
+
+                  {viewPaymentId === p.id && (
+                    <div className="rounded-md bg-muted/40 p-2 space-y-1 text-xs">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <div className="text-muted-foreground">{t("certRelease.field.invoiceRef")}</div>
+                          <div className="font-mono">{p.invoiceRef ?? "—"}</div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground">{locale === "ar" ? "تاريخ الفاتورة" : "Invoice date"}</div>
+                          <div>{p.invoiceIssuedAt ? new Date(p.invoiceIssuedAt).toLocaleDateString() : "—"}</div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground">{locale === "ar" ? "تاريخ الاستحقاق" : "Due date"}</div>
+                          <div>{p.invoiceDueDate ? new Date(p.invoiceDueDate).toLocaleDateString() : "—"}</div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground">{locale === "ar" ? "تاريخ التحقق" : "Verified at"}</div>
+                          <div>{p.verifiedAt ? new Date(p.verifiedAt).toLocaleDateString() : "—"}</div>
+                        </div>
+                      </div>
+                      {p.notes && (
+                        <div>
+                          <div className="text-muted-foreground">{t("certRelease.field.notes")}</div>
+                          <div>{p.notes}</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {canEditPayments && p.paymentStatus === "PAID" && !p.printingReleased && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      disabled={releasePrintingBusy === p.id}
+                      onClick={() => void handleReleasePrinting(p.id)}
+                    >
+                      {releasePrintingBusy === p.id ? (
+                        <Loader2 className="h-3 w-3 me-1 animate-spin" />
+                      ) : (
+                        <Unlock className="h-3 w-3 me-1" />
+                      )}
+                      {locale === "ar" ? "السماح بالطباعة" : "Release printing"}
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>

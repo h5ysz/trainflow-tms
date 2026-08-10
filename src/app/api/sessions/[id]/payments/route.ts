@@ -81,6 +81,12 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
   const wasPaid = existing ? existing.paidAmount : 0;
   const isNowPaid = (paidAmount ?? 0) >= totalAmount - 0.01;
 
+  // Derive the verification status from the amounts exactly like the receipt
+  // verify route does: a record created as fully paid is immediately VERIFIED
+  // (verifiedBy/verifiedAt stamped), which lets the coordinator proceed to the
+  // release-printing gate without an intermediate receipt-verification round.
+  const nextVerificationStatus = isNowPaid ? "VERIFIED" : (paidAmount ?? 0) > 0 ? "PARTIALLY_VERIFIED" : "PENDING";
+
   const payment = await db.sessionPayment.upsert({
     where: { sessionId_companyId: { sessionId, companyId } },
     update: {
@@ -91,6 +97,10 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
       invoiceIssuedAt: invoiceIssuedAt ? new Date(invoiceIssuedAt) : existing?.invoiceIssuedAt ?? null,
       invoiceDueDate: invoiceDueDate ? new Date(invoiceDueDate) : existing?.invoiceDueDate ?? null,
       notes: notes ?? existing?.notes ?? null,
+      verificationStatus: nextVerificationStatus,
+      ...(isNowPaid
+        ? { verifiedBy: user.id, verifiedAt: new Date() }
+        : { verifiedBy: null, verifiedAt: null }),
       updatedBy: user.id,
     },
     create: {
@@ -104,6 +114,10 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
       invoiceIssuedAt: invoiceIssuedAt ? new Date(invoiceIssuedAt) : null,
       invoiceDueDate: invoiceDueDate ? new Date(invoiceDueDate) : null,
       notes: notes ?? null,
+      verificationStatus: nextVerificationStatus,
+      ...(isNowPaid
+        ? { verifiedBy: user.id, verifiedAt: new Date() }
+        : { verifiedBy: null, verifiedAt: null }),
       createdBy: user.id,
       updatedBy: user.id,
       updatedAt: new Date(),
