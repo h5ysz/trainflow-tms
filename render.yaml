@@ -25,7 +25,7 @@ services:
     # `prisma db push` runs before the seed so a schema change that landed in git after
     # db/custom.db was last committed still gets applied. Without it, a new table (e.g.
     # ReportExecutionFile) would be missing at runtime and every report run would fail.
-    buildCommand: npm install --include=dev --legacy-peer-deps && npx prisma generate && npx prisma db push --skip-generate && npm run seed:deploy && npm run build
+    buildCommand: npm install --include=dev --legacy-peer-deps && npx prisma generate && npx prisma db push --skip-generate && npm run seed:deploy && npx tsx scripts/migrate-trainer-rbac.ts && npm run build
     startCommand: node .next/standalone/server.js
 
     # The app has no /login route; the root page is the entry point.
