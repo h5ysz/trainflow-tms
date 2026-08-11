@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { validateTrainerAssignment, validationErrorToResponse, findTrainerConflicts } from "@/lib/api/trainer-assignment";
+import { notifySessionScheduleUpdate } from "@/lib/notifications/session-update";
 
 export const POST = withModuleAction("sessions", "edit", async ({ req, params, user }) => {
   const id = params.id as string;
@@ -57,6 +58,24 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
       endDate: session.endDate,
     },
   });
+
+  // ── A trainer change on an approved/scheduled session notifies the
+  //    contractors (in-app + Email + WhatsApp + SMS). A notification failure
+  //    never fails the assignment itself. ──
+  if (session.status === "SCHEDULED" && previousTrainerId !== trainerId) {
+    try {
+      await notifySessionScheduleUpdate(id, {
+        startDate: session.startDate,
+        endDate: session.endDate,
+        location: session.location,
+        venue: session.venue,
+        city: session.city,
+        trainerId: previousTrainerId,
+      });
+    } catch (e) {
+      console.error(`SESSION_SCHEDULE_UPDATED failed for session ${updated.refNumber}:`, (e as Error).message);
+    }
+  }
 
   return ok({
     sessionId: updated.id,

@@ -5,6 +5,7 @@ import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
 import { validateTrainerAssignment, validationErrorToResponse } from "@/lib/api/trainer-assignment";
+import { scopeSessionList } from "@/lib/api/trainer-scope";
 import { randomBytes, randomUUID } from "crypto";
 
 const ALLOWED_SORT_FIELDS = ["refNumber", "title", "startDate", "endDate", "createdAt", "status", "location", "city", "shift"];
@@ -41,7 +42,10 @@ export const GET = withModuleAction("sessions", "view", async ({ req, user }) =>
     if (q.filters.to) (where.startDate as any).lte = new Date(q.filters.to);
   }
 
-  // Coordinator and Trainer have equivalent operational permissions — no trainer scoping
+  // Trainers only ever see the sessions assigned to them. The scope is derived
+  // from the authenticated user (user.trainerId), never from a client-supplied
+  // filter, so crafting ?trainerId= cannot widen the result set.
+  scopeSessionList(where, user);
 
   const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS);
 

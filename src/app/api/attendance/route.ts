@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
+import { trainerSessionFilter, trainerDeniedSession } from "@/lib/api/trainer-scope";
 
 const ALLOWED_SORT_FIELDS = ["traineeName", "createdAt", "updatedAt", "status", "checkInAt"];
 
@@ -20,7 +21,9 @@ export const GET = withModuleAction("attendance", "view", async ({ req, user }) 
   if (q.filters.status) where.status = q.filters.status;
   if (q.filters.sessionId) where.sessionId = q.filters.sessionId;
 
-  // Coordinator and Trainer have equivalent operational permissions — no trainer scoping
+  // Trainers only see attendance for their own sessions.
+  const sessionFilter = trainerSessionFilter(user);
+  if (sessionFilter) Object.assign(where, sessionFilter);
 
   const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS);
 
@@ -101,6 +104,11 @@ export const POST = withModuleAction("attendance", "create", async ({ req, user 
   } else {
     session = await db.trainingSession.findFirst({ where: { id: sessionId, deletedAt: null } });
     if (!session) return fail("Session not found", 404);
+  }
+
+  // A trainer may only check trainees into their own sessions.
+  if (trainerDeniedSession(user, session.trainerId)) {
+    return fail("Forbidden — you can only mark attendance for your own sessions", 403);
   }
 
   if (!traineeName) return fail("traineeName is required", 422, "VALIDATION_ERROR");

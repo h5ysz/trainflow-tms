@@ -1,6 +1,7 @@
 // /api/exam-attempts/[id]/submit — submit answers, grade the exam, record results
 import { db } from "@/lib/db";
 import { withExamAction, ok, notFound, fail, audit, type TestType } from "@/lib/auth/api";
+import { trainerDeniedSession } from "@/lib/api/trainer-scope";
 import { parseBody } from "@/lib/api/validate";
 import { examSubmitSchema } from "@/lib/api/schemas";
 import { gradeExamAttempt } from "@/lib/api/exam-engine";
@@ -17,6 +18,17 @@ export const POST = withExamAction("create", async ({ req, params, user, allowed
   const id = params.id as string;
   const attempt = await db.examAttempt.findUnique({ where: { id } });
   if (!attempt || attempt.deletedAt) return notFound("Exam attempt not found");
+
+  // A trainer may only run exams for their own sessions.
+  if (user.role === "TRAINER") {
+    const session = await db.trainingSession.findUnique({
+      where: { id: attempt.sessionId },
+      select: { trainerId: true },
+    });
+    if (trainerDeniedSession(user, session?.trainerId)) {
+      return fail("Forbidden — you can only run exams for your own sessions", 403);
+    }
+  }
 
   // The guard admits anyone holding `create` on pre-test OR final-test; this narrows
   // it to the module the attempt actually belongs to.

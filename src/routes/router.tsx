@@ -111,6 +111,25 @@ export function RouteRouter() {
     );
   }
 
+  // Data-driven guard for trainers: even though Workshops/Evaluation are granted
+  // in the matrix (so an authorized trainer can open them), a trainer with no
+  // assigned workshop / no sessions must not reach the route by direct URL.
+  if (user.role === "TRAINER" && user.trainerNav) {
+    if (
+      (currentRoute === "workshops" && !user.trainerNav.workshops) ||
+      (currentRoute === "evaluation" && !user.trainerNav.evaluation)
+    ) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-muted-foreground mb-3">
+            <Lock className="h-6 w-6" />
+          </div>
+          <p className="text-sm text-muted-foreground max-w-sm">{t("misc.noAccess")}</p>
+        </div>
+      );
+    }
+  }
+
   const Component = ROUTES[currentRoute];
   if (!Component) {
     return (

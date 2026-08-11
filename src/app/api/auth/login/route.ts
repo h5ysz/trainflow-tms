@@ -7,6 +7,7 @@ import { checkRateLimit } from "@/lib/api/rate-limit";
 import { parseBody } from "@/lib/api/validate";
 import { loginSchema } from "@/lib/api/schemas";
 import { setSessionCookie, ok, fail, resolveEffectivePermissions } from "@/lib/auth/api";
+import { computeTrainerNav } from "@/lib/api/trainer-nav";
 import { recordAudit } from "@/lib/auth/audit";
 import { randomUUID } from "node:crypto";
 
@@ -161,6 +162,12 @@ export async function POST(req: NextRequest) {
 
     await setSessionCookie(token);
 
+    // Data-driven nav flags for trainers (workshops only when assigned, evaluation
+    // only when they have sessions). Null for non-trainers.
+    const trainerNav = dbUser.role === "TRAINER" && dbUser.trainerId
+      ? await computeTrainerNav(dbUser.trainerId)
+      : null;
+
     // Audit log: LOGIN
     await recordAudit({
       userId: dbUser.id,
@@ -182,6 +189,7 @@ export async function POST(req: NextRequest) {
         companyId: dbUser.companyId,
         companyName: dbUser.company?.name ?? null,
         trainerId: dbUser.trainerId,
+        trainerNav,
         avatarUrl: dbUser.avatarUrl ?? null,
         forcePasswordChange: dbUser.forcePasswordChange,
         accountStatus: dbUser.accountStatus,

@@ -66,10 +66,22 @@ export function Sidebar({
   if (!user) return null;
   const items = getNavForRole(user.permissions);
 
+  // Data-driven visibility: a trainer only sees Workshops when they actually have
+  // one assigned, and Evaluation when they have sessions to evaluate. Flags come
+  // from the server (/api/auth/me + /api/auth/login), never derived client-side.
+  const visibleItems =
+    user.role === "TRAINER" && user.trainerNav
+      ? items.filter((item) => {
+          if (item.key === "workshops") return user.trainerNav!.workshops;
+          if (item.key === "evaluation") return user.trainerNav!.evaluation;
+          return true;
+        })
+      : items;
+
   const grouped = GROUP_ORDER.map((group) => ({
     group,
     label: t(GROUP_LABELS[group] as never),
-    items: items.filter((i) => i.group === group),
+    items: visibleItems.filter((i) => i.group === group),
   })).filter((g) => g.items.length > 0);
 
   const userInitials = user.fullName.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase();

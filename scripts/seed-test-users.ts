@@ -56,21 +56,22 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "bank-accounts.*", "financial-reports.view",
     "ai-dashboard.view",
   ],
+  // TRAINER: delivery only. No administrative modules. The server scopes every
+  // session/workshop/trainee/evaluation query to this trainer's own records
+  // (trainerId from the authenticated user — never from the client).
+  // `sessions.edit` + exam `create` are the delivery actions (start/complete a
+  // session, run pre/final tests) and are additionally restricted server-side to
+  // the trainer's own sessions.
   TRAINER: [
-    "companies.view", "company-contacts.view", "trainers.view", "trainer-qualifications.view",
-    "trainees.view", "courses.view", "requests.view",
-    "sessions.view", "scheduling.view", "attendance.view",
-    "qr-code.view", "pre-test.view", "final-test.view", "evaluation.view",
-    "certificates.view", "reports.view",
-    "notifications.view", "audit-log.view",
-    "user-approvals.view", "user-approvals.create", "user-approvals.edit",
-    "worker-passports.view", "compliance-matrix.view",
-    "executive-dashboard.view", "renewal-dashboard.view",
-    // Trainers get operational perms too (same as coordinator for delivery)
-    "companies.*", "company-contacts.*", "trainers.*", "trainer-qualifications.*",
-    "trainees.*", "courses.*", "requests.*", "sessions.*", "scheduling.*",
-    "attendance.*", "qr-code.*", "pre-test.*", "final-test.*", "evaluation.*",
-    "certificates.*",
+    "dashboard.view",
+    "sessions.view", "sessions.edit",
+    "attendance.view", "attendance.create", "attendance.edit",
+    "qr-code.view",
+    "pre-test.view", "pre-test.create",
+    "final-test.view", "final-test.create",
+    "evaluation.view",
+    "workshops.view",
+    "notifications.view",
   ],
   AUDITOR: [
     "companies.view", "company-contacts.view", "trainers.view", "trainer-qualifications.view",

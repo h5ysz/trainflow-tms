@@ -5,7 +5,11 @@
  * Keys whose values are encrypted at rest and never sent to the browser.
  * `GET /api/settings` reports `{ value: "", isSet: boolean }` for these instead.
  */
-export const SECRET_SETTING_KEYS = new Set<string>(["email.smtpPassword"]);
+export const SECRET_SETTING_KEYS = new Set<string>([
+  "email.smtpPassword",
+  "notif.whatsapp.apiToken",
+  "notif.sms.apiToken",
+]);
 
 export function isSecretSetting(key: string): boolean {
   return SECRET_SETTING_KEYS.has(key);

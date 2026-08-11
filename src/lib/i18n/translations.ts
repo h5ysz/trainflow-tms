@@ -1065,6 +1065,8 @@ export const dict = {
     "notifications.empty.subtitle": "You're all caught up — check back later for updates",
     "notifications.filter.all": "All",
     "notifications.filter.unread": "Unread",
+    "notifications.filter.sessionReminders": "Session Reminders",
+    "notifications.type.sessionReminder24h": "Session Reminder – 24 Hours",
 
     // Audit Log
     "audit.title": "Audit Log",
@@ -2489,6 +2491,8 @@ export const dict = {
     "notifications.empty.subtitle": "لا جديد لديك — تحقق لاحقاً للحصول على التحديثات",
     "notifications.filter.all": "الكل",
     "notifications.filter.unread": "غير مقروء",
+    "notifications.filter.sessionReminders": "تذكيرات الجلسات",
+    "notifications.type.sessionReminder24h": "تذكير بجلسة تدريبية — 24 ساعة",
 
     // Audit Log
     "audit.title": "سجل التدقيق",

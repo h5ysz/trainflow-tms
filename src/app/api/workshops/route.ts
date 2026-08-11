@@ -4,10 +4,11 @@ import { withModuleAction, created, fail, audit } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
+import { trainerWorkshopFilter } from "@/lib/api/trainer-scope";
 
 const ALLOWED_SORT_FIELDS = ["code", "title", "createdAt", "updatedAt", "status", "category", "durationDays"];
 
-export const GET = withModuleAction("workshops", "view", async ({ req }) => {
+export const GET = withModuleAction("workshops", "view", async ({ req, user }) => {
   const q = parseListQuery(req);
   const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
 
@@ -21,6 +22,11 @@ export const GET = withModuleAction("workshops", "view", async ({ req }) => {
   }
   if (q.filters.status) where.status = q.filters.status;
   if (q.filters.category) where.category = q.filters.category;
+
+  // Trainers only see the workshops they are authorized to deliver. Derived from
+  // the authenticated user's trainerId, so a crafted filter cannot widen it.
+  const trainerFilter = trainerWorkshopFilter(user);
+  if (trainerFilter) Object.assign(where, trainerFilter);
 
   const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS);
 

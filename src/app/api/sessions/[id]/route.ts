@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { recordStatusChange } from "@/lib/auth/audit";
 import { validateTrainerAssignment, validationErrorToResponse } from "@/lib/api/trainer-assignment";
+import { trainerDeniedSession } from "@/lib/api/trainer-scope";
+import { notifySessionScheduleUpdate } from "@/lib/notifications/session-update";
 
 export const GET = withModuleAction("sessions", "view", async ({ params, user }) => {
   const id = params.id as string;
@@ -19,7 +21,10 @@ export const GET = withModuleAction("sessions", "view", async ({ params, user })
   });
   if (!session || session.deletedAt) return notFound("Session not found");
 
-  // Coordinator and Trainer have equivalent operational permissions — no trainer scoping
+  // A trainer may only access sessions assigned to them.
+  if (trainerDeniedSession(user, session.trainerId)) {
+    return fail("Forbidden — you can only access your own sessions", 403);
+  }
 
   return ok(session);
 });
@@ -30,7 +35,12 @@ export const PUT = withModuleAction("sessions", "edit", async ({ req, params, us
   const existing = await db.trainingSession.findUnique({ where: { id } });
   if (!existing || existing.deletedAt) return notFound("Session not found");
 
-  // Coordinator and Trainer have equivalent operational permissions — no trainer scoping
+  // A trainer may only update their own sessions. `sessions.edit` is granted to
+  // them for delivery actions (lifecycle start/complete), so ownership must be
+  // enforced here against direct-URL requests for another trainer's session.
+  if (trainerDeniedSession(user, existing.trainerId)) {
+    return fail("Forbidden — you can only access your own sessions", 403);
+  }
 
   const {
     trainerId, title, location, city, region, venue, shift, durationHours, capacity, language,
@@ -115,6 +125,25 @@ export const PUT = withModuleAction("sessions", "edit", async ({ req, params, us
     });
   }
 
+  // ── Contractors of an approved/scheduled session must be told when its
+  //    schedule changes (date/time/period/location/trainer). The helper diffs
+  //    the values itself and sends ONE combined notification on all four
+  //    channels. A notification failure never fails the session save. ──
+  if (existing.status === "SCHEDULED") {
+    try {
+      await notifySessionScheduleUpdate(id, {
+        startDate: existing.startDate,
+        endDate: existing.endDate,
+        location: existing.location,
+        venue: existing.venue,
+        city: existing.city,
+        trainerId: existing.trainerId,
+      });
+    } catch (e) {
+      console.error(`SESSION_SCHEDULE_UPDATED failed for session ${existing.refNumber}:`, (e as Error).message);
+    }
+  }
+
   return ok(updated);
 });
 
@@ -122,6 +151,12 @@ export const DELETE = withModuleAction("sessions", "delete", async ({ params, us
   const id = params.id as string;
   const existing = await db.trainingSession.findUnique({ where: { id } });
   if (!existing || existing.deletedAt) return notFound("Session not found");
+
+  // A trainer may never delete a session (no sessions.delete in the matrix;
+  // defense in depth against direct-URL requests).
+  if (trainerDeniedSession(user, existing.trainerId)) {
+    return fail("Forbidden — you can only access your own sessions", 403);
+  }
 
   const certs = await db.certificate.count({ where: { sessionId: id, deletedAt: null } });
   if (certs > 0) return fail("Cannot delete a session with issued certificates", 400);

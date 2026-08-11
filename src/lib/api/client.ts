@@ -235,6 +235,12 @@ export interface AuthUser {
   companyId?: string | null;
   companyName?: string | null;
   trainerId?: string | null;
+  /**
+   * Data-driven nav visibility for trainers. `workshops` is true only when the
+   * trainer has an assigned workshop; `evaluation` only when they have sessions
+   * to evaluate. Null/undefined for non-trainers or before /me loads.
+   */
+  trainerNav?: { workshops: boolean; evaluation: boolean } | null;
   avatarUrl?: string | null;
   isActive?: boolean;
   lastLoginAt?: string | null;

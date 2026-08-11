@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { withModuleAction, ok, fail, audit } from "@/lib/auth/api";
 import { recordStatusChange } from "@/lib/auth/audit";
 import { syncFinalTestStatus } from "@/lib/api/enrollment-sync";
+import { trainerDeniedSession } from "@/lib/api/trainer-scope";
 
 const VALID_EVENTS = ["STARTED", "BREAK", "RESUMED", "COMPLETED"];
 
@@ -37,6 +38,11 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
 
   const session = await db.trainingSession.findUnique({ where: { id } });
   if (!session || session.deletedAt) return fail("Session not found", 404);
+
+  // A trainer may only run lifecycle actions on their own sessions.
+  if (trainerDeniedSession(user, session.trainerId)) {
+    return fail("Forbidden — you can only access your own sessions", 403);
+  }
 
   // Delivery-only transitions: the coordinator manages sessions but cannot
   // start, break, resume, or complete them — those are trainer/delivery
@@ -213,10 +219,15 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
   });
 });
 
-export const GET = withModuleAction("sessions", "view", async ({ params }) => {
+export const GET = withModuleAction("sessions", "view", async ({ params, user }) => {
   const id = params.id as string;
   const session = await db.trainingSession.findUnique({ where: { id } });
   if (!session || session.deletedAt) return fail("Session not found", 404);
+
+  // A trainer may only view lifecycle events of their own sessions.
+  if (trainerDeniedSession(user, session.trainerId)) {
+    return fail("Forbidden — you can only access your own sessions", 403);
+  }
 
   const events = await db.sessionLifecycleEvent.findMany({
     where: { sessionId: id },

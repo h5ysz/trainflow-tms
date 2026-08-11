@@ -23,6 +23,7 @@ import { db } from "@/lib/db";
 import { withErrorEnvelope, requireAuth, ok, fail, audit } from "@/lib/auth/api";
 import { createExamAttempt, traineeIdentityWhere } from "@/lib/api/exam-engine";
 import { syncFinalTestStatus } from "@/lib/api/enrollment-sync";
+import { trainerDeniedSession } from "@/lib/api/trainer-scope";
 
 export const POST = withErrorEnvelope(async function POST(req: NextRequest) {
   const user = await requireAuth();
@@ -63,6 +64,11 @@ export const POST = withErrorEnvelope(async function POST(req: NextRequest) {
   });
   if (!session || session.deletedAt) return fail("Session not found", 404, "NOT_FOUND");
   if (!session.course) return fail("Course not found", 404, "NOT_FOUND");
+
+  // A trainer may only create retakes for their own sessions.
+  if (trainerDeniedSession(user, session.trainerId)) {
+    return fail("Forbidden — you can only access your own sessions", 403);
+  }
 
   const course = session.course;
   const maxAttempts = Math.max(1, course.retakeAttempts ?? 1);

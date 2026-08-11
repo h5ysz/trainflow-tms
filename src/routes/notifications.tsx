@@ -117,11 +117,12 @@ export function NotificationsRoute() {
   const [tab, setTab] = useState("all");
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const load = async (filter?: string) => {
+  const load = async (mode?: string) => {
     setLoading(true);
     try {
       const res = await api.getList<Notification>("/notifications", {
-        filter: filter === "unread" ? "unread" : undefined,
+        ...(mode === "unread" ? { filter: "unread" } : {}),
+        ...(mode === "reminders" ? { type: "SESSION_REMINDER_24H" } : {}),
         pageSize: 50,
       });
       setNotifications(res.rows ?? []);
@@ -135,11 +136,11 @@ export function NotificationsRoute() {
 
   useEffect(() => {
     // Async data load; state is written from the promise callbacks.
-    const handle = setTimeout(() => { void load(tab === "unread" ? "unread" : undefined); }, 0);
+    const handle = setTimeout(() => { void load(tab === "unread" ? "unread" : tab === "reminders" ? "reminders" : undefined); }, 0);
     return () => clearTimeout(handle);
   }, [tab]);
 
-  const reload = () => load(tab === "unread" ? "unread" : undefined);
+  const reload = () => load(tab === "unread" ? "unread" : tab === "reminders" ? "reminders" : undefined);
 
   const markAllRead = async () => {
     try {
@@ -203,6 +204,9 @@ export function NotificationsRoute() {
               </span>
             )}
           </TabsTrigger>
+          <TabsTrigger value="reminders">
+            {t("notifications.filter.sessionReminders")}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="all" className="mt-4">
@@ -210,6 +214,10 @@ export function NotificationsRoute() {
         </TabsContent>
 
         <TabsContent value="unread" className="mt-4">
+          <Card><NotificationList {...listProps} /></Card>
+        </TabsContent>
+
+        <TabsContent value="reminders" className="mt-4">
           <Card><NotificationList {...listProps} /></Card>
         </TabsContent>
       </Tabs>

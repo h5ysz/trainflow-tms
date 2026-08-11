@@ -5,6 +5,7 @@ import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
 import { coordinatorRegionScope } from "@/lib/api/region-scope";
+import { trainerTraineeFilter } from "@/lib/api/trainer-scope";
 import { randomUUID } from "node:crypto";
 
 const ALLOWED_SORT_FIELDS = ["fullName", "nationalId", "createdAt", "updatedAt", "status", "nationality", "jobTitle"];
@@ -40,6 +41,11 @@ export const GET = withModuleAction("trainees", "view", async ({ req, user }) =>
   if (scope) {
     where.company = { region: { in: scope } };
   }
+
+  // Trainers only see trainees enrolled in their own sessions. Derived from the
+  // authenticated user's trainerId — a crafted filter cannot widen it.
+  const trainerFilter = trainerTraineeFilter(user);
+  if (trainerFilter) Object.assign(where, trainerFilter);
 
   const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS);
 

@@ -226,6 +226,58 @@ export async function sendTestEmail(to: string): Promise<EmailResult> {
 }
 
 /**
+ * Send a plain outbound notification email (no report attachments). Shares the same
+ * SMTP configuration, transport cache and honesty rules as `sendReportEmail`: it
+ * never reports success for a message it did not send. Unconfigured SMTP yields
+ * SIMULATED (logged, not delivered), so the Notification Service can translate
+ * that into a per-channel FAILED ledger row instead of a phantom SENT.
+ */
+export async function sendNotificationEmail(opts: {
+  to: string;
+  subject: string;
+  html: string;
+  text?: string;
+}): Promise<EmailResult> {
+  const sentAt = new Date();
+  if (!opts.to.trim()) {
+    return { status: "SKIPPED", success: false, error: "No recipient", sentAt };
+  }
+
+  const smtp = await getSmtpSettings();
+
+  if (!smtp.enabled) {
+    console.log("[Notification Email] SMTP not configured — simulated, nothing delivered:");
+    console.log(`  To: ${opts.to}`);
+    console.log(`  Subject: ${opts.subject}`);
+    return {
+      status: "SIMULATED",
+      success: false,
+      messageId: `simulated-${Date.now()}`,
+      sentAt,
+    };
+  }
+
+  try {
+    const info = await transporterFor(smtp).sendMail({
+      from: smtp.from,
+      to: [opts.to],
+      ...(smtp.replyTo ? { replyTo: smtp.replyTo } : {}),
+      subject: opts.subject,
+      text: opts.text ?? opts.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
+      html: opts.html,
+    });
+    return { status: "SENT", success: true, messageId: info.messageId, sentAt };
+  } catch (e) {
+    return {
+      status: "FAILED",
+      success: false,
+      error: e instanceof Error ? e.message : "Unknown email error",
+      sentAt,
+    };
+  }
+}
+
+/**
  * Compute the next retry time based on the retry delay.
  */
 export function getNextRetryTime(retryDelayMin: number): Date {

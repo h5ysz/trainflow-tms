@@ -52,7 +52,15 @@ export function CommandPalette() {
 
   const items = useMemo(() => {
     if (!user) return [];
-    return getNavForRole(user.permissions);
+    const nav = getNavForRole(user.permissions);
+    // Same data-driven visibility as the sidebar: trainers only see Workshops
+    // when assigned and Evaluation when they have sessions.
+    if (user.role !== "TRAINER" || !user.trainerNav) return nav;
+    return nav.filter((item) => {
+      if (item.key === "workshops") return user.trainerNav!.workshops;
+      if (item.key === "evaluation") return user.trainerNav!.evaluation;
+      return true;
+    });
   }, [user]);
 
   const filtered = useMemo(() => {

@@ -308,6 +308,7 @@ model Company {
   invoices           Invoice[]
   payments           Payment[]
   receipts           Receipt[]
+  notificationLogs   NotificationLog[]
 
   @@index([status])
   @@index([tenantId])
@@ -932,6 +933,7 @@ model TrainingSession {
   sessionCompanies SessionCompany[]
   sessionPayments  SessionPayment[]
   invoices         Invoice[]
+  notificationLogs NotificationLog[]
 
   @@index([status])
   @@index([trainerId])
@@ -1342,6 +1344,53 @@ model Notification {
 
   @@index([userId, isRead])
   @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTIFICATION DELIVERY LOG — per-channel send ledger
+// =====================================================================
+// Records every delivery attempt made by the Notification Service, one row per
+// (type, reference, company, channel). The Notification row is the in-app inbox
+// item; NotificationLog is the delivery ledger behind it (Email/WhatsApp/SMS).
+//
+// The @@unique on (type, referenceId, companyId, channel) is the duplicate
+// guard: a cron that fires twice can never create a second row for the same
+// reminder, and the service refuses to re-send a channel already marked SENT.
+// Each channel is tracked independently, so one channel failing never blocks
+// the others.
+//
+// Type values are extensible — SESSION_REMINDER_24H today, future types
+// (SESSION_RESCHEDULED, SESSION_CANCELLED, SESSION_REMINDER_2H, …) reuse the
+// same ledger without schema changes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model NotificationLog {
+  id             String    @id @default(uuid())
+  type           String    @default("SESSION_REMINDER_24H")
+  referenceType  String    @default("SESSION") // SESSION | CERTIFICATE | REQUEST | …
+  referenceId    String // e.g. the session id — required, part of the dedupe key
+  companyId      String?
+  company        Company?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  sessionId      String?
+  session        TrainingSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  channel        String    @default("EMAIL") // EMAIL | WHATSAPP | SMS
+  recipientName  String?
+  recipientValue String? // email address or phone number the message went to
+  language       String    @default("en") // template language used
+  scheduledAt    DateTime? // when the reminded event starts (session start time)
+  sentAt         DateTime?
+  status         String    @default("PENDING") // PENDING | SENT | FAILED
+  errorMessage   String?
+  messageId      String? // provider message id when the provider returns one
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([type, referenceId, companyId, channel])
+  @@index([type])
+  @@index([referenceId])
+  @@index([companyId])
+  @@index([status])
+  @@index([scheduledAt])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

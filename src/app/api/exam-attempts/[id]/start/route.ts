@@ -3,11 +3,23 @@ import { db } from "@/lib/db";
 import { withExamAction, ok, notFound, fail, audit, type TestType } from "@/lib/auth/api";
 import { resolveExamVersion, traineeIdentityWhere } from "@/lib/api/exam-engine";
 import { syncPreTestStatus, syncFinalTestStatus } from "@/lib/api/enrollment-sync";
+import { trainerDeniedSession } from "@/lib/api/trainer-scope";
 
 export const POST = withExamAction("create", async ({ req, params, user, allowedTestTypes }) => {
   const id = params.id as string;
   const attempt = await db.examAttempt.findUnique({ where: { id } });
   if (!attempt || attempt.deletedAt) return notFound("Exam attempt not found");
+
+  // A trainer may only run exams for their own sessions.
+  if (user.role === "TRAINER") {
+    const session = await db.trainingSession.findUnique({
+      where: { id: attempt.sessionId },
+      select: { trainerId: true },
+    });
+    if (trainerDeniedSession(user, session?.trainerId)) {
+      return fail("Forbidden — you can only run exams for your own sessions", 403);
+    }
+  }
 
   // The guard admits anyone holding `create` on pre-test OR final-test; this narrows
   // it to the module the attempt actually belongs to.

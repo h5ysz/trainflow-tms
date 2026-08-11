@@ -1,8 +1,9 @@
 // /api/workshops/[id] — get / update / soft-delete
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { trainerIdOf } from "@/lib/api/trainer-scope";
 
-export const GET = withModuleAction("workshops", "view", async ({ params }) => {
+export const GET = withModuleAction("workshops", "view", async ({ params, user }) => {
   const id = params.id as string;
   const workshop = await db.workshop.findUnique({
     where: { id },
@@ -14,6 +15,15 @@ export const GET = withModuleAction("workshops", "view", async ({ params }) => {
     },
   });
   if (!workshop || workshop.deletedAt) return notFound("Workshop not found");
+  // A trainer may only open a workshop they are authorized to deliver.
+  const trainerId = trainerIdOf(user);
+  if (trainerId) {
+    const authorized = await db.workshopTrainerAuthorization.findFirst({
+      where: { workshopId: id, trainerId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!authorized) return notFound("Workshop not found");
+  }
   return ok(workshop);
 });
 

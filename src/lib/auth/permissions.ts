@@ -74,7 +74,10 @@ export const ALL_MODULES: RouteKey[] = [
 
 // Module visibility per role
 // =====================================================================
-// Coordinator and Trainer have EQUIVALENT operational permissions.
+// Coordinator: request review + scheduling + execution oversight.
+// Trainer: delivery only — sessions, attendance, tests and evaluations for the
+// sessions they are assigned to. NO administrative modules (companies, trainers,
+// trainees, courses, requests, certificates, reports, audit log, approvals...).
 // Super Admin's exclusive privileges are limited to:
 //   - Settings (system configuration, branding, integrations)
 //   - Users & Roles management
@@ -157,34 +160,23 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
   "finance", "invoices", "quotations", "payments", "receipts", "bank-accounts",
   "financial-settings", "financial-reports",
   ],
+  // Trainer: strictly delivery-scoped. Only the modules a trainer needs to run
+  // the sessions they are assigned to. `workshops` stays granted so an
+  // authorized trainer can open it, but the nav item and direct URL are gated on
+  // the data-driven `trainerNav.workshops` flag (see /api/auth/me), and the API
+  // only ever returns that trainer's own workshops.
   TRAINER: [
     "dashboard",
-    "companies",
-    "company-contacts",
-    "trainers",
-    "trainer-qualifications",
-    "trainees",
-    "courses",
-    "workshops",
-    "requests",
     "sessions",
     "session-detail",
-    "scheduling",
     "attendance",
     "qr-code",
     "pre-test",
     "final-test",
     "exam-attempts",
     "evaluation",
-    "certificates",
-    "reports",
+    "workshops",
     "notifications",
-    "audit-log",
-    "user-approvals",
-    "worker-passports",
-    "compliance-matrix",
-    "executive-dashboard",
-    "renewal-dashboard",
   ],
   VIEWER: [
     "dashboard",
@@ -233,8 +225,10 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
 
 // Module-level action permissions per role
 // =====================================================================
-// Coordinator and Trainer have EQUIVALENT operational permissions.
-// The ONLY difference: Super Admin exclusively controls Settings.
+// Coordinator holds the shared OPERATIONAL_PERMISSIONS (full CRUD on the
+// operational modules). Trainer does NOT: it has its own TRAINER_PERMISSIONS
+// limited to read + the delivery actions on attendance. Super Admin exclusively
+// controls Settings, users and roles.
 // =====================================================================
 
 // Shared operational permissions — used by both COORDINATOR and TRAINER
@@ -260,6 +254,26 @@ const OPERATIONAL_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
   "audit-log": ["view"],
 };
 
+// Trainer's own, delivery-only permission set. Intentionally NOT derived from
+// OPERATIONAL_PERMISSIONS (which belongs to the coordinator): a trainer gets no
+// create/delete on sessions/courses/trainees/requests/companies and no access to
+// certificates/reports/audit at all. `sessions.edit` and the exam `create`s are
+// the delivery actions (start/complete a session, run pre/final tests) — every
+// one of them is additionally restricted server-side to the trainer's OWN
+// sessions (src/lib/api/trainer-scope.ts), so a direct-URL request for another
+// trainer's record returns 403.
+const TRAINER_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
+  dashboard: ["view"],
+  sessions: ["view", "edit"],
+  attendance: ["view", "create", "edit"],
+  "qr-code": ["view"],
+  "pre-test": ["view", "create"],
+  "final-test": ["view", "create"],
+  evaluation: ["view"],
+  workshops: ["view"],
+  notifications: ["view"],
+};
+
 export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action[]>>> = {
   SUPER_ADMIN: {
     // Super admin can do everything — including Settings (exclusive)
@@ -280,8 +294,7 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
     "report-schedules": ["view", "create", "edit", "delete"],
   },
   TRAINER: {
-    ...OPERATIONAL_PERMISSIONS,
-    "user-approvals": ["view", "create", "edit"],
+    ...TRAINER_PERMISSIONS,
   },
   VIEWER: {
     companies: ["view"],

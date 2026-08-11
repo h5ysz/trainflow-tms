@@ -4,10 +4,11 @@ import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
 import { syncEvaluationStatus, recalcCertificateEligibility } from "@/lib/api/enrollment-sync";
+import { trainerEvaluationFilter } from "@/lib/api/trainer-scope";
 
 const ALLOWED_SORT_FIELDS = ["submittedAt", "traineeName", "overallRating", "trainerRating"];
 
-export const GET = withModuleAction("evaluation", "view", async ({ req }) => {
+export const GET = withModuleAction("evaluation", "view", async ({ req, user }) => {
   const q = parseListQuery(req);
   const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
 
@@ -19,6 +20,11 @@ export const GET = withModuleAction("evaluation", "view", async ({ req }) => {
       { comments: { contains: q.search } },
     ];
   }
+
+  // Trainers only see evaluations that rate them. Derived from the authenticated
+  // user's trainerId, so a crafted ?trainerId= filter cannot widen it.
+  const trainerFilter = trainerEvaluationFilter(user);
+  if (trainerFilter) Object.assign(where, trainerFilter);
 
   const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS, "submittedAt");
 
