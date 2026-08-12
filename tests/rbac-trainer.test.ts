@@ -145,6 +145,7 @@ const ADMIN_MODULES: RouteKey[] = [
   "bank-accounts",
   "financial-settings",
   "financial-reports",
+  "ai-dashboard",
 ];
 
 describe("TRAINER permission matrix (delivery-only)", () => {
@@ -195,6 +196,7 @@ describe("TRAINER permission matrix (delivery-only)", () => {
     expect(keys).not.toContain("worker-passports");
     expect(keys).not.toContain("user-approvals");
     expect(keys).not.toContain("payments");
+    expect(keys).not.toContain("ai-dashboard");
   });
 });
 

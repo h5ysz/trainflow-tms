@@ -11,7 +11,7 @@
 //     the catalog are valid.
 //
 // All other behavior (context building, RBAC, history) is unchanged.
-import { withAuth, ok, fail } from "@/lib/auth/api";
+import { withModuleAction, ok, fail } from "@/lib/auth/api";
 import type { UserRole } from "@/lib/auth/permissions";
 import { buildCopilotContext } from "@/lib/ai/copilot-context";
 import { getActionCatalog } from "@/lib/ai/actions/registry";
@@ -78,7 +78,7 @@ function buildActionPromptSection(userRole: UserRole): string {
   return lines.join("\n");
 }
 
-export const POST = withAuth(async ({ req, user }) => {
+export const POST = withModuleAction("ai-dashboard", "view", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
   const { message, history, locale } = body as { message?: string; history?: ChatMessage[]; locale?: string };
 

@@ -117,6 +117,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "compliance-matrix",
     "executive-dashboard",
     "renewal-dashboard",
+    "ai-dashboard",
   ],
   COMPANY_ADMIN: [
     "dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
@@ -156,6 +157,9 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "compliance-matrix",
     "executive-dashboard",
     "renewal-dashboard",
+  // AI dashboard (added to the COORDINATOR role's DB permissions via
+  // scripts/migrate-ai-dashboard-permissions.ts / seed-test-users.ts).
+  "ai-dashboard",
   // Financial module
   "finance", "invoices", "quotations", "payments", "receipts", "bank-accounts",
   "financial-settings", "financial-reports",
@@ -207,7 +211,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "trainees", "courses", "workshops", "requests", "sessions", "session-detail", "trainee-detail",
     "scheduling", "attendance", "qr-code", "pre-test", "final-test", "exam-attempts",
     "evaluation", "certificates", "reports", "notifications", "audit-log",
-    "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard", "session-detail", "trainee-detail", "ai-dashboard",
+    "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard", "session-detail", "trainee-detail",
     // Financial module (read-only)
     "finance", "invoices", "quotations", "payments", "receipts", "bank-accounts",
     "financial-settings", "financial-reports",
@@ -292,6 +296,7 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
     ...OPERATIONAL_PERMISSIONS,
     "user-approvals": ["view", "create", "edit"],
     "report-schedules": ["view", "create", "edit", "delete"],
+    "ai-dashboard": ["view"],
   },
   TRAINER: {
     ...TRAINER_PERMISSIONS,

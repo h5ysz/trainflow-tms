@@ -7,13 +7,13 @@
 // All audit entries are stamped metadata.aiGenerated = true.
 //
 // Returns: ExecuteResult
-import { withAuth, ok, fail } from "@/lib/auth/api";
+import { withModuleAction, ok, fail } from "@/lib/auth/api";
 import { canPerformAction } from "@/lib/auth/permissions";
 import { getActionHandler, resolveActionPermission } from "@/lib/ai/actions/registry";
 import { ActionError } from "@/lib/ai/actions/types";
 import { verifyPreviewToken } from "@/lib/ai/actions/preview-token";
 
-export const POST = withAuth(async ({ req, user }) => {
+export const POST = withModuleAction("ai-dashboard", "view", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
   const { previewToken } = body as { previewToken?: string };
 

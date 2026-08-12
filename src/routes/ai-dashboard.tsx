@@ -5,8 +5,11 @@
 // Premium executive dashboard with KPI cards, charts, recommendations,
 // risks, forecasts, NL query, and report generation.
 //
-// Visible for: SUPER_ADMIN, COORDINATOR
-// Not visible for: CONTRACTOR (no ai-dashboard module access)
+// Visible for: roles holding ai-dashboard.view — SUPER_ADMIN ("*"), COORDINATOR
+// (migrated into the role's DB permissions). The API also enforces this via
+// withModuleAction("ai-dashboard", "view") on every /api/copilot endpoint.
+// Not visible for: TRAINER, AUDITOR, COMPANY_ADMIN, VIEWER, CONTRACTOR
+// (none of these hold ai-dashboard.view, so both the UI and the API deny access).
 import { useEffect, useState, useCallback } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
