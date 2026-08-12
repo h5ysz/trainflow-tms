@@ -57,8 +57,15 @@ async function enrichPayments(payments: Array<{
   });
 }
 
-export const GET = withModuleAction("sessions", "view", async ({ req, params }) => {
+export const GET = withModuleAction("sessions", "view", async ({ req, params, user }) => {
   const sessionId = params.id as string;
+
+  // Payment records are a coordinator/admin responsibility — same hard gate as
+  // POST + verify/release-printing so trainers cannot view financial data.
+  if (user.role !== "COORDINATOR" && user.role !== "SUPER_ADMIN") {
+    return fail("Only coordinators can view payment records", 403, "FORBIDDEN");
+  }
+
   const url = new URL(req.url);
   const companyId = url.searchParams.get("companyId");
 

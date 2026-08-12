@@ -10,6 +10,7 @@
 // SessionCompany + expectedTrainees. Full audit with before/after.
 import { db } from "@/lib/db";
 import { withModuleAction, ok, fail, audit } from "@/lib/auth/api";
+import { trainerDeniedSession } from "@/lib/api/trainer-scope";
 import { recomputeSessionCounts, truncateForAudit } from "@/lib/sessions/session-management";
 
 export const POST = withModuleAction("sessions", "edit", async ({ req, params, user }) => {
@@ -23,6 +24,9 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
 
   const session = await db.trainingSession.findFirst({ where: { id: sessionId, deletedAt: null } });
   if (!session) return fail("Session not found", 404);
+  if (trainerDeniedSession(user, session.trainerId)) {
+    return fail("Forbidden — you can only access your own sessions", 403);
+  }
 
   // Load the enrollments to be removed (for audit before/after)
   const enrollments = await db.sessionEnrollment.findMany({

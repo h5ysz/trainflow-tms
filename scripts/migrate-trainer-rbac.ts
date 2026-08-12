@@ -1,9 +1,13 @@
 // GCCLAB TMS — TRAINER RBAC migration
 // =====================================================================
-// Replaces the TRAINER role's permission set with the delivery-only set that
+// Replaces the TRAINER role's permission set with the delivery-scoped set that
 // matches src/lib/auth/permissions.ts (TRAINER_PERMISSIONS). The old set gave
 // the trainer coordinator-level access to companies, trainees, courses,
 // requests, certificates, reports, audit log, approvals, dashboards, etc.
+// The set below is delivery-scoped: sessions/attendance/QR/tests/evaluations
+// plus read-only, server-scoped visibility of the trainer's own courses and
+// trainees. NO certificates (issuance stays with COORDINATOR), NO
+// administrative/financial/AI modules.
 //
 // Idempotent — safe to re-run. Only touches the TRAINER Role row's `permissions`
 // array (mirrors scripts/migrate-ai-dashboard-permissions.ts). Does NOT modify
@@ -16,11 +20,13 @@ const db = new PrismaClient();
 
 const TRAINER_PERMISSIONS = [
   "dashboard.view",
+  "courses.view",
+  "trainees.view",
   "sessions.view", "sessions.edit",
   "attendance.view", "attendance.create", "attendance.edit",
-  "qr-code.view",
-  "pre-test.view", "pre-test.create",
-  "final-test.view", "final-test.create",
+  "qr-code.view", "qr-code.create",
+  "pre-test.view", "pre-test.create", "pre-test.edit",
+  "final-test.view", "final-test.create", "final-test.edit",
   "evaluation.view",
   "workshops.view",
   "notifications.view",
@@ -46,9 +52,10 @@ async function main() {
     data: { permissions: TRAINER_PERMISSIONS },
   });
   console.log(`   ✓ Replaced TRAINER role permissions (${current.length} → ${TRAINER_PERMISSIONS.length})`);
-  console.log("     Removed: companies/company-contacts/trainers/trainer-qualifications/trainees/");
-  console.log("     courses/requests/scheduling/certificates/reports/audit-log/user-approvals/");
+  console.log("     Removed: companies/company-contacts/trainers/trainer-qualifications/requests/");
+  console.log("     scheduling/certificates/reports/audit-log/user-approvals/");
   console.log("     worker-passports/compliance-matrix/executive-dashboard/renewal-dashboard + all `.*` grants.");
+  console.log("     Added: courses.view, trainees.view, qr-code.create, pre-test.edit, final-test.edit.");
 }
 
 main()

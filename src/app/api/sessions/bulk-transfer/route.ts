@@ -20,6 +20,7 @@
 // The target session must have capacity for all new trainees.
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { trainerDeniedSession } from "@/lib/api/trainer-scope";
 import { recomputeSessionCounts, truncateForAudit } from "@/lib/sessions/session-management";
 
 export const POST = withModuleAction("sessions", "edit", async ({ req, user }) => {
@@ -50,6 +51,11 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, user }) =
 
   if (!source || source.deletedAt) return notFound("Source session not found");
   if (!target || target.deletedAt) return notFound("Target session not found");
+
+  // A trainer may only transfer between their OWN sessions.
+  if (trainerDeniedSession(user, source.trainerId) || trainerDeniedSession(user, target.trainerId)) {
+    return fail("Forbidden — you can only access your own sessions", 403);
+  }
 
   // No status gate — coordinators can transfer between any sessions.
   // Every change is audit-logged.

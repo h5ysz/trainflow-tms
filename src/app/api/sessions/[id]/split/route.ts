@@ -29,6 +29,7 @@
 //   }
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { trainerDeniedSession } from "@/lib/api/trainer-scope";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { recomputeSessionCounts, truncateForAudit } from "@/lib/sessions/session-management";
 import { randomBytes } from "crypto";
@@ -77,6 +78,9 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
     },
   });
   if (!source || source.deletedAt) return notFound("Session not found");
+  if (trainerDeniedSession(user, source.trainerId)) {
+    return fail("Forbidden — you can only access your own sessions", 403);
+  }
 
   // No status gate — coordinators can split any session at any time.
   // Every change is audit-logged.

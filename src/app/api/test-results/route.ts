@@ -1,6 +1,7 @@
 // /api/test-results — list + submit (EXAM-YYYY-000001 ref number, EXAM_SUBMIT audit)
 import { db } from "@/lib/db";
 import { withExamAction, testTypeWhere, ok, created, fail, audit, type TestType } from "@/lib/auth/api";
+import { trainerDeniedSession, trainerSessionFilter } from "@/lib/api/trainer-scope";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
@@ -8,7 +9,7 @@ import { parseJsonColumn } from "@/lib/api/json-column";
 
 const ALLOWED_SORT_FIELDS = ["refNumber", "traineeName", "attemptedAt", "scorePercent", "passed"];
 
-export const GET = withExamAction("view", async ({ req, allowedTestTypes }) => {
+export const GET = withExamAction("view", async ({ req, user, allowedTestTypes }) => {
   const q = parseListQuery(req);
   const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
 
@@ -26,6 +27,10 @@ export const GET = withExamAction("view", async ({ req, allowedTestTypes }) => {
       { refNumber: { contains: q.search } },
     ];
   }
+
+  // A trainer may only see results from their own sessions.
+  const trainerSession = trainerSessionFilter(user);
+  if (trainerSession) where.session = trainerSession.session;
 
   const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS, "attemptedAt");
 
@@ -85,6 +90,11 @@ export const POST = withExamAction("create", async ({ req, user, allowedTestType
     include: { course: true },
   });
   if (!session) return fail("Session not found", 404);
+
+  // A trainer may only submit results for their OWN sessions.
+  if (trainerDeniedSession(user, session.trainerId)) {
+    return fail("Forbidden — you can only add results to your own sessions", 403);
+  }
 
   const passScore = session.course?.passScore ?? 70;
   const passed = scorePercent >= passScore;

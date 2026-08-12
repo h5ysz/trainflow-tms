@@ -17,6 +17,7 @@
 // own company.
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound } from "@/lib/auth/api";
+import { trainerIdOf } from "@/lib/api/trainer-scope";
 
 interface WorkerDocument {
   url: string;
@@ -97,6 +98,15 @@ export const GET = withModuleAction("trainees", "view", async ({ params, user })
   if (!trainee || trainee.deletedAt) return notFound("Trainee not found");
   if (user.role === "CONTRACTOR" && trainee.companyId !== user.companyId) {
     return notFound("Trainee not found");
+  }
+
+  // Trainers may only see trainees enrolled in their own sessions.
+  const trainerId = trainerIdOf(user);
+  if (trainerId) {
+    const enrolledInOwnSession = await db.sessionEnrollment.count({
+      where: { traineeId: id, session: { trainerId } },
+    });
+    if (enrolledInOwnSession === 0) return notFound("Trainee not found");
   }
 
   const [certificates, testResults] = await Promise.all([

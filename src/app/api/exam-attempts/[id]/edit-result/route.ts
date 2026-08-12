@@ -18,6 +18,7 @@
 import { db } from "@/lib/db";
 import { withExamAction, ok, notFound, fail, type TestType } from "@/lib/auth/api";
 import { recordAudit } from "@/lib/auth/audit";
+import { trainerDeniedSession } from "@/lib/api/trainer-scope";
 
 export const PUT = withExamAction("edit", async ({ req, params, user, allowedTestTypes }) => {
   const id = params.id as string;
@@ -38,11 +39,16 @@ export const PUT = withExamAction("edit", async ({ req, params, user, allowedTes
     where: { id },
     include: {
       session: {
-        select: { id: true, refNumber: true, courseId: true, course: { select: { passScore: true } } },
+        select: { id: true, refNumber: true, courseId: true, trainerId: true, course: { select: { passScore: true } } },
       },
     },
   });
   if (!attempt || attempt.deletedAt) return notFound("Exam attempt not found");
+
+  // A trainer may only edit results of attempts from their own sessions.
+  if (trainerDeniedSession(user, attempt.session?.trainerId)) {
+    return fail("Forbidden — you can only edit results of your own sessions", 403);
+  }
 
   // Verify the test type is in the caller's allowed types (RBAC).
   if (!allowedTestTypes.includes(attempt.testType as TestType)) {

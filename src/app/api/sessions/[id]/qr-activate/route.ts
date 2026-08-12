@@ -1,11 +1,15 @@
 // /api/sessions/[id]/qr-activate — set QR attendance time window
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { trainerDeniedSession } from "@/lib/api/trainer-scope";
 
 export const POST = withModuleAction("qr-code", "create", async ({ req, params, user }) => {
   const id = params.id as string;
   const session = await db.trainingSession.findUnique({ where: { id } });
   if (!session || session.deletedAt) return notFound("Session not found");
+  if (trainerDeniedSession(user, session.trainerId)) {
+    return fail("Forbidden — you can only access your own sessions", 403);
+  }
 
   const body = await req.json().catch(() => ({}));
   const { qrActiveFrom, qrActiveTo } = body;

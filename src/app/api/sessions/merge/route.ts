@@ -24,6 +24,7 @@
 import type { TrainingSession } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { trainerDeniedSession } from "@/lib/api/trainer-scope";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { recomputeSessionCounts, truncateForAudit } from "@/lib/sessions/session-management";
 import { randomBytes } from "crypto";
@@ -55,6 +56,11 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, user }) =
     const found = new Set(sources.map((s) => s.id));
     const missing = sessionIds.filter((id) => !found.has(id));
     return fail(`Session(s) not found: ${missing.join(", ")}`, 404);
+  }
+
+  // A trainer may only merge their OWN sessions.
+  if (sources.some((s) => trainerDeniedSession(user, s.trainerId))) {
+    return fail("Forbidden — you can only access your own sessions", 403);
   }
 
   // All sources must share the same course — a hard requirement for merge.

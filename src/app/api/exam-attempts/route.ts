@@ -4,10 +4,11 @@ import { withExamAction, testTypeWhere, fail } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
 import { parseJsonColumn } from "@/lib/api/json-column";
+import { trainerSessionFilter } from "@/lib/api/trainer-scope";
 
 const ALLOWED_SORT_FIELDS = ["refNumber", "createdAt", "assignedAt", "startedAt", "submittedAt", "status", "scorePercent"];
 
-export const GET = withExamAction("view", async ({ req, allowedTestTypes }) => {
+export const GET = withExamAction("view", async ({ req, user, allowedTestTypes }) => {
   const q = parseListQuery(req);
   const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
 
@@ -27,6 +28,10 @@ export const GET = withExamAction("view", async ({ req, allowedTestTypes }) => {
       { traineeEmail: { contains: q.search } },
     ];
   }
+
+  // A trainer may only see attempts from their own sessions.
+  const trainerSession = trainerSessionFilter(user);
+  if (trainerSession) where.session = trainerSession.session;
 
   const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS, "assignedAt");
 

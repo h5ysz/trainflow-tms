@@ -11,10 +11,17 @@ export const GET = withModuleAction("dashboard", "view", async ({ user }) => {
   // and requests carry companyId directly; sessions don't, so they are scoped
   // through the originating request or an enrolment belonging to the company.
   const isContractor = user.role === "CONTRACTOR";
+  // A trainer may only see their OWN sessions. Org-wide operational metrics
+  // (requests, certificates, companies, trainers, trainee totals) cannot be
+  // meaningfully scoped to a trainer, so they are withheld rather than leaked —
+  // the UI hides the cards when they are null.
+  const isTrainer = user.role === "TRAINER";
   // A contractor with no company assigned must see nothing, not everything: this
   // sentinel cannot match any uuid, so their scope is empty rather than absent.
   const scopedCompanyId = user.companyId ?? "__no_company__";
   const companyFilter = isContractor ? { companyId: scopedCompanyId } : {};
+  // Non-session (org-wide) metrics for a trainer resolve to an empty scope.
+  const orgFilter = isTrainer ? { id: "__no_session__" } : companyFilter;
   const sessionScope = isContractor
     ? {
         OR: [
@@ -22,7 +29,11 @@ export const GET = withModuleAction("dashboard", "view", async ({ user }) => {
           { enrollments: { some: { companyId: scopedCompanyId, deletedAt: null } } },
         ],
       }
-    : {};
+    : isTrainer
+      ? user.trainerId
+        ? { trainerId: user.trainerId }
+        : { id: "__no_session__" }
+      : {};
 
   // ─── KPI counts (parallel for performance) ───────────────────────────
   const [
@@ -54,7 +65,7 @@ export const GET = withModuleAction("dashboard", "view", async ({ user }) => {
       where: {
         deletedAt: null,
         status: { in: ["DRAFT", "SUBMITTED"] },
-        ...companyFilter,
+        ...orgFilter,
       },
     }),
     // underReviewRequests = UNDER_REVIEW
@@ -62,7 +73,7 @@ export const GET = withModuleAction("dashboard", "view", async ({ user }) => {
       where: {
         deletedAt: null,
         status: "UNDER_REVIEW",
-        ...companyFilter,
+        ...orgFilter,
       },
     }),
     // approvedRequests = APPROVED (ready for scheduling)
@@ -70,7 +81,7 @@ export const GET = withModuleAction("dashboard", "view", async ({ user }) => {
       where: {
         deletedAt: null,
         status: "APPROVED",
-        ...companyFilter,
+        ...orgFilter,
       },
     }),
     // scheduledSessions
@@ -88,21 +99,22 @@ export const GET = withModuleAction("dashboard", "view", async ({ user }) => {
         },
       },
     }),
-    db.certificate.count({ where: { deletedAt: null, ...companyFilter } }),
+    db.certificate.count({ where: { deletedAt: null, ...orgFilter } }),
     db.certificate.count({
       where: {
         deletedAt: null,
-        ...companyFilter,
+        ...orgFilter,
         status: "VALID",
         validUntil: { gte: new Date(), lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
       },
     }),
     // Trainer and company totals are org-wide operational metrics. A contractor has
-    // no business seeing them, and they cannot be meaningfully scoped to one company,
-    // so they are withheld rather than leaked. The UI hides the cards when null.
-    isContractor ? null : db.trainer.count({ where: { ...notDeleted, status: "ACTIVE" } }),
+    // no business seeing them, and they cannot be meaningfully scoped to one company
+    // or one trainer, so they are withheld rather than leaked. The UI hides the
+    // cards when null.
+    isContractor || isTrainer ? null : db.trainer.count({ where: { ...notDeleted, status: "ACTIVE" } }),
     // availableTrainers = ACTIVE trainers with no sessions starting in next 7 days
-    isContractor ? null : (async () => {
+    isContractor || isTrainer ? null : (async () => {
       const now = new Date();
       const sevenDaysLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
       const busyTrainerIds = await db.trainingSession.findMany({
@@ -122,7 +134,7 @@ export const GET = withModuleAction("dashboard", "view", async ({ user }) => {
       return activeTrainersList.filter((t) => !busySet.has(t.id)).length;
     })(),
     // trainerConflicts — count of overlapping session pairs per trainer
-    isContractor ? null : (async () => {
+    isContractor || isTrainer ? null : (async () => {
       // Get all scheduled/in-progress sessions with trainer assigned
       const sessions = await db.trainingSession.findMany({
         where: {
@@ -154,12 +166,12 @@ export const GET = withModuleAction("dashboard", "view", async ({ user }) => {
       return conflictPairs;
     })(),
     // companiesCount
-    isContractor ? null : db.company.count({ where: notDeleted }),
+    isContractor || isTrainer ? null : db.company.count({ where: notDeleted }),
     // traineesCount
     db.trainee.count({
       where: {
         ...notDeleted,
-        ...companyFilter,
+        ...orgFilter,
       },
     }),
     db.trainingSession.count({ where: { ...notDeleted, status: "COMPLETED", ...sessionScope } }),
@@ -174,7 +186,7 @@ export const GET = withModuleAction("dashboard", "view", async ({ user }) => {
       where: {
         deletedAt: null,
         issuedAt: { gte: new Date(new Date().getFullYear(), 0, 1) },
-        ...companyFilter,
+        ...orgFilter,
       },
     }),
   ]);
@@ -208,7 +220,7 @@ export const GET = withModuleAction("dashboard", "view", async ({ user }) => {
   // One grouped query rather than nine sequential counts.
   const statusGroups = await db.trainingRequest.groupBy({
     by: ["status"],
-    where: { deletedAt: null, ...companyFilter },
+    where: { deletedAt: null, ...orgFilter },
     _count: { _all: true },
   });
   const statusCounts = new Map<string, number>(statusGroups.map((g) => [g.status as string, g._count._all]));
@@ -220,7 +232,7 @@ export const GET = withModuleAction("dashboard", "view", async ({ user }) => {
   // Certificates by course (top 5)
   const certsByCourseRaw = await db.certificate.groupBy({
     by: ["courseId"],
-    where: { deletedAt: null, ...companyFilter },
+    where: { deletedAt: null, ...orgFilter },
     _count: { id: true },
     orderBy: { _count: { id: "desc" } },
     take: 5,
@@ -235,12 +247,14 @@ export const GET = withModuleAction("dashboard", "view", async ({ user }) => {
     count: c._count.id,
   }));
 
-  // Average score (from final test results)
-  const avgScoreResult = await db.testResult.aggregate({
-    where: { deletedAt: null, testType: "FINAL_TEST" },
-    _avg: { scorePercent: true },
-  });
-  const avgScore = avgScoreResult._avg.scorePercent ? Math.round(avgScoreResult._avg.scorePercent) : null;
+  // Average score (from final test results) — org-wide, withheld from trainers
+  const avgScoreResult = isTrainer
+    ? null
+    : await db.testResult.aggregate({
+        where: { deletedAt: null, testType: "FINAL_TEST" },
+        _avg: { scorePercent: true },
+      });
+  const avgScore = avgScoreResult?._avg.scorePercent ? Math.round(avgScoreResult._avg.scorePercent) : null;
 
   const completionRate = totalSessions > 0 ? Math.round((completedSessions / totalSessions) * 100) : null;
 

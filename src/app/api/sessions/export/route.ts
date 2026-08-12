@@ -4,11 +4,15 @@ import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withModuleAction } from "@/lib/auth/api";
+import { scopeSessionList } from "@/lib/api/trainer-scope";
 import { SESSION_COLUMNS, sessionToRow } from "@/lib/sessions/import-export";
 
-export const GET = withModuleAction("sessions", "view", async () => {
+export const GET = withModuleAction("sessions", "view", async ({ user }) => {
+  const where: Record<string, unknown> = { deletedAt: null };
+  // A trainer may only export their own sessions.
+  scopeSessionList(where, user);
   const sessions = await db.trainingSession.findMany({
-    where: { deletedAt: null },
+    where,
     include: {
       course: { select: { title: true } },
       trainer: { select: { nameEn: true } },

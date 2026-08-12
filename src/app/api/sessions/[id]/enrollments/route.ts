@@ -87,6 +87,11 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
   const session = await db.trainingSession.findFirst({ where: { id: sessionId, deletedAt: null } });
   if (!session) return fail("Session not found", 404);
 
+  // A trainer may only enroll trainees into sessions assigned to them.
+  if (trainerDeniedSession(user, session.trainerId)) {
+    return fail("Forbidden — you can only access your own sessions", 403);
+  }
+
   // Fetch all trainees with their company info — NOTE: trainees can be from ANY company
   const trainees = await db.trainee.findMany({
     where: { id: { in: ids }, deletedAt: null },

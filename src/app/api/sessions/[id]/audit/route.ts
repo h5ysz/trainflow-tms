@@ -10,7 +10,8 @@
 // (`oldValue`, `newValue`, `metadata`) are deserialized via
 // `parseJsonColumn` for direct UI consumption.
 import { db } from "@/lib/db";
-import { withModuleAction, ok, notFound } from "@/lib/auth/api";
+import { withModuleAction, ok, notFound, fail } from "@/lib/auth/api";
+import { trainerDeniedSession } from "@/lib/api/trainer-scope";
 import { parseJsonColumn } from "@/lib/api/json-column";
 
 const PAGE_SIZE = 50;
@@ -34,13 +35,16 @@ interface AuditRow {
   createdAt: string;
 }
 
-export const GET = withModuleAction("sessions", "view", async ({ req, params }) => {
+export const GET = withModuleAction("sessions", "view", async ({ req, params, user }) => {
   const id = params.id as string;
   const session = await db.trainingSession.findUnique({
     where: { id },
-    select: { id: true, refNumber: true, deletedAt: true },
+    select: { id: true, refNumber: true, trainerId: true, deletedAt: true },
   });
   if (!session || session.deletedAt) return notFound("Session not found");
+  if (trainerDeniedSession(user, session.trainerId)) {
+    return fail("Forbidden — you can only access your own sessions", 403);
+  }
 
   const url = new URL(req.url);
   const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10));

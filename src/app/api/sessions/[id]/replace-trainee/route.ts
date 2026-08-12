@@ -12,6 +12,7 @@
 // Audit: logged as action "REPLACE_TRAINEE" with old + new trainee IDs.
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { trainerDeniedSession } from "@/lib/api/trainer-scope";
 import { recomputeSessionCounts, truncateForAudit } from "@/lib/sessions/session-management";
 import { randomUUID } from "node:crypto";
 
@@ -42,6 +43,9 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
   ]);
 
   if (!session) return notFound("Session not found");
+  if (trainerDeniedSession(user, session.trainerId)) {
+    return fail("Forbidden — you can only access your own sessions", 403);
+  }
   if (!oldEnrollment) return notFound("Trainee is not enrolled in this session");
   if (!newTrainee) return fail("New trainee not found", 404);
 

@@ -76,8 +76,10 @@ export const ALL_MODULES: RouteKey[] = [
 // =====================================================================
 // Coordinator: request review + scheduling + execution oversight.
 // Trainer: delivery only — sessions, attendance, tests and evaluations for the
-// sessions they are assigned to. NO administrative modules (companies, trainers,
-// trainees, courses, requests, certificates, reports, audit log, approvals...).
+// sessions they are assigned to. Read-only visibility into the courses they run
+// and the trainees enrolled in their own sessions (both scoped server-side).
+// NO administrative modules (companies, trainers, requests, certificates,
+// reports, audit log, approvals...).
 // Super Admin's exclusive privileges are limited to:
 //   - Settings (system configuration, branding, integrations)
 //   - Users & Roles management
@@ -171,6 +173,9 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
   // only ever returns that trainer's own workshops.
   TRAINER: [
     "dashboard",
+    "courses",
+    "trainees",
+    "trainee-detail",
     "sessions",
     "session-detail",
     "attendance",
@@ -258,21 +263,25 @@ const OPERATIONAL_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
   "audit-log": ["view"],
 };
 
-// Trainer's own, delivery-only permission set. Intentionally NOT derived from
+// Trainer's own, delivery-scoped permission set. Intentionally NOT derived from
 // OPERATIONAL_PERMISSIONS (which belongs to the coordinator): a trainer gets no
-// create/delete on sessions/courses/trainees/requests/companies and no access to
-// certificates/reports/audit at all. `sessions.edit` and the exam `create`s are
-// the delivery actions (start/complete a session, run pre/final tests) — every
-// one of them is additionally restricted server-side to the trainer's OWN
-// sessions (src/lib/api/trainer-scope.ts), so a direct-URL request for another
-// trainer's record returns 403.
+// create/delete on sessions/courses/trainees/requests/companies, no access to
+// certificates/reports/audit at all, and no administrative modules. `courses.view`
+// and `trainees.view` are scoped server-side to the trainer's OWN sessions
+// (src/lib/api/trainer-scope.ts). `sessions.edit`, the `qr-code.create`, and the
+// exam `create`/`edit`s are the delivery actions (start/complete a session,
+// activate its QR window, run + manage pre/final tests) — every one of them is
+// additionally restricted server-side to the trainer's OWN sessions, so a
+// direct-URL request for another trainer's record returns 403.
 const TRAINER_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
   dashboard: ["view"],
+  courses: ["view"],
+  trainees: ["view"],
   sessions: ["view", "edit"],
   attendance: ["view", "create", "edit"],
-  "qr-code": ["view"],
-  "pre-test": ["view", "create"],
-  "final-test": ["view", "create"],
+  "qr-code": ["view", "create"],
+  "pre-test": ["view", "create", "edit"],
+  "final-test": ["view", "create", "edit"],
   evaluation: ["view"],
   workshops: ["view"],
   notifications: ["view"],
@@ -357,6 +366,7 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
 
 const MODULE_ALIASES: Partial<Record<RouteKey, RouteKey[]>> = {
   "session-detail": ["sessions"],
+  "trainee-detail": ["trainees"],
   "exam-attempts": ["pre-test", "final-test"],
 };
 

@@ -2,6 +2,7 @@
 // Validates: role (Coordinator/SuperAdmin), certification, scheduling conflicts
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { trainerDeniedSession } from "@/lib/api/trainer-scope";
 import { validateTrainerAssignment, validationErrorToResponse, findTrainerConflicts } from "@/lib/api/trainer-assignment";
 import { notifySessionScheduleUpdate } from "@/lib/notifications/session-update";
 
@@ -14,6 +15,9 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
 
   const session = await db.trainingSession.findUnique({ where: { id } });
   if (!session || session.deletedAt) return notFound("Session not found");
+  if (trainerDeniedSession(user, session.trainerId)) {
+    return fail("Forbidden — you can only access your own sessions", 403);
+  }
 
   const trainer = await db.trainer.findFirst({ where: { id: trainerId, deletedAt: null } });
   if (!trainer) return fail("Trainer not found", 404);
@@ -87,10 +91,13 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
 });
 
 // GET endpoint — preview conflicts for a trainer on this session's timeslot
-export const GET = withModuleAction("sessions", "view", async ({ req, params }) => {
+export const GET = withModuleAction("sessions", "view", async ({ req, params, user }) => {
   const id = params.id as string;
   const session = await db.trainingSession.findUnique({ where: { id } });
   if (!session || session.deletedAt) return notFound("Session not found");
+  if (trainerDeniedSession(user, session.trainerId)) {
+    return fail("Forbidden — you can only access your own sessions", 403);
+  }
 
   const url = new URL(req.url);
   const trainerId = url.searchParams.get("trainerId");

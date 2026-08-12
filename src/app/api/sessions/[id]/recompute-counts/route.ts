@@ -10,13 +10,17 @@
 //
 // Returns the recomputed values so the caller can verify the fix.
 import { db } from "@/lib/db";
-import { withModuleAction, ok, notFound } from "@/lib/auth/api";
+import { withModuleAction, ok, notFound, fail } from "@/lib/auth/api";
+import { trainerDeniedSession } from "@/lib/api/trainer-scope";
 import { recomputeSessionCounts } from "@/lib/sessions/session-management";
 
 export const POST = withModuleAction("sessions", "edit", async ({ params, user }) => {
   const id = params.id as string;
   const session = await db.trainingSession.findUnique({ where: { id } });
   if (!session || session.deletedAt) return notFound("Session not found");
+  if (trainerDeniedSession(user, session.trainerId)) {
+    return fail("Forbidden — you can only access your own sessions", 403);
+  }
 
   await recomputeSessionCounts(id);
 

@@ -12,6 +12,7 @@
 //   { targetSessionId: string, traineeIds: string[] }
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { trainerDeniedSession } from "@/lib/api/trainer-scope";
 import { recomputeSessionCounts, truncateForAudit } from "@/lib/sessions/session-management";
 import { randomUUID } from "node:crypto";
 
@@ -46,13 +47,19 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
   if (!source || source.deletedAt) return notFound("Source session not found");
   if (!target || target.deletedAt) return notFound("Target session not found");
 
+  // A trainer may only move trainees between their OWN sessions.
+  if (trainerDeniedSession(user, source.trainerId) || trainerDeniedSession(user, target.trainerId)) {
+    return fail("Forbidden — you can only access your own sessions", 403);
+  }
+
   // No status gate — coordinators can move trainees between any sessions
   // regardless of status. Real-world training centers need this flexibility.
   // Every change is audit-logged.
 
-  // Hard requirement: same course. Otherwise the trainee loses context
-  // (different test questions, different certificate, different duration).
-  if (source.courseId !== target.courseId) {
+  // Hard requirement: same course — UNLESS the caller is a trainer, who (per
+  // the TRAINER operational permissions) may transfer a trainee to another
+  // course's session. Every move is audit-logged either way.
+  if (source.courseId !== target.courseId && user.role !== "TRAINER") {
     return fail(
       `Cannot move trainees between sessions of different courses (source: ${source.courseId}, target: ${target.courseId})`,
       422,

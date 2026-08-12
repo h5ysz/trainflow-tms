@@ -1,9 +1,10 @@
-// TRAINER RBAC — delivery-only isolation verification
+// TRAINER RBAC — delivery-scoped isolation verification
 // =====================================================================
 // 1. The permission matrix (actionPermissions.TRAINER) grants no administrative
-//    module and no create/delete on sessions/certificates/etc.
+//    module, no certificates module, and no create/delete on sessions.
 // 2. Every trainer list query is scoped server-side to the authenticated
-//    trainer's OWN records (trainerId derived from the user, never the client).
+//    trainer's OWN records (trainerId derived from the user, never the client):
+//    sessions, courses (via own sessions) and trainees (via own enrollments).
 // 3. The real route guard chain (withModuleAction -> requireModuleAction ->
 //    getCurrentUser) rejects direct-URL requests: admin APIs return 403, and a
 //    trainer cannot open another trainer's session.
@@ -38,16 +39,33 @@ const { fakeDb } = vi.hoisted(() => {
       workshop: { findMany: m(), count: m(), findUnique: m() },
       courseEvaluation: { findMany: m(), count: m() },
       trainee: { findMany: m(), count: m(), findUnique: m() },
-      sessionEnrollment: { count: m() },
+      sessionEnrollment: { count: m(), findMany: m() },
       workshopTrainerAuthorization: { count: m(), findFirst: m() },
       attendance: { findUnique: m(), findFirst: m() },
-      examAttempt: { findUnique: m(), findFirst: m() },
+      examAttempt: { findUnique: m(), findFirst: m(), findMany: m(), count: m(), update: m() },
+      testResult: { findMany: m(), count: m(), create: m() },
       sessionLifecycleEvent: { findMany: m() },
+      certificate: { findMany: m(), findFirst: m() },
+      course: { findUnique: m() },
     },
   };
 });
 
 vi.mock("@/lib/db", () => ({ db: fakeDb }));
+vi.mock("exceljs", () => {
+  function Workbook(this: any) {
+    this.creator = "";
+    this.created = null;
+    this.addWorksheet = () => ({
+      columns: [],
+      rows: [],
+      addRow: () => ({}),
+      getRow: () => ({}),
+    });
+    this.xlsx = { writeBuffer: async () => new Uint8Array(0) };
+  }
+  return { Workbook, default: { Workbook } };
+});
 vi.mock("next/headers", () => ({
   cookies: () => ({
     get: () => ({ value: "test-token" }),
@@ -70,6 +88,15 @@ import { GET as getRequests } from "@/app/api/requests/route";
 import { GET as getWorkshops } from "@/app/api/workshops/route";
 import { GET as getEvaluations } from "@/app/api/evaluations/route";
 import { GET as getTrainees } from "@/app/api/trainees/route";
+import { GET as getExamAttempts } from "@/app/api/exam-attempts/route";
+import { GET as getExamAttemptById } from "@/app/api/exam-attempts/[id]/route";
+import { POST as postReopenAttempt } from "@/app/api/exam-attempts/[id]/reopen/route";
+import { PUT as putEditAttemptResult } from "@/app/api/exam-attempts/[id]/edit-result/route";
+import { GET as getTestResults, POST as postTestResult } from "@/app/api/test-results/route";
+import { GET as getSessionExport } from "@/app/api/sessions/export/route";
+import { GET as getTrainingRecord } from "@/app/api/trainees/[id]/training-record/route";
+import { GET as getTraineeHistory } from "@/app/api/trainees/[id]/history/route";
+import { GET as getCourseById } from "@/app/api/courses/[id]/route";
 
 // ── Fixtures ────────────────────────────────────────────────────────────
 function trainerPerms(): string[] {
@@ -123,8 +150,6 @@ const ADMIN_MODULES: RouteKey[] = [
   "company-contacts",
   "trainers",
   "trainer-qualifications",
-  "trainees",
-  "courses",
   "requests",
   "scheduling",
   "certificates",
@@ -148,7 +173,7 @@ const ADMIN_MODULES: RouteKey[] = [
   "ai-dashboard",
 ];
 
-describe("TRAINER permission matrix (delivery-only)", () => {
+describe("TRAINER permission matrix (delivery-scoped)", () => {
   it("grants no administrative module and no admin action", () => {
     const perms = trainerPerms();
     for (const mod of ADMIN_MODULES) {
@@ -160,6 +185,8 @@ describe("TRAINER permission matrix (delivery-only)", () => {
   it("grants the delivery modules the trainer needs", () => {
     const perms = trainerPerms();
     expect(canAccessModule(perms, "dashboard")).toBe(true);
+    expect(canAccessModule(perms, "courses")).toBe(true);
+    expect(canAccessModule(perms, "trainees")).toBe(true);
     expect(canAccessModule(perms, "sessions")).toBe(true);
     expect(canAccessModule(perms, "attendance")).toBe(true);
     expect(canAccessModule(perms, "qr-code")).toBe(true);
@@ -177,20 +204,32 @@ describe("TRAINER permission matrix (delivery-only)", () => {
     expect(canPerformAction(perms, "sessions", "delete")).toBe(false);
     expect(canPerformAction(perms, "attendance", "create")).toBe(true);
     expect(canPerformAction(perms, "attendance", "delete")).toBe(false);
-    expect(canPerformAction(perms, "certificates", "create")).toBe(false);
+    expect(canPerformAction(perms, "qr-code", "create")).toBe(true); // activate QR window on own sessions
+    expect(canPerformAction(perms, "qr-code", "edit")).toBe(false);
     expect(canPerformAction(perms, "pre-test", "create")).toBe(true); // run exams
+    expect(canPerformAction(perms, "pre-test", "edit")).toBe(true);   // manage questions
     expect(canPerformAction(perms, "final-test", "create")).toBe(true);
+    expect(canPerformAction(perms, "final-test", "edit")).toBe(true);
+    // Read-only visibility of the trainer's own courses + trainees; no writes.
+    expect(canPerformAction(perms, "courses", "view")).toBe(true);
+    expect(canPerformAction(perms, "courses", "create")).toBe(false);
+    expect(canPerformAction(perms, "trainees", "view")).toBe(true);
+    expect(canPerformAction(perms, "trainees", "edit")).toBe(false);
+    // Certificates stay coordinator-only.
+    expect(canPerformAction(perms, "certificates", "view")).toBe(false);
+    expect(canPerformAction(perms, "certificates", "create")).toBe(false);
   });
 
-  it("sidebar nav exposes only delivery modules for a trainer", () => {
+  it("sidebar nav exposes only the trainer's scoped modules", () => {
     const keys = getNavForRole(trainerPerms()).map((i) => i.key);
     expect(keys).toContain("sessions");
     expect(keys).toContain("attendance");
     expect(keys).toContain("evaluation");
+    expect(keys).toContain("courses");
+    expect(keys).toContain("trainees");
     expect(keys).not.toContain("requests");
     expect(keys).not.toContain("certificates");
     expect(keys).not.toContain("companies");
-    expect(keys).not.toContain("trainees");
     expect(keys).not.toContain("reports");
     expect(keys).not.toContain("audit-log");
     expect(keys).not.toContain("worker-passports");
@@ -292,12 +331,28 @@ describe("TRAINER API protection", () => {
     expect(res.status).toBe(200);
   });
 
-  it("trainees module returns 403 for a trainer — trainee visibility is session-scoped only", async () => {
-    // A trainer has no standalone trainees module (the admin matrix grants it to
-    // coordinators). Trainee data reaches a trainer exclusively through their own
-    // session records, which are scoped + ownership-checked server-side.
+  it("trainees list returns only trainees enrolled in the trainer's own sessions", async () => {
+    // A trainer has no standalone admin trainees module — trainee visibility is
+    // scoped to enrollments in the trainer's OWN sessions, derived from the
+    // authenticated user's trainerId server-side.
+    const trainees = [
+      { id: "tr-1", fullName: "Enrolled Trainee", refNumber: "TRA-000001", deletedAt: null, _count: { requestCourses: 0 } },
+      { id: "tr-2", fullName: "Other Trainee", refNumber: "TRA-000002", deletedAt: null, _count: { requestCourses: 0 } },
+    ];
+    const scoped = (where: any) => {
+      const trainerId = where.sessionEnrollments?.some?.session?.trainerId;
+      return trainees.filter((t) => (trainerId ? t.id === "tr-1" : true));
+    };
+    fakeDb.trainee.findMany.mockImplementation((args: any) => Promise.resolve(scoped(args?.where ?? {})));
+    fakeDb.trainee.count.mockImplementation((args: any) => Promise.resolve(scoped(args?.where ?? {}).length));
+
     const res = await getTrainees(new Request("http://localhost/api/trainees"));
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    const body = await json(res);
+    expect(body.data.map((r: any) => r.id)).toEqual(["tr-1"]);
+    expect(fakeDb.trainee.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ sessionEnrollments: { some: { session: { trainerId: "tr-1" } } } }) })
+    );
   });
 
   it("workshops list returns only the trainer's authorized workshops", async () => {
@@ -411,5 +466,220 @@ describe("TRAINER API protection", () => {
       params: { id: "sess-2" },
     });
     expect(res.status).toBe(403);
+  });
+});
+
+// ── 4. Own-sessions-only data isolation (exam attempts / results / export) ──
+// The trainer holds pre-test/final-test view+create+edit, so every assessment
+// endpoint they can reach must stay pinned to THEIR sessions. These tests hit
+// the real route guard chain and assert that another trainer's records are
+// rejected and that lists are filtered server-side.
+describe("TRAINER own-sessions-only data isolation", () => {
+  it("exam attempts list returns only attempts from the trainer's own sessions", async () => {
+    const attempts = [
+      { id: "att-1", testType: "FINAL_TEST", session: { trainerId: "tr-1" } },
+      { id: "att-2", testType: "FINAL_TEST", session: { trainerId: "tr-2" } },
+    ];
+    fakeDb.examAttempt.findMany.mockImplementation((args: any) => {
+      const t = args?.where?.session?.trainerId;
+      return Promise.resolve(attempts.filter((a) => (t ? a.session.trainerId === t : true)));
+    });
+    fakeDb.examAttempt.count.mockImplementation((args: any) => {
+      const t = args?.where?.session?.trainerId;
+      return Promise.resolve(attempts.filter((a) => (t ? a.session.trainerId === t : true)).length);
+    });
+
+    const res = await getExamAttempts(new Request("http://localhost/api/exam-attempts"));
+    expect(res.status).toBe(200);
+    const body = await json(res);
+    expect(body.data.map((r: any) => r.id)).toEqual(["att-1"]);
+    expect(fakeDb.examAttempt.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ session: { trainerId: "tr-1" } }) })
+    );
+  });
+
+  it("exam attempt detail returns 403 for another trainer's session attempt", async () => {
+    fakeDb.examAttempt.findUnique.mockResolvedValue({
+      id: "att-2", testType: "FINAL_TEST", deletedAt: null,
+      session: { id: "sess-2", refNumber: "SES-000002", title: "B", trainerId: "tr-2", course: {} },
+    } as any);
+    const res = await getExamAttemptById(new Request("http://localhost/api/exam-attempts/att-2"), {
+      params: { id: "att-2" },
+    } as any);
+    expect(res.status).toBe(403);
+  });
+
+  it("exam attempt detail returns 200 for the trainer's own session attempt", async () => {
+    fakeDb.examAttempt.findUnique.mockResolvedValue({
+      id: "att-1", testType: "FINAL_TEST", deletedAt: null,
+      session: { id: "sess-1", refNumber: "SES-000001", title: "A", trainerId: "tr-1", course: {} },
+    } as any);
+    const res = await getExamAttemptById(new Request("http://localhost/api/exam-attempts/att-1"), {
+      params: { id: "att-1" },
+    } as any);
+    expect(res.status).toBe(200);
+  });
+
+  it("reopen returns 403 for another trainer's session attempt", async () => {
+    fakeDb.examAttempt.findUnique.mockResolvedValue({
+      id: "att-2", testType: "FINAL_TEST", deletedAt: null, status: "GRADED",
+      session: { id: "sess-2", refNumber: "SES-000002", trainerId: "tr-2" },
+    } as any);
+    const res = await postReopenAttempt(
+      new Request("http://localhost/api/exam-attempts/att-2/reopen", { method: "POST", body: JSON.stringify({ reason: "x" }) }),
+      { params: { id: "att-2" } } as any
+    );
+    expect(res.status).toBe(403);
+    expect(fakeDb.examAttempt.update).not.toHaveBeenCalled();
+  });
+
+  it("edit-result returns 403 for another trainer's session attempt", async () => {
+    fakeDb.examAttempt.findUnique.mockResolvedValue({
+      id: "att-2", testType: "FINAL_TEST", deletedAt: null, status: "GRADED",
+      session: { id: "sess-2", refNumber: "SES-000002", courseId: "c-2", trainerId: "tr-2", course: { passScore: 70 } },
+    } as any);
+    const res = await putEditAttemptResult(
+      new Request("http://localhost/api/exam-attempts/att-2/edit-result", { method: "PUT", body: JSON.stringify({ scorePercent: 90 }) }),
+      { params: { id: "att-2" } } as any
+    );
+    expect(res.status).toBe(403);
+    expect(fakeDb.examAttempt.update).not.toHaveBeenCalled();
+  });
+
+  it("test results list returns only results from the trainer's own sessions", async () => {
+    const results = [
+      { id: "res-1", testType: "FINAL_TEST", session: { trainerId: "tr-1", refNumber: "SES-000001", title: "A", course: {} } },
+      { id: "res-2", testType: "FINAL_TEST", session: { trainerId: "tr-2", refNumber: "SES-000002", title: "B", course: {} } },
+    ];
+    fakeDb.testResult.findMany.mockImplementation((args: any) => {
+      const t = args?.where?.session?.trainerId;
+      return Promise.resolve(results.filter((r) => (t ? r.session.trainerId === t : true)));
+    });
+    fakeDb.testResult.count.mockImplementation((args: any) => {
+      const t = args?.where?.session?.trainerId;
+      return Promise.resolve(results.filter((r) => (t ? r.session.trainerId === t : true)).length);
+    });
+
+    const res = await getTestResults(new Request("http://localhost/api/test-results"));
+    expect(res.status).toBe(200);
+    const body = await json(res);
+    expect(body.data.map((r: any) => r.id)).toEqual(["res-1"]);
+    expect(fakeDb.testResult.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ session: { trainerId: "tr-1" } }) })
+    );
+  });
+
+  it("test-results POST blocks adding a result to another trainer's session", async () => {
+    fakeDb.trainingSession.findFirst.mockResolvedValue({
+      id: "sess-2", trainerId: "tr-2", deletedAt: null, course: { passScore: 70 },
+    } as any);
+    const res = await postTestResult(
+      new Request("http://localhost/api/test-results", {
+        method: "POST",
+        body: JSON.stringify({ sessionId: "sess-2", testType: "FINAL_TEST", traineeName: "X", scorePercent: 90 }),
+      })
+    );
+    expect(res.status).toBe(403);
+    expect(fakeDb.testResult.create).not.toHaveBeenCalled();
+  });
+
+  it("sessions export only includes the trainer's own sessions", async () => {
+    fakeDb.trainingSession.findMany.mockResolvedValue([
+      {
+        refNumber: "SES-000001",
+        instituteName: "I",
+        classification: null,
+        expectedTrainees: 10,
+        startDate: new Date("2026-01-01"),
+        endDate: new Date("2026-01-03"),
+        durationDays: 3,
+        shift: "MORNING",
+        region: null,
+        city: null,
+        venue: null,
+        locationMapUrl: null,
+        notes: null,
+        course: { title: "C" },
+        trainer: { nameEn: "T" },
+      },
+    ] as any);
+    const res = await getSessionExport(new Request("http://localhost/api/sessions/export"));
+    expect(res.status).toBe(200);
+    expect(fakeDb.trainingSession.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ trainerId: "tr-1" }) })
+    );
+  });
+
+  it("training-record returns 404 for a trainee not enrolled in the trainer's sessions", async () => {
+    fakeDb.trainee.findUnique.mockResolvedValue({
+      id: "t-2", fullName: "Other", nationalId: "N2", deletedAt: null, companyId: "c-2", company: {}, requestCourses: [],
+    } as any);
+    fakeDb.sessionEnrollment.count.mockResolvedValue(0);
+    const res = await getTrainingRecord(new Request("http://localhost/api/trainees/t-2/training-record"), {
+      params: { id: "t-2" },
+    } as any);
+    expect(res.status).toBe(404);
+  });
+
+  it("training-record returns 200 for a trainee enrolled in the trainer's session", async () => {
+    fakeDb.trainee.findUnique.mockResolvedValue({
+      id: "t-1", refNumber: "TRA-000001", fullName: "Mine", nationalId: "N1", nationality: "SA",
+      jobTitle: "T", mobile: "0", email: "x@y.z", status: "ACTIVE", companyId: "c-1",
+      company: { id: "c-1", name: "C", refNumber: "CMP-1" }, idAttachmentUrl: null,
+      documents: null, requestCourses: [], deletedAt: null,
+    } as any);
+    fakeDb.sessionEnrollment.count.mockResolvedValue(1);
+    fakeDb.certificate.findMany.mockResolvedValue([]);
+    fakeDb.testResult.findMany.mockResolvedValue([]);
+    const res = await getTrainingRecord(new Request("http://localhost/api/trainees/t-1/training-record"), {
+      params: { id: "t-1" },
+    } as any);
+    expect(res.status).toBe(200);
+  });
+
+  it("history returns 404 for a trainee not enrolled in the trainer's sessions", async () => {
+    fakeDb.trainee.findUnique.mockResolvedValue({
+      id: "t-2", fullName: "Other", nationalId: "N2", deletedAt: null, companyId: "c-2", company: {},
+    } as any);
+    fakeDb.sessionEnrollment.count.mockResolvedValue(0);
+    const res = await getTraineeHistory(new Request("http://localhost/api/trainees/t-2/history"), {
+      params: { id: "t-2" },
+    } as any);
+    expect(res.status).toBe(404);
+  });
+
+  it("history returns 200 for a trainee enrolled in the trainer's session", async () => {
+    fakeDb.trainee.findUnique.mockResolvedValue({
+      id: "t-1", refNumber: "TRA-000001", fullName: "Mine", nationalId: "N1", nationality: "SA",
+      jobTitle: "T", mobile: "0", email: "x@y.z", status: "ACTIVE", companyId: "c-1",
+      company: { id: "c-1", name: "C", refNumber: "CMP-1" }, documents: null, deletedAt: null,
+    } as any);
+    fakeDb.sessionEnrollment.count.mockResolvedValue(1);
+    fakeDb.sessionEnrollment.findMany.mockResolvedValue([]);
+    fakeDb.certificate.findMany.mockResolvedValue([]);
+    const res = await getTraineeHistory(new Request("http://localhost/api/trainees/t-1/history"), {
+      params: { id: "t-1" },
+    } as any);
+    expect(res.status).toBe(200);
+  });
+
+  it("course detail returns 404 when the trainer has no session for that course", async () => {
+    fakeDb.course.findUnique.mockResolvedValue({
+      id: "c-2", code: "CRS-2", deletedAt: null,
+      _count: { requests: 0, sessions: 0, certificates: 0, questions: 0 },
+    } as any);
+    fakeDb.trainingSession.count.mockResolvedValue(0);
+    const res = await getCourseById(new Request("http://localhost/api/courses/c-2"), { params: { id: "c-2" } });
+    expect(res.status).toBe(404);
+  });
+
+  it("course detail returns 200 for a course linked to the trainer's session", async () => {
+    fakeDb.course.findUnique.mockResolvedValue({
+      id: "c-1", code: "CRS-1", deletedAt: null,
+      _count: { requests: 0, sessions: 0, certificates: 0, questions: 0 },
+    } as any);
+    fakeDb.trainingSession.count.mockResolvedValue(1);
+    const res = await getCourseById(new Request("http://localhost/api/courses/c-1"), { params: { id: "c-1" } });
+    expect(res.status).toBe(200);
   });
 });

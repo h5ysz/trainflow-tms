@@ -2,7 +2,7 @@
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 
-export const GET = withModuleAction("courses", "view", async ({ params }) => {
+export const GET = withModuleAction("courses", "view", async ({ params, user }) => {
   const id = params.id as string;
   const course = await db.course.findUnique({
     where: { id },
@@ -11,6 +11,13 @@ export const GET = withModuleAction("courses", "view", async ({ params }) => {
     },
   });
   if (!course || course.deletedAt) return notFound("Course not found");
+  // A trainer may only view courses linked to at least one of their own sessions.
+  if (user.role === "TRAINER" && user.trainerId) {
+    const linkedSessions = await db.trainingSession.count({
+      where: { courseId: id, trainerId: user.trainerId, deletedAt: null },
+    });
+    if (linkedSessions === 0) return notFound("Course not found");
+  }
   return ok(course);
 });
 

@@ -7,9 +7,15 @@ import { list } from "@/lib/api/response";
 
 const ALLOWED_SORT_FIELDS = ["code", "title", "createdAt", "updatedAt", "status", "category", "durationHours"];
 
-export const GET = withModuleAction("courses", "view", async ({ req }) => {
+export const GET = withModuleAction("courses", "view", async ({ req, user }) => {
   const q = parseListQuery(req);
   const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
+
+  // A trainer may only see the courses they are qualified/assigned to run —
+  // i.e. courses that have at least one session assigned to this trainer.
+  if (user.role === "TRAINER" && user.trainerId) {
+    where.sessions = { some: { trainerId: user.trainerId, deletedAt: null } };
+  }
 
   if (q.search) {
     where.OR = [

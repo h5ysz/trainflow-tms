@@ -56,19 +56,23 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "bank-accounts.*", "financial-reports.view",
     "ai-dashboard.view",
   ],
-  // TRAINER: delivery only. No administrative modules. The server scopes every
-  // session/workshop/trainee/evaluation query to this trainer's own records
-  // (trainerId from the authenticated user — never from the client).
-  // `sessions.edit` + exam `create` are the delivery actions (start/complete a
-  // session, run pre/final tests) and are additionally restricted server-side to
-  // the trainer's own sessions.
+  // TRAINER: delivery scoped. No administrative modules, NO certificates
+  // (issuance stays with COORDINATOR). The server scopes every
+  // session/course/trainee/workshop/evaluation query to this trainer's own
+  // records (trainerId from the authenticated user — never from the client).
+  // `sessions.edit`, `qr-code.create` and the exam `create`/`edit`s are the
+  // delivery actions (start/complete a session, activate its QR window, run +
+  // manage pre/final tests) and are additionally restricted server-side to the
+  // trainer's own sessions.
   TRAINER: [
     "dashboard.view",
+    "courses.view",
+    "trainees.view",
     "sessions.view", "sessions.edit",
     "attendance.view", "attendance.create", "attendance.edit",
-    "qr-code.view",
-    "pre-test.view", "pre-test.create",
-    "final-test.view", "final-test.create",
+    "qr-code.view", "qr-code.create",
+    "pre-test.view", "pre-test.create", "pre-test.edit",
+    "final-test.view", "final-test.create", "final-test.edit",
     "evaluation.view",
     "workshops.view",
     "notifications.view",

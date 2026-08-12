@@ -1,10 +1,25 @@
 // /api/sessions/[id]/enrollments/[enrollmentId] — update / delete enrollment
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { trainerDeniedSession } from "@/lib/api/trainer-scope";
+
+async function assertOwnedSession(user: any, sessionId: string) {
+  const session = await db.trainingSession.findFirst({
+    where: { id: sessionId, deletedAt: null },
+    select: { id: true, trainerId: true },
+  });
+  if (!session) return "SESSION_NOT_FOUND";
+  if (trainerDeniedSession(user, session.trainerId)) return "FORBIDDEN";
+  return null;
+}
 
 export const PUT = withModuleAction("sessions", "edit", async ({ req, params, user }) => {
   const sessionId = params.id as string;
   const enrollmentId = params.enrollmentId as string;
+
+  const ownerCheck = await assertOwnedSession(user, sessionId);
+  if (ownerCheck === "SESSION_NOT_FOUND") return notFound("Session not found");
+  if (ownerCheck === "FORBIDDEN") return fail("Forbidden — you can only access your own sessions", 403);
 
   const existing = await db.sessionEnrollment.findUnique({
     where: { id: enrollmentId },
@@ -40,6 +55,10 @@ export const PUT = withModuleAction("sessions", "edit", async ({ req, params, us
 export const DELETE = withModuleAction("sessions", "edit", async ({ params, user, req }) => {
   const sessionId = params.id as string;
   const enrollmentId = params.enrollmentId as string;
+
+  const ownerCheck = await assertOwnedSession(user, sessionId);
+  if (ownerCheck === "SESSION_NOT_FOUND") return notFound("Session not found");
+  if (ownerCheck === "FORBIDDEN") return fail("Forbidden — you can only access your own sessions", 403);
 
   const existing = await db.sessionEnrollment.findUnique({
     where: { id: enrollmentId },
