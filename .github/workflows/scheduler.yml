@@ -56,3 +56,12 @@ jobs:
           curl -fsS -X POST "$APP_URL/api/certificates/expiry-tick" \
             -H "Authorization: Bearer $SCHEDULER_SECRET" \
             --max-time 120 --retry 2 --retry-delay 15 --retry-connrefused
+
+      - name: Session reminder tick
+        env:
+          SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          curl -fsS -X POST "$APP_URL/api/notifications/session-reminder-tick" \
+            -H "Authorization: Bearer $SCHEDULER_SECRET" \
+            --max-time 120 --retry 2 --retry-delay 15 --retry-connrefused
