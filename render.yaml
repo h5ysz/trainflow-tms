@@ -101,9 +101,14 @@ services:
       # ─── Cloudinary (file upload storage) ───
       # Permanent file storage for ID images and additional documents.
       # Replaces local disk storage which is lost on Render free plan redeploys.
+      # CLOUDINARY_CLOUD_NAME is public (it appears in CDN URLs), so it stays
+      # in the file. The API key and secret are credentials and MUST be set in
+      # the Render dashboard (Environment → Secret Files / Secret Env Vars),
+      # never committed. isCloudinaryConfigured() falls back to local disk
+      # storage when the secret is unset, so a missing var degrades gracefully.
       - key: CLOUDINARY_CLOUD_NAME
         value: zmq8l03w
       - key: CLOUDINARY_API_KEY
-        value: "141122823626226"
+        sync: false
       - key: CLOUDINARY_API_SECRET
-        value: ZJh23W4OTGoS6CaT-q3C2I38wGA
+        sync: false

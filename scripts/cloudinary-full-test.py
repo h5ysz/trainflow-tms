@@ -10,13 +10,18 @@ from PIL import Image, ImageDraw
 BASE = "http://localhost:3000"
 SERVER_DIR = "/home/z/my-project/.next/standalone"
 ENV = {
-    "JWT_SECRET": "dummy-secret-for-build-verification-only-not-for-production-use-32chars",
+    "JWT_SECRET": os.environ.get("JWT_SECRET", "dummy-secret-for-build-verification-only-not-for-production-use-32chars"),
     "DATABASE_URL": "file:/home/z/my-project/db/custom.db",
-    "CLOUDINARY_CLOUD_NAME": "zmq8l03w",
-    "CLOUDINARY_API_KEY": "141122823626226",
-    "CLOUDINARY_API_SECRET": "ZJh23W4OTGoS6CaT-q3C2I38wGA",
+    "CLOUDINARY_CLOUD_NAME": os.environ.get("CLOUDINARY_CLOUD_NAME", "zmq8l03w"),
+    "CLOUDINARY_API_KEY": os.environ.get("CLOUDINARY_API_KEY", ""),
+    "CLOUDINARY_API_SECRET": os.environ.get("CLOUDINARY_API_SECRET", ""),
     "PATH": os.environ.get("PATH", ""),
 }
+# Cloudinary credentials must come from the environment. The production
+# values are set as secret env vars in Render; hardcoding them here (or
+# anywhere in git) would expose the account to anyone with repo access.
+if not ENV["CLOUDINARY_API_KEY"] or not ENV["CLOUDINARY_API_SECRET"]:
+    print("⚠️  CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET not set — falling back to disk storage tests.")
 results = []
 errors_found = []
 
