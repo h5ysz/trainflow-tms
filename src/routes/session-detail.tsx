@@ -11,6 +11,7 @@ import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { EmptyState } from "@/components/common/empty-state";
 import { StatusBadge } from "@/components/common/status-badge";
 import { CertReleasePanel } from "@/components/common/cert-release-panel";
+import { SessionContactDirectory } from "@/components/common/session-contact-directory";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -527,6 +528,9 @@ export function SessionDetailRoute() {
         <Tabs defaultValue="enrollments">
           <TabsList>
             <TabsTrigger value="enrollments">{t("session.enrollments")}</TabsTrigger>
+            {user?.role === "TRAINER" && (
+              <TabsTrigger value="contact-directory">{t("session.contactDirectory")}</TabsTrigger>
+            )}
             <TabsTrigger value="lifecycle">{t("session.lifecycle")}</TabsTrigger>
             <TabsTrigger value="trainer">{t("nav.trainers")}</TabsTrigger>
             <TabsTrigger value="qr">{t("nav.qrCode")}</TabsTrigger>
@@ -567,6 +571,12 @@ export function SessionDetailRoute() {
               emptySubtitle={t("session.noEnrollmentsSubtitle")}
             />
           </TabsContent>
+
+          {user?.role === "TRAINER" && (
+            <TabsContent value="contact-directory" className="mt-4">
+              {session && <SessionContactDirectory sessionId={session.id} />}
+            </TabsContent>
+          )}
 
           <TabsContent value="lifecycle" className="mt-4">
             <Card className="p-6 space-y-5">

@@ -2,15 +2,28 @@
 // POST: enroll a trainee (from ANY company) into a session
 // GET:  list all enrollments for the session (shows trainees from multiple companies)
 import { db } from "@/lib/db";
-import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
+import { withModuleAction, ok, created, fail, audit, notFound } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
-import { list } from "@/lib/api/response";
+import { trainerDeniedSession } from "@/lib/api/trainer-scope";
 import { randomUUID } from "node:crypto";
 
 const ALLOWED_SORT_FIELDS = ["enrollmentDate", "createdAt", "enrollmentStatus", "traineeName"];
 
-export const GET = withModuleAction("sessions", "view", async ({ req, params }) => {
+export const GET = withModuleAction("sessions", "view", async ({ req, params, user }) => {
   const sessionId = params.id as string;
+
+  // A trainer may only read the enrollments of sessions assigned to them.
+  // (Same ownership rule as GET /api/sessions/[id] — defense in depth against
+  // direct-URL requests for another trainer's session.)
+  const session = await db.trainingSession.findFirst({
+    where: { id: sessionId, deletedAt: null },
+    select: { id: true, trainerId: true },
+  });
+  if (!session) return notFound("Session not found");
+  if (trainerDeniedSession(user, session.trainerId)) {
+    return fail("Forbidden — you can only access your own sessions", 403);
+  }
+
   const q = parseListQuery(req);
   const where: Record<string, unknown> = {
     ...whereWithSoftDelete({}, q.includeDeleted),
