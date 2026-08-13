@@ -138,6 +138,7 @@ export const POST = withExamAction("create", async ({ req, params, user, allowed
       order: q.order,
       text: q.text,
       textAr: q.textAr,
+      imageUrl: q.imageUrl,
       type: q.type,
       points: q.points,
       options: q.options, // shuffled — trainee sees reordered options

@@ -57,7 +57,7 @@ export const POST = withExamAction("create", async ({ req, user, allowedTestType
   const body = await req.json().catch(() => ({}));
   const {
     courseId, type, testType, text, textAr, options, correctAnswers,
-    points, order, isActive, category, difficulty, tags,
+    points, order, isActive, category, difficulty, tags, imageUrl,
     source, aiModel, aiPrompt,
   } = body;
 
@@ -94,6 +94,7 @@ export const POST = withExamAction("create", async ({ req, user, allowedTestType
       category: category ?? null,
       difficulty: difficulty ?? "MEDIUM",
       tags: tags ? JSON.stringify(tags) : null,
+      imageUrl: imageUrl ?? null,
       source: source ?? "MANUAL",
       aiModel: aiModel ?? null,
       aiPrompt: aiPrompt ?? null,

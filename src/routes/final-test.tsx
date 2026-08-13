@@ -23,7 +23,7 @@ import { newQuestionDefaults, validateQuestion } from "@/lib/questions";
 interface CourseOption { id: string; title: string; code: string; }
 interface Question {
   id: string; courseCode?: string | null; type: string; text: string;
-  options: string[]; correctAnswers: number[]; points: number; order: number; isActive: boolean;
+  options: string[]; correctAnswers: number[]; points: number; order: number; isActive: boolean; imageUrl?: string | null;
 }
 interface TestResultRow {
   id: string; sessionCode?: string | null; traineeName: string;
@@ -279,6 +279,9 @@ export function FinalTestRoute() {
             <Field label={t("finalTest.points")}><Input type="number" min={1} value={(formData.points as number) ?? 1} onChange={(e) => setField("points", parseInt(e.target.value, 10) || 1)} /></Field>
             <Field label={t("finalTest.order")}><Input type="number" min={1} value={(formData.order as number) ?? 1} onChange={(e) => setField("order", parseInt(e.target.value, 10) || 1)} /></Field>
           </FormGrid>
+          <Field label={t("questions.imageUrl")}>
+            <Input placeholder="/question-images/saf02/figure-1-2.png" value={(formData.imageUrl as string) ?? ""} onChange={(e) => setField("imageUrl", e.target.value)} />
+          </Field>
         </div>
       </FormDialog>
 

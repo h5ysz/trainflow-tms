@@ -40,6 +40,7 @@ interface ExamQuestion {
   order: number;
   text: string;
   textAr?: string | null;
+  imageUrl?: string | null;
   type: string;
   points: number;
   options: string[];
@@ -237,6 +238,17 @@ export function ExamAttemptRoute() {
                     </p>
                   </div>
                 </div>
+
+                {q.imageUrl && (
+                  <div className="ps-10">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={q.imageUrl}
+                      alt={locale === "ar" && q.textAr ? q.textAr : q.text}
+                      className="max-h-72 w-auto max-w-full rounded-md border border-border bg-muted/30 object-contain"
+                    />
+                  </div>
+                )}
 
                 {single ? (
                   <RadioGroup

@@ -27,7 +27,7 @@ export const PUT = withExamAction("edit", async ({ req, params, user, allowedTes
   const existing = await db.question.findUnique({ where: { id } });
   if (!existing || existing.deletedAt) return notFound("Question not found");
 
-  const { type, testType, text, textAr, options, correctAnswers, points, order, isActive, category, difficulty, tags } = body;
+  const { type, testType, text, textAr, options, correctAnswers, points, order, isActive, category, difficulty, tags, imageUrl } = body;
 
   // Both the current type and any requested new type must be within reach, so a
   // final-test-only role can't reach across and edit a pre-test question (or move
@@ -54,6 +54,7 @@ export const PUT = withExamAction("edit", async ({ req, params, user, allowedTes
       ...(category !== undefined && { category }),
       ...(difficulty !== undefined && { difficulty }),
       ...(tags !== undefined && { tags: JSON.stringify(tags) }),
+      ...(imageUrl !== undefined && { imageUrl }),
       updatedBy: user.id,
     },
   });

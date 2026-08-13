@@ -624,6 +624,7 @@ model Question {
   category       String? // tag for bank browsing
   difficulty     String         @default("MEDIUM") // EASY | MEDIUM | HARD
   tags           String? // JSON array of tags
+  imageUrl       String? // optional figure/image shown with the question
   // AI-assisted exam support
   source         QuestionSource @default(MANUAL)
   aiGeneratedAt  DateTime?
