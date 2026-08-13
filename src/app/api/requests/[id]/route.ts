@@ -100,11 +100,20 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
   const {
     traineeCount, preferredDateFrom, preferredDateTo,
     preferredLocation, preferredLanguage, notes, priority,
-    contactId,
+    contactId, courseId,
     status: newStatus, rejectionReason,
     trainees: submittedTrainees,
     additionalDocuments,
   } = body;
+
+  // Validate the course when it changes — the edit form sends the selected
+  // courseId through `...formData`, but this handler used to ignore it, so
+  // switching courses on an existing request silently left the old course
+  // name in the list.
+  if (courseId !== undefined && courseId !== existing.courseId) {
+    const course = await db.course.findFirst({ where: { id: courseId, deletedAt: null } });
+    if (!course) return fail("Course not found", 404);
+  }
 
   // Workflow enforcement — self-service allowlist for non-edit roles.
   // Mirrors SELF_SERVICE_TRANSITIONS in /api/requests/[id]/transition.
@@ -161,6 +170,7 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
   };
 
   if (traineeCount !== undefined) updates.traineeCount = traineeCount;
+  if (courseId !== undefined) updates.courseId = courseId;
   if (preferredDateFrom !== undefined) updates.preferredDateFrom = preferredDateFrom ? new Date(preferredDateFrom) : null;
   if (preferredDateTo !== undefined) updates.preferredDateTo = preferredDateTo ? new Date(preferredDateTo) : null;
   if (preferredLocation !== undefined) updates.preferredLocation = preferredLocation;
@@ -221,23 +231,29 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
   // Mirrors the POST handler's merge logic: reuse existing Trainee rows by
   // (companyId, nationalId), merge documents by URL, update scalar fields.
   if (Array.isArray(submittedTrainees) && submittedTrainees.length > 0) {
-    // Ensure a TrainingRequestCourse row exists for this request
-    let rc = await db.trainingRequestCourse.findFirst({
-      where: { requestId: id, deletedAt: null },
+  // Ensure a TrainingRequestCourse row exists for this request
+  const resolvedCourseId = (updates.courseId as string | undefined) ?? existing.courseId;
+  let rc = await db.trainingRequestCourse.findFirst({
+    where: { requestId: id, deletedAt: null },
+  });
+  if (!rc) {
+    rc = await db.trainingRequestCourse.create({
+      data: {
+        id: crypto.randomUUID(),
+        requestId: id,
+        courseId: resolvedCourseId ?? "",
+        traineeCount: submittedTrainees.length,
+        createdBy: user.id,
+        updatedBy: user.id,
+        updatedAt: now,
+      },
     });
-    if (!rc) {
-      rc = await db.trainingRequestCourse.create({
-        data: {
-          id: crypto.randomUUID(),
-          requestId: id,
-          courseId: existing.courseId ?? "",
-          traineeCount: submittedTrainees.length,
-          createdBy: user.id,
-          updatedBy: user.id,
-          updatedAt: now,
-        },
-      });
-    }
+  } else if (rc.courseId !== resolvedCourseId) {
+    rc = await db.trainingRequestCourse.update({
+      where: { id: rc.id },
+      data: { courseId: resolvedCourseId ?? "", updatedBy: user.id, updatedAt: now },
+    });
+  }
 
     for (const t of submittedTrainees) {
       if (!t.fullName || !t.nationalId) continue;
