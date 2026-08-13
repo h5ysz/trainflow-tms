@@ -5,6 +5,8 @@ import { canPerformAction } from "@/lib/auth/permissions";
 import { recordStatusChange } from "@/lib/auth/audit";
 import { canTransition } from "../route";
 import { nextRefNumber } from "@/lib/api/ref-number";
+import { isRegionCode } from "@/lib/regions";
+import { parseRegionsCovered } from "@/lib/api/region-scope";
 import { validateRequestForApproval, MIN_TRAINEES_PER_COURSE, MAX_TRAINEES_PER_COURSE } from "@/lib/api/request-validation";
 import type { TrainingRequestStatus } from "@prisma/client";
 
@@ -104,6 +106,8 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
     status: newStatus, rejectionReason,
     trainees: submittedTrainees,
     additionalDocuments,
+    region: requestedRegion,
+    preferredCoordinatorId,
   } = body;
 
   // Validate the course when it changes — the edit form sends the selected
@@ -113,6 +117,12 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
   if (courseId !== undefined && courseId !== existing.courseId) {
     const course = await db.course.findFirst({ where: { id: courseId, deletedAt: null } });
     if (!course) return fail("Course not found", 404);
+  }
+
+  // Validate the region when it changes — the edit form sends the selected
+  // region through `...formData`, but this handler used to ignore it.
+  if (requestedRegion !== undefined && requestedRegion !== null && requestedRegion !== "" && !isRegionCode(requestedRegion)) {
+    return fail(`Invalid region: ${requestedRegion}. Valid: CENTRAL, EASTERN, WESTERN, SOUTHERN.`, 422, "VALIDATION_ERROR");
   }
 
   // Workflow enforcement — self-service allowlist for non-edit roles.
@@ -189,6 +199,41 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
     updates.contactId = contactId || null;
   }
 
+  // ── Region / coordinator assignment (smart routing) — mirrors POST ──
+  // The edit form sends these through `...formData`, but this handler used to
+  // ignore them, so changing the region (or picking a different coordinator)
+  // on an existing request silently had no effect.
+  if (requestedRegion !== undefined && requestedRegion !== existing.region) {
+    updates.region = requestedRegion || null;
+  }
+  if (preferredCoordinatorId !== undefined) {
+    if (preferredCoordinatorId) {
+      const preferred = await db.user.findFirst({
+        where: { id: preferredCoordinatorId, role: "COORDINATOR", isActive: true, deletedAt: null },
+        select: { id: true, region: true, regionsCovered: true },
+      });
+      if (!preferred) {
+        return fail("Selected coordinator not found or inactive", 422, "COORDINATOR_NOT_FOUND");
+      }
+      const effectiveRegion = requestedRegion ?? existing.region;
+      if (effectiveRegion) {
+        const covered = parseRegionsCovered(preferred.regionsCovered);
+        if (preferred.region !== effectiveRegion && !covered.includes(effectiveRegion)) {
+          return fail(
+            "Selected coordinator is not authorized for the request region",
+            422,
+            "COORDINATOR_REGION_MISMATCH",
+            { coordinatorRegion: preferred.region, requestRegion: effectiveRegion },
+          );
+        }
+      }
+      updates.coordinatorId = preferred.id;
+    } else {
+      // Explicitly clearing the preferred coordinator → drop the assignment.
+      updates.coordinatorId = null;
+    }
+  }
+
   // Workflow timestamps
   if (newStatus === "SUBMITTED") {
     updates.submittedAt = now;
@@ -230,7 +275,10 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
   // ── Persist trainees + their documents ──
   // Mirrors the POST handler's merge logic: reuse existing Trainee rows by
   // (companyId, nationalId), merge documents by URL, update scalar fields.
-  if (Array.isArray(submittedTrainees) && submittedTrainees.length > 0) {
+  // NOTE: `submittedTrainees` may be an empty array when the user deleted every
+  // trainee from the dialog — the count recompute below must still run so the
+  // main list stops showing a stale number.
+  if (Array.isArray(submittedTrainees)) {
   // Ensure a TrainingRequestCourse row exists for this request
   const resolvedCourseId = (updates.courseId as string | undefined) ?? existing.courseId;
   let rc = await db.trainingRequestCourse.findFirst({
@@ -254,6 +302,38 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
       data: { courseId: resolvedCourseId ?? "", updatedBy: user.id, updatedAt: now },
     });
   }
+
+    // The UI sends the COMPLETE trainee list on every save, so links that are
+    // not in the incoming list were removed by the user. Soft-delete them so a
+    // removed trainee stops showing up and the recomputed count goes down.
+    const incomingNationalIds = submittedTrainees
+      .filter((t) => t.fullName && t.nationalId)
+      .map((t) => t.nationalId);
+    if (incomingNationalIds.length > 0) {
+      const keptLinks = await db.trainingRequestCourseTrainee.findMany({
+        where: {
+          requestCourseId: rc.id,
+          deletedAt: null,
+          trainee: { nationalId: { in: incomingNationalIds } },
+        },
+        select: { id: true },
+      });
+      const keptIds = new Set(keptLinks.map((l) => l.id));
+      await db.trainingRequestCourseTrainee.updateMany({
+        where: {
+          requestCourseId: rc.id,
+          deletedAt: null,
+          NOT: { id: { in: Array.from(keptIds) } },
+        },
+        data: { deletedAt: now, updatedBy: user.id },
+      });
+    } else {
+      // User removed every trainee → drop all active links.
+      await db.trainingRequestCourseTrainee.updateMany({
+        where: { requestCourseId: rc.id, deletedAt: null },
+        data: { deletedAt: now, updatedBy: user.id },
+      });
+    }
 
     for (const t of submittedTrainees) {
       if (!t.fullName || !t.nationalId) continue;
@@ -298,8 +378,13 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
             },
           });
 
-      await db.trainingRequestCourseTrainee.create({
-        data: {
+      // Upsert, not create: @@unique([requestCourseId, traineeId]) ignores
+      // deletedAt, so a link we soft-deleted above (trainee removed then
+      // re-added) must be revived rather than re-created.
+      await db.trainingRequestCourseTrainee.upsert({
+        where: { requestCourseId_traineeId: { requestCourseId: rc.id, traineeId: trainee.id } },
+        update: { deletedAt: null, updatedBy: user.id, updatedAt: now },
+        create: {
           id: crypto.randomUUID(),
           requestCourseId: rc.id,
           traineeId: trainee.id,
@@ -307,7 +392,7 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
           updatedBy: user.id,
           updatedAt: now,
         },
-      }).catch(() => { /* unique constraint — link already exists */ });
+      });
     }
 
     // ── Recompute the trainee count from the ACTUAL active links ──

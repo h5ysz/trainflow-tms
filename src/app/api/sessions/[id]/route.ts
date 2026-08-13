@@ -43,10 +43,18 @@ export const PUT = withModuleAction("sessions", "edit", async ({ req, params, us
   }
 
   const {
-    trainerId, title, location, city, region, venue, shift, durationHours, capacity, language,
+    courseId, trainerId, title, location, city, region, venue, shift, durationHours, capacity, language,
     startDate, endDate, expectedTrainees, actualTrainees, status, notes,
     instituteName, classification, locationMapUrl, durationDays,
   } = body;
+
+  // The edit form sends the selected courseId through `...formData`, but this
+  // handler used to ignore it — changing the course on a session silently left
+  // the old course attached. Validate the course when it changes.
+  if (courseId !== undefined && courseId !== existing.courseId) {
+    const course = await db.course.findFirst({ where: { id: courseId, deletedAt: null } });
+    if (!course) return fail("Course not found", 404);
+  }
 
   // If trainer is being changed (or dates changing with a trainer set), validate assignment
   const newTrainerId = trainerId !== undefined ? trainerId : existing.trainerId;
@@ -77,6 +85,7 @@ export const PUT = withModuleAction("sessions", "edit", async ({ req, params, us
   const updated = await db.trainingSession.update({
     where: { id },
     data: {
+      ...(courseId !== undefined && { courseId }),
       ...(trainerId !== undefined && { trainerId }),
       ...(title !== undefined && { title }),
       ...(location !== undefined && { location }),

@@ -93,6 +93,8 @@ interface RequestCourseDetail {
   trainees: Array<{ trainee: RequestTrainee }>;
 }
 interface RequestDetail extends Request {
+  region?: string | null;
+  coordinatorId?: string | null;
   company?: { id: string; name: string; refNumber?: string; nameAr?: string | null };
   course?: { id: string; title: string; code?: string; refNumber?: string; titleAr?: string | null; durationHours?: number };
   contact?: { id: string; fullName: string; fullNameAr?: string | null; jobTitle?: string | null; email?: string | null; phone?: string | null; mobile?: string | null; contactType?: string | null; isPrimary: boolean; isActive: boolean };
@@ -1029,6 +1031,8 @@ export function TrainingRequestsRoute() {
       // ── Update formData with any richer data from the detail (course title, contact, etc.) ──
       if (detail.courseId) setFormData((p) => ({ ...p, courseId: detail.courseId }));
       if (detail.contactId) setFormData((p) => ({ ...p, contactId: detail.contactId }));
+      if (detail.region) setFormData((p) => ({ ...p, region: detail.region }));
+      if (detail.coordinatorId) setFormData((p) => ({ ...p, preferredCoordinatorId: detail.coordinatorId }));
     } catch {
       // If the fetch fails, the dialog still opens with the basic row data
       // (trainees will be empty, but at least the form fields are populated)
