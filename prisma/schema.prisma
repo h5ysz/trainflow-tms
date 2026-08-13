@@ -616,6 +616,7 @@ model Question {
   text           String
   textAr         String?
   options        String // JSON array of strings
+  optionsAr      String? // JSON array of Arabic strings, mirrors `options`
   correctAnswers String // JSON array of indices
   points         Int            @default(1)
   order          Int            @default(0)

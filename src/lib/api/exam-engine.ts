@@ -29,6 +29,7 @@ export interface ExamVersion {
     order: number;
     options: string[];      // reordered options
     originalOptions: string[];
+    optionsAr?: string[];   // reordered Arabic options, mirrors `options`
   }>;
   passScore: number;
 }
@@ -228,16 +229,22 @@ export async function resolveExamVersion(attemptId: string): Promise<ExamVersion
       const q = questionMap.get(item.questionId);
       if (!q) return null;
       const originalOptions: string[] = JSON.parse(q.options);
+      const originalOptionsAr: string[] | null = q.optionsAr ? JSON.parse(q.optionsAr) : null;
       const reorderedOptions = item.optionsOrder.map((i) => originalOptions[i] ?? `Option ${i + 1}`);
+      const reorderedOptionsAr = originalOptionsAr
+        ? item.optionsOrder.map((i) => originalOptionsAr[i] ?? `خيار ${i + 1}`)
+        : undefined;
       return {
         id: q.id,
         text: q.text,
         textAr: q.textAr,
+        imageUrl: q.imageUrl,
         type: q.type,
         points: q.points,
         order: item.order,
         options: reorderedOptions,
         originalOptions,
+        optionsAr: reorderedOptionsAr,
       };
     })
     .filter(Boolean) as ExamVersion["questions"];

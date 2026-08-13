@@ -23,7 +23,7 @@ import { newQuestionDefaults, validateQuestion, questionTypeLabel } from "@/lib/
 interface CourseOption { id: string; title: string; code: string; }
 interface Question {
   id: string; courseCode?: string | null; type: string; text: string; textAr?: string | null;
-  options: string[]; correctAnswers: number[]; points: number; order: number; isActive: boolean; imageUrl?: string | null;
+  options: string[]; optionsAr?: string[] | null; correctAnswers: number[]; points: number; order: number; isActive: boolean; imageUrl?: string | null;
 }
 interface TestResultRow {
   id: string; sessionCode?: string | null; traineeName: string;
@@ -75,8 +75,8 @@ export function FinalTestRoute() {
               <span className="text-muted-foreground">{r.options.length} {t("questions.options")} · {t("questions.correct")}: {r.correctAnswers.length}</span>
             </div>
             {r.options.length > 0 && (
-              <div className="text-xs text-muted-foreground truncate max-w-lg">
-                {r.options.map((o, oi) => `${oi + 1}. ${o}`).join("   ")}
+              <div className="text-xs text-muted-foreground truncate max-w-2xl">
+                {r.options.map((o, oi) => `${oi + 1}. ${r.optionsAr?.[oi] || ""}${r.optionsAr?.[oi] ? " / " : ""}${o}`).join("    ")}
               </div>
             )}
           </div>
@@ -155,6 +155,12 @@ export function FinalTestRoute() {
     const opts = [...((formData.options as string[]) ?? [])];
     opts[idx] = value;
     setField("options", opts);
+  };
+
+  const updateOptionAr = (idx: number, value: string) => {
+    const opts = [...((formData.optionsAr as string[]) ?? [])];
+    opts[idx] = value;
+    setField("optionsAr", opts);
   };
 
   return (
@@ -263,6 +269,12 @@ export function FinalTestRoute() {
               {((formData.options as string[]) ?? []).map((opt, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <Input placeholder={`Option ${i + 1}`} value={opt} onChange={(e) => updateOption(i, e.target.value)} />
+                  <Input
+                    placeholder={`الخيار ${i + 1}`}
+                    value={(formData.optionsAr as string[])?.[i] ?? ""}
+                    onChange={(e) => updateOptionAr(i, e.target.value)}
+                    className="rtl:placeholder:text-right"
+                  />
                   <Button
                     type="button"
                     variant={((formData.correctAnswers as number[]) ?? []).includes(i) ? "default" : "outline"}
@@ -279,7 +291,10 @@ export function FinalTestRoute() {
                 variant="ghost"
                 size="sm"
                 className="text-xs"
-                onClick={() => setField("options", [...((formData.options as string[]) ?? []), ""])}
+                onClick={() => {
+                  setField("options", [...((formData.options as string[]) ?? []), ""]);
+                  setField("optionsAr", [...((formData.optionsAr as string[]) ?? []), ""]);
+                }}
               >
                 <Plus className="h-3.5 w-3.5 me-1" />{t("action.add")}
               </Button>

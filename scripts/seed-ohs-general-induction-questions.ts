@@ -7,6 +7,7 @@
 // Idempotent: existing questions for the course are soft-deleted before re-insert.
 
 import { PrismaClient } from "@prisma/client";
+import { translateOptions } from "./options-ar";
 
 const prisma = new PrismaClient();
 
@@ -421,6 +422,7 @@ async function seedQuestions(courseId: string) {
           text: q.text,
           textAr: q.textAr,
           options: JSON.stringify(q.options),
+          optionsAr: JSON.stringify(translateOptions(q.options)),
           correctAnswers: JSON.stringify(q.correctAnswers),
           points: 1,
           order: q.order,

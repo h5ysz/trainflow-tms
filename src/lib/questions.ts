@@ -9,6 +9,7 @@ export function newQuestionDefaults(testType: "PRE_TEST" | "FINAL_TEST") {
     order: 1,
     isActive: true,
     options: ["", "", "", ""],
+    optionsAr: [] as string[],
     correctAnswers: [] as number[],
     imageUrl: "",
   };

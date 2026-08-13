@@ -44,6 +44,7 @@ interface ExamQuestion {
   type: string;
   points: number;
   options: string[];
+  optionsAr?: string[] | null;
 }
 
 interface StartedExam {
@@ -242,7 +243,6 @@ export function ExamAttemptRoute() {
 
                 {q.imageUrl && (
                   <div className="ps-10">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={q.imageUrl}
                       alt={q.textAr || q.text}
@@ -260,7 +260,10 @@ export function ExamAttemptRoute() {
                     {q.options.map((opt, oi) => (
                       <label key={oi} className="flex items-center gap-2.5 text-sm cursor-pointer">
                         <RadioGroupItem value={String(oi)} />
-                        {opt}
+                        <span className="min-w-0">
+                          <span className="block">{q.optionsAr?.[oi] || opt}</span>
+                          {q.optionsAr?.[oi] ? <span className="block text-xs text-muted-foreground">{opt}</span> : null}
+                        </span>
                       </label>
                     ))}
                   </RadioGroup>
@@ -269,7 +272,10 @@ export function ExamAttemptRoute() {
                     {q.options.map((opt, oi) => (
                       <label key={oi} className="flex items-center gap-2.5 text-sm cursor-pointer">
                         <Checkbox checked={selected.includes(oi)} onCheckedChange={() => pick(q, oi)} />
-                        {opt}
+                        <span className="min-w-0">
+                          <span className="block">{q.optionsAr?.[oi] || opt}</span>
+                          {q.optionsAr?.[oi] ? <span className="block text-xs text-muted-foreground">{opt}</span> : null}
+                        </span>
                       </label>
                     ))}
                   </div>

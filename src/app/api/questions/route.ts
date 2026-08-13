@@ -44,6 +44,7 @@ export const GET = withExamAction("view", async ({ req, allowedTestTypes }) => {
     rows.map((question) => ({
       ...question,
       options: parseJsonColumn(question.options, [] as string[], "question.options"),
+      optionsAr: parseJsonColumn(question.optionsAr, null as string[] | null, "question.optionsAr"),
       correctAnswers: parseJsonColumn(question.correctAnswers, [] as number[], "question.correctAnswers"),
       courseCode: question.course?.code ?? null,
       courseTitle: question.course?.title ?? null,
@@ -56,7 +57,7 @@ export const GET = withExamAction("view", async ({ req, allowedTestTypes }) => {
 export const POST = withExamAction("create", async ({ req, user, allowedTestTypes }) => {
   const body = await req.json().catch(() => ({}));
   const {
-    courseId, type, testType, text, textAr, options, correctAnswers,
+    courseId, type, testType, text, textAr, options, optionsAr, correctAnswers,
     points, order, isActive, category, difficulty, tags, imageUrl,
     source, aiModel, aiPrompt,
   } = body;
@@ -87,6 +88,7 @@ export const POST = withExamAction("create", async ({ req, user, allowedTestType
       text,
       textAr: textAr ?? null,
       options: JSON.stringify(options),
+      optionsAr: optionsAr ? JSON.stringify(optionsAr) : null,
       correctAnswers: JSON.stringify(correctAnswers),
       points: points ?? 1,
       order: order ?? 1,
@@ -117,6 +119,7 @@ export const POST = withExamAction("create", async ({ req, user, allowedTestType
   return created({
     ...question,
     options: parseJsonColumn(question.options, [] as string[], "question.options"),
+    optionsAr: parseJsonColumn(question.optionsAr, null as string[] | null, "question.optionsAr"),
     correctAnswers: parseJsonColumn(question.correctAnswers, [] as number[], "question.correctAnswers"),
   });
 });

@@ -7,6 +7,7 @@ function parseQuestion(q: any) {
   return {
     ...q,
     options: parseJsonColumn(q.options, [] as string[], "question.options"),
+    optionsAr: parseJsonColumn(q.optionsAr, null as string[] | null, "question.optionsAr"),
     correctAnswers: parseJsonColumn(q.correctAnswers, [] as number[], "question.correctAnswers"),
   };
 }
@@ -27,7 +28,7 @@ export const PUT = withExamAction("edit", async ({ req, params, user, allowedTes
   const existing = await db.question.findUnique({ where: { id } });
   if (!existing || existing.deletedAt) return notFound("Question not found");
 
-  const { type, testType, text, textAr, options, correctAnswers, points, order, isActive, category, difficulty, tags, imageUrl } = body;
+  const { type, testType, text, textAr, options, optionsAr, correctAnswers, points, order, isActive, category, difficulty, tags, imageUrl } = body;
 
   // Both the current type and any requested new type must be within reach, so a
   // final-test-only role can't reach across and edit a pre-test question (or move
@@ -47,6 +48,7 @@ export const PUT = withExamAction("edit", async ({ req, params, user, allowedTes
       ...(text !== undefined && { text }),
       ...(textAr !== undefined && { textAr }),
       ...(options !== undefined && { options: JSON.stringify(options) }),
+      ...(optionsAr !== undefined && { optionsAr: optionsAr ? JSON.stringify(optionsAr) : null }),
       ...(correctAnswers !== undefined && { correctAnswers: JSON.stringify(correctAnswers) }),
       ...(points !== undefined && { points }),
       ...(order !== undefined && { order }),
