@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { validateTrainerAssignment, validationErrorToResponse } from "@/lib/api/trainer-assignment";
+import { recomputeSessionCounts, upsertEnrollment } from "@/lib/sessions/session-management";
 import { randomBytes } from "crypto";
 
 const SHIFT_DURATION_HOURS = 6;
@@ -270,6 +271,34 @@ export const POST = withModuleAction("sessions", "create", async ({ req, params,
         createdBy: user.id,
         updatedBy: user.id,
       },
+    });
+
+    // Auto-enroll the request course's trainees into the generated session so
+    // the assigned trainer sees their names, national IDs, and nationalities
+    // on the session detail page (enrollments + contact-directory tabs). A
+    // generated session that silently ships with an empty roster looks like a
+    // scheduling bug to the trainer, so enrollment mirrors the request roster.
+    await db.$transaction(async (tx) => {
+      const roster = await tx.trainingRequestCourseTrainee.findMany({
+        where: { requestCourseId: spec.requestCourseId, deletedAt: null },
+        select: {
+          trainee: { select: { id: true, companyId: true, fullName: true } },
+        },
+      });
+      for (const row of roster) {
+        await upsertEnrollment(
+          session.id,
+          row.trainee.id,
+          row.trainee.companyId,
+          user.id,
+          {
+            tx,
+            notes: `Auto-enrolled from request ${request.refNumber}`,
+          }
+        );
+      }
+      // Keep expectedTrainees + SessionCompany cache in sync with the roster.
+      await recomputeSessionCounts(session.id, tx);
     });
 
     created.push(session);
