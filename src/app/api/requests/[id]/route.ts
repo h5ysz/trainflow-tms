@@ -293,6 +293,25 @@ export const PUT = withModuleAction("requests", "view", async ({ req, params, us
         },
       }).catch(() => { /* unique constraint — link already exists */ });
     }
+
+    // ── Recompute the trainee count from the ACTUAL active links ──
+    // The form's `traineeCount` field is stale (it holds the count at the
+    // moment the dialog opened), so trusting it would leave the main list
+    // showing the old number after the user added more people. Deriving from
+    // the DB keeps the request-level and course-level counts exact.
+    const activeLinkCount = await db.trainingRequestCourseTrainee.count({
+      where: { requestCourseId: rc.id, deletedAt: null },
+    });
+    await db.$transaction([
+      db.trainingRequest.update({
+        where: { id },
+        data: { traineeCount: activeLinkCount, updatedBy: user.id },
+      }),
+      db.trainingRequestCourse.update({
+        where: { id: rc.id },
+        data: { traineeCount: activeLinkCount, updatedBy: user.id },
+      }),
+    ]);
   }
 
   // Status change audit
