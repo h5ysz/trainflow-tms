@@ -23,6 +23,7 @@ export interface ExamVersion {
     id: string;
     text: string;
     textAr?: string | null;
+    imageUrl?: string | null;
     type: string;
     points: number;
     order: number;
