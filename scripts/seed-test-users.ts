@@ -12,6 +12,7 @@
 // All passwords: Demo@1234
 import { PrismaClient } from "@prisma/client";
 import { randomBytes, pbkdf2Sync } from "node:crypto";
+import { TEST_TRAINER_TRAINER_ID } from "../src/lib/api/trainer-scope";
 
 const db = new PrismaClient();
 
@@ -145,9 +146,21 @@ async function main() {
   }
 
   let testTrainer = await db.trainer.findFirst({ where: { email: "trainer@gcclab.com" } });
+  if (testTrainer && testTrainer.id !== TEST_TRAINER_TRAINER_ID) {
+    console.warn(
+      `   ⚠ Test trainer exists with id ${testTrainer.id} (expected ${TEST_TRAINER_TRAINER_ID}). ` +
+        "The QA test-wide scope will NOT apply until this is reconciled.",
+    );
+  }
   if (!testTrainer) {
     testTrainer = await db.trainer.create({
-      data: { refNumber: "TRN-TEST-001", nameEn: "Test Trainer", email: "trainer@gcclab.com", status: "ACTIVE" },
+      data: {
+        id: TEST_TRAINER_TRAINER_ID,
+        refNumber: "TRN-TEST-001",
+        nameEn: "Test Trainer",
+        email: "trainer@gcclab.com",
+        status: "ACTIVE",
+      },
     });
     console.log("   ✓ Created test trainer:", testTrainer.nameEn);
   } else {

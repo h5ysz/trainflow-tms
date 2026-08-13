@@ -4,6 +4,7 @@ import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
+import { isTestTrainer } from "@/lib/api/trainer-scope";
 
 const ALLOWED_SORT_FIELDS = ["code", "title", "createdAt", "updatedAt", "status", "category", "durationHours"];
 
@@ -13,7 +14,8 @@ export const GET = withModuleAction("courses", "view", async ({ req, user }) => 
 
   // A trainer may only see the courses they are qualified/assigned to run —
   // i.e. courses that have at least one session assigned to this trainer.
-  if (user.role === "TRAINER" && user.trainerId) {
+  // The QA Test Trainer is exempt (test-wide scope) and sees every course.
+  if (user.role === "TRAINER" && user.trainerId && !isTestTrainer(user)) {
     where.sessions = { some: { trainerId: user.trainerId, deletedAt: null } };
   }
 

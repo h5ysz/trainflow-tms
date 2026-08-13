@@ -23,6 +23,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail } from "@/lib/auth/api";
 import { recalcCertificateEligibility } from "@/lib/api/enrollment-sync";
+import { isTestTrainer } from "@/lib/api/trainer-scope";
 
 export const POST = withModuleAction("sessions", "edit", async ({ req, params, user }) => {
   const sessionId = params.id as string;
@@ -64,7 +65,9 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
   }
 
   // ── Rule: only the ASSIGNED trainer (or coordinator/admin) ──────────────
-  if (user.role === "TRAINER") {
+  // The QA Test Trainer is exempt (test-wide scope) and can use the
+  // opportunity on any session.
+  if (user.role === "TRAINER" && !isTestTrainer(user)) {
     // The user's trainerId must match the session's trainerId.
     const trainerUser = await db.user.findUnique({
       where: { id: user.id },

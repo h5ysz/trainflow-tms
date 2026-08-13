@@ -18,6 +18,8 @@ import {
   type RouteKey,
 } from "@/lib/auth/permissions";
 import {
+  TEST_TRAINER_TRAINER_ID,
+  isTestTrainer,
   trainerIdOf,
   scopeSessionList,
   trainerDeniedSession,
@@ -46,7 +48,9 @@ const { fakeDb } = vi.hoisted(() => {
       testResult: { findMany: m(), count: m(), create: m() },
       sessionLifecycleEvent: { findMany: m() },
       certificate: { findMany: m(), findFirst: m() },
-      course: { findUnique: m() },
+      course: { findUnique: m(), findMany: m(), count: m() },
+      refNumberCounter: { upsert: m() },
+      auditLog: { create: m() },
     },
   };
 });
@@ -97,6 +101,7 @@ import { GET as getSessionExport } from "@/app/api/sessions/export/route";
 import { GET as getTrainingRecord } from "@/app/api/trainees/[id]/training-record/route";
 import { GET as getTraineeHistory } from "@/app/api/trainees/[id]/history/route";
 import { GET as getCourseById } from "@/app/api/courses/[id]/route";
+import { GET as getCourses } from "@/app/api/courses/route";
 
 // ── Fixtures ────────────────────────────────────────────────────────────
 function trainerPerms(): string[] {
@@ -681,5 +686,210 @@ describe("TRAINER own-sessions-only data isolation", () => {
     fakeDb.trainingSession.count.mockResolvedValue(1);
     const res = await getCourseById(new Request("http://localhost/api/courses/c-1"), { params: { id: "c-1" } });
     expect(res.status).toBe(200);
+  });
+});
+
+// ── 5. QA Test Trainer — test-wide scope ──────────────────────────────────
+// The QA Test Trainer (trainer@gcclab.com) shares the exact TRAINER permission
+// matrix (19 permissions, no admin module) but its data scope is OPEN: every
+// trainer-scope helper resolves to null so all sessions/courses/trainees/
+// workshops/evaluations are visible and editable, while admin routes stay 403.
+const TEST_TRAINER_DB = {
+  id: "user-test-trainer",
+  email: "trainer@gcclab.com",
+  fullName: "Test Trainer",
+  role: "TRAINER",
+  status: "ACTIVE",
+  deletedAt: null,
+  isActive: true,
+  accountStatus: "ACTIVE",
+  tokenVersion: 0,
+  trainerId: TEST_TRAINER_TRAINER_ID,
+  region: null,
+  regionsCovered: null,
+  companyId: null,
+  language: "ar",
+  roleId: "role-trainer",
+  roleRecord: { roleCode: "TRAINER", tokenVersion: 0, permissions: trainerPerms() },
+};
+
+describe("QA Test Trainer — test-wide scope", () => {
+  beforeEach(() => {
+    fakeDb.user.findUnique.mockResolvedValue(TEST_TRAINER_DB as any);
+  });
+
+  it("isTestTrainer recognizes the test trainer and nothing else", () => {
+    expect(isTestTrainer(TEST_TRAINER_DB as any)).toBe(true);
+    expect(isTestTrainer(TRAINER_A_DB as any)).toBe(false);
+    expect(isTestTrainer({ role: "TRAINER", trainerId: null } as any)).toBe(false);
+    expect(isTestTrainer({ role: "CONTRACTOR", trainerId: TEST_TRAINER_TRAINER_ID } as any)).toBe(false);
+  });
+
+  it("trainerIdOf is null for the test trainer so all scope helpers open", () => {
+    expect(trainerIdOf(TEST_TRAINER_DB as any)).toBeNull();
+    expect(scopeSessionList({ trainerId: "tr-2" }, TEST_TRAINER_DB as any)).toBeUndefined();
+    expect(trainerDeniedSession(TEST_TRAINER_DB as any, "tr-2")).toBe(false);
+    expect(trainerDeniedSession(TEST_TRAINER_DB as any, null)).toBe(false);
+    expect(trainerSessionFilter(TEST_TRAINER_DB as any)).toBeNull();
+    expect(trainerTraineeFilter(TEST_TRAINER_DB as any)).toBeNull();
+    expect(trainerWorkshopFilter(TEST_TRAINER_DB as any)).toBeNull();
+    expect(trainerEvaluationFilter(TEST_TRAINER_DB as any)).toBeNull();
+  });
+
+  it("sessions list returns ALL sessions (test-wide), no trainerId pin", async () => {
+    const sessions = [
+      {
+        id: "sess-1", trainerId: "tr-1", refNumber: "SES-000001", title: "A", deletedAt: null, status: "SCHEDULED",
+        _count: { attendance: 0, certificates: 0 },
+      },
+      {
+        id: "sess-2", trainerId: "tr-2", refNumber: "SES-000002", title: "B", deletedAt: null, status: "SCHEDULED",
+        _count: { attendance: 0, certificates: 0 },
+      },
+    ];
+    fakeDb.trainingSession.findMany.mockImplementation((args: any) =>
+      Promise.resolve(sessions.filter((s) => (args?.where?.trainerId ? s.trainerId === args.where.trainerId : true)))
+    );
+    fakeDb.trainingSession.count.mockImplementation((args: any) =>
+      Promise.resolve(sessions.filter((s) => (args?.where?.trainerId ? s.trainerId === args.where.trainerId : true)).length)
+    );
+
+    const res = await getSessions(new Request("http://localhost/api/sessions"));
+    expect(res.status).toBe(200);
+    const body = await json(res);
+    expect(body.data.map((r: any) => r.id)).toEqual(["sess-1", "sess-2"]);
+    const whereArg = fakeDb.trainingSession.findMany.mock.calls[0][0].where;
+    expect(whereArg.trainerId).toBeUndefined();
+  });
+
+  it("session detail returns 200 for another trainer's session", async () => {
+    fakeDb.trainingSession.findUnique.mockResolvedValue({
+      id: "sess-2", trainerId: "tr-2", refNumber: "SES-000002", status: "SCHEDULED", deletedAt: null,
+    } as any);
+    const res = await getSessionById(new Request("http://localhost/api/sessions/sess-2"), { params: { id: "sess-2" } });
+    expect(res.status).toBe(200);
+  });
+
+  it("courses list returns ALL courses (no own-sessions filter)", async () => {
+    const courses = [
+      { id: "c-1", code: "CRS-1", deletedAt: null, _count: { requests: 0, sessions: 0, certificates: 0, questions: 0 } },
+      { id: "c-2", code: "CRS-2", deletedAt: null, _count: { requests: 0, sessions: 0, certificates: 0, questions: 0 } },
+    ];
+    fakeDb.course.findMany.mockResolvedValue(courses as any);
+    fakeDb.course.count.mockResolvedValue(courses.length);
+
+    const res = await getCourses(new Request("http://localhost/api/courses"));
+    expect(res.status).toBe(200);
+    const body = await json(res);
+    expect(body.data.map((r: any) => r.id)).toEqual(["c-1", "c-2"]);
+    const whereArg = fakeDb.course.findMany.mock.calls[0][0].where;
+    expect(whereArg.sessions).toBeUndefined();
+  });
+
+  it("course detail returns 200 for a course with NO own session (count not consulted)", async () => {
+    fakeDb.course.findUnique.mockResolvedValue({
+      id: "c-2", code: "CRS-2", deletedAt: null,
+      _count: { requests: 0, sessions: 0, certificates: 0, questions: 0 },
+    } as any);
+    const res = await getCourseById(new Request("http://localhost/api/courses/c-2"), { params: { id: "c-2" } });
+    expect(res.status).toBe(200);
+    expect(fakeDb.trainingSession.count).not.toHaveBeenCalled();
+  });
+
+  it("trainees list returns ALL trainees (no enrollment pin)", async () => {
+    const trainees = [
+      { id: "t-1", fullName: "One", refNumber: "TRA-000001", deletedAt: null, _count: { requestCourses: 0 } },
+      { id: "t-2", fullName: "Two", refNumber: "TRA-000002", deletedAt: null, _count: { requestCourses: 0 } },
+    ];
+    fakeDb.trainee.findMany.mockResolvedValue(trainees as any);
+    fakeDb.trainee.count.mockResolvedValue(trainees.length);
+
+    const res = await getTrainees(new Request("http://localhost/api/trainees"));
+    expect(res.status).toBe(200);
+    const body = await json(res);
+    expect(body.data.map((r: any) => r.id)).toEqual(["t-1", "t-2"]);
+    const whereArg = fakeDb.trainee.findMany.mock.calls[0][0].where;
+    expect(whereArg.sessionEnrollments).toBeUndefined();
+  });
+
+  it("training-record returns 200 for a trainee NOT enrolled in the trainer's sessions", async () => {
+    fakeDb.trainee.findUnique.mockResolvedValue({
+      id: "t-2", refNumber: "TRA-000002", fullName: "Other", nationalId: "N2", nationality: "SA",
+      jobTitle: "T", mobile: "0", email: "x@y.z", status: "ACTIVE", companyId: "c-2",
+      company: { id: "c-2", name: "C", refNumber: "CMP-2" }, idAttachmentUrl: null,
+      documents: null, requestCourses: [], deletedAt: null,
+    } as any);
+    fakeDb.certificate.findMany.mockResolvedValue([]);
+    fakeDb.testResult.findMany.mockResolvedValue([]);
+    const res = await getTrainingRecord(new Request("http://localhost/api/trainees/t-2/training-record"), {
+      params: { id: "t-2" },
+    } as any);
+    expect(res.status).toBe(200);
+    expect(fakeDb.sessionEnrollment.count).not.toHaveBeenCalled();
+  });
+
+  it("history returns 200 for a trainee NOT enrolled in the trainer's sessions", async () => {
+    fakeDb.trainee.findUnique.mockResolvedValue({
+      id: "t-2", refNumber: "TRA-000002", fullName: "Other", nationalId: "N2", nationality: "SA",
+      jobTitle: "T", mobile: "0", email: "x@y.z", status: "ACTIVE", companyId: "c-2",
+      company: { id: "c-2", name: "C", refNumber: "CMP-2" }, documents: null, deletedAt: null,
+    } as any);
+    fakeDb.sessionEnrollment.findMany.mockResolvedValue([]);
+    fakeDb.certificate.findMany.mockResolvedValue([]);
+    const res = await getTraineeHistory(new Request("http://localhost/api/trainees/t-2/history"), {
+      params: { id: "t-2" },
+    } as any);
+    expect(res.status).toBe(200);
+    expect(fakeDb.sessionEnrollment.count).not.toHaveBeenCalled();
+  });
+
+  it("exam attempts list returns attempts from ANY session (test-wide)", async () => {
+    const attempts = [
+      { id: "att-1", testType: "FINAL_TEST", session: { trainerId: "tr-1" } },
+      { id: "att-2", testType: "FINAL_TEST", session: { trainerId: "tr-2" } },
+    ];
+    fakeDb.examAttempt.findMany.mockImplementation((args: any) =>
+      Promise.resolve(attempts.filter((a) => (args?.where?.session?.trainerId ? a.session.trainerId === args.where.session.trainerId : true)))
+    );
+    fakeDb.examAttempt.count.mockImplementation((args: any) =>
+      Promise.resolve(attempts.filter((a) => (args?.where?.session?.trainerId ? a.session.trainerId === args.where.session.trainerId : true)).length)
+    );
+
+    const res = await getExamAttempts(new Request("http://localhost/api/exam-attempts"));
+    expect(res.status).toBe(200);
+    const body = await json(res);
+    expect(body.data.map((r: any) => r.id)).toEqual(["att-1", "att-2"]);
+    const whereArg = fakeDb.examAttempt.findMany.mock.calls[0][0].where;
+    expect(whereArg.session?.trainerId).toBeUndefined();
+  });
+
+  it("test-results POST allows recording a result on another trainer's session", async () => {
+    fakeDb.trainingSession.findFirst.mockResolvedValue({
+      id: "sess-2", trainerId: "tr-2", deletedAt: null, course: { passScore: 70 },
+    } as any);
+    fakeDb.sessionEnrollment.count.mockResolvedValue(0);
+    fakeDb.refNumberCounter.upsert.mockResolvedValue({ sequence: 1, entityType: "TEST_RESULT", year: 0 } as any);
+    fakeDb.auditLog.create.mockResolvedValue({} as any);
+    fakeDb.testResult.create.mockResolvedValue({ id: "res-1" } as any);
+    const res = await postTestResult(
+      new Request("http://localhost/api/test-results", {
+        method: "POST",
+        body: JSON.stringify({ sessionId: "sess-2", testType: "FINAL_TEST", traineeName: "X", scorePercent: 90 }),
+      })
+    );
+    expect(res.status).toBe(201);
+    expect(fakeDb.testResult.create).toHaveBeenCalled();
+  });
+
+  it("certificates issuance still returns 403 (no admin permission)", async () => {
+    const res = await postCertificate(new Request("http://localhost/api/certificates", { method: "POST", body: "{}" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("payments and requests APIs still return 403", async () => {
+    const payments = await getPayments(new Request("http://localhost/api/payments"));
+    expect(payments.status).toBe(403);
+    const requests = await getRequests(new Request("http://localhost/api/requests"));
+    expect(requests.status).toBe(403);
   });
 });

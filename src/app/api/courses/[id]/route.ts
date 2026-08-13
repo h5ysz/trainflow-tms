@@ -1,6 +1,7 @@
 // /api/courses/[id] — get / update / soft-delete
 import { db } from "@/lib/db";
 import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
+import { isTestTrainer } from "@/lib/api/trainer-scope";
 
 export const GET = withModuleAction("courses", "view", async ({ params, user }) => {
   const id = params.id as string;
@@ -12,7 +13,8 @@ export const GET = withModuleAction("courses", "view", async ({ params, user }) 
   });
   if (!course || course.deletedAt) return notFound("Course not found");
   // A trainer may only view courses linked to at least one of their own sessions.
-  if (user.role === "TRAINER" && user.trainerId) {
+  // The QA Test Trainer is exempt (test-wide scope) and can open any course.
+  if (user.role === "TRAINER" && user.trainerId && !isTestTrainer(user)) {
     const linkedSessions = await db.trainingSession.count({
       where: { courseId: id, trainerId: user.trainerId, deletedAt: null },
     });

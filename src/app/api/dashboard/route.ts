@@ -3,6 +3,7 @@
 // today's sessions, available trainers, trainer conflicts, companies, trainees
 import { db } from "@/lib/db";
 import { withModuleAction, ok } from "@/lib/auth/api";
+import { isTestTrainer } from "@/lib/api/trainer-scope";
 
 export const GET = withModuleAction("dashboard", "view", async ({ user }) => {
   const notDeleted = { deletedAt: null };
@@ -30,9 +31,11 @@ export const GET = withModuleAction("dashboard", "view", async ({ user }) => {
         ],
       }
     : isTrainer
-      ? user.trainerId
-        ? { trainerId: user.trainerId }
-        : { id: "__no_session__" }
+      ? isTestTrainer(user)
+        ? {} // QA Test Trainer sees ALL sessions (test-wide scope)
+        : user.trainerId
+          ? { trainerId: user.trainerId }
+          : { id: "__no_session__" }
       : {};
 
   // ─── KPI counts (parallel for performance) ───────────────────────────

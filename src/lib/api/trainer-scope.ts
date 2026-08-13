@@ -9,13 +9,36 @@
 // All scoping derives from the authenticated user (AuthUser.trainerId), never
 // from a client-supplied id, so crafting a ?trainerId= or an id param cannot
 // bypass the scope.
+//
+// QA TEST TRAINER EXCEPTION
+// -------------------------
+// The designated test trainer account (trainer@gcclab.com, Trainer row id
+// TEST_TRAINER_TRAINER_ID) is deliberately TEST-WIDE: it keeps the exact same
+// TRAINER permission matrix (no admin permissions) but bypasses every
+// own-records scope so the full delivery workflow can be exercised against any
+// course/session/trainee in the system. Because every scope helper and every
+// own-records route guard derives from `trainerIdOf`, returning null for that
+// single account opens the whole layer here — no `role === "TRAINER"` special
+// cases are scattered across route files.
 // =====================================================================
 import type { AuthUser } from "@/lib/auth/api";
 
 type TrainerLike = Pick<AuthUser, "role" | "trainerId">;
 
-/** The authenticated user's trainerId when they are a TRAINER, else null. */
+/** Trainer row id of the QA test account (trainer@gcclab.com). MUST match the
+ * Trainer record created by scripts/seed-test-users.ts and the deployed DB. */
+export const TEST_TRAINER_TRAINER_ID = "d12f1854-e34d-4121-bc96-bc8bfe2be264";
+
+/** True ONLY for the designated QA Test Trainer account (test-wide scope). */
+export function isTestTrainer(user: TrainerLike): boolean {
+  return user.role === "TRAINER" && user.trainerId === TEST_TRAINER_TRAINER_ID;
+}
+
+/** The authenticated user's trainerId when they are a TRAINER, else null.
+ * Returns null for the QA Test Trainer so that every own-records scope is
+ * bypassed for that single test-wide account. */
 export function trainerIdOf(user: TrainerLike): string | null {
+  if (isTestTrainer(user)) return null;
   return user.role === "TRAINER" ? (user.trainerId ?? null) : null;
 }
 
