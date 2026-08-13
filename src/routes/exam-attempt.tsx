@@ -55,6 +55,7 @@ interface StartedExam {
 
 interface Graded {
   refNumber: string;
+  testType?: "PRE_TEST" | "FINAL_TEST";
   scorePercent: number;
   passed: boolean;
   passScore: number;
@@ -158,22 +159,32 @@ export function ExamAttemptRoute() {
 
   // ── Result ──────────────────────────────────────────────────────────
   if (graded) {
+    const isPreTest = graded.testType === "PRE_TEST" || exam?.testType === "PRE_TEST";
     return (
       <div className="space-y-5">
         <PageHeader title={t("exam.result")} subtitle={graded.refNumber} icon={ClipboardList} />
         <Card className="p-8 text-center space-y-4 max-w-lg mx-auto">
-          {graded.passed ? (
+          {isPreTest ? (
+            <ClipboardList className="h-16 w-16 mx-auto text-info" />
+          ) : graded.passed ? (
             <CheckCircle2 className="h-16 w-16 mx-auto text-success" />
           ) : (
             <XCircle className="h-16 w-16 mx-auto text-destructive" />
           )}
           <div className="text-5xl font-bold tabular-nums">{graded.scorePercent}%</div>
           <div className="text-sm text-muted-foreground">
-            {graded.earnedPoints} / {graded.totalPoints} · {t("exam.passScore")}: {graded.passScore}%
+            {graded.earnedPoints} / {graded.totalPoints}
+            {!isPreTest && ` · ${t("exam.passScore")}: ${graded.passScore}%`}
           </div>
-          <Badge variant={graded.passed ? "default" : "destructive"} className="text-sm">
-            {graded.passed ? t("finalTest.passed") : t("status.REJECTED")}
-          </Badge>
+          {isPreTest ? (
+            <Badge variant="outline" className="text-sm">
+              {t("preTest.assessment")}
+            </Badge>
+          ) : (
+            <Badge variant={graded.passed ? "default" : "destructive"} className="text-sm">
+              {graded.passed ? t("finalTest.passed") : t("status.REJECTED")}
+            </Badge>
+          )}
           <Button className="w-full" onClick={exitExam}>{t("action.back")}</Button>
         </Card>
       </div>
@@ -309,7 +320,9 @@ export function ExamAttemptRoute() {
         r.scorePercent != null ? (
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold tabular-nums">{r.scorePercent}%</span>
-            {r.passed ? (
+            {r.testType === "PRE_TEST" ? (
+              <ClipboardList className="h-3.5 w-3.5 text-muted-foreground" />
+            ) : r.passed ? (
               <CheckCircle2 className="h-3.5 w-3.5 text-success" />
             ) : (
               <XCircle className="h-3.5 w-3.5 text-destructive" />

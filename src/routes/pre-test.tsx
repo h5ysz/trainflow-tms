@@ -128,11 +128,9 @@ export function PreTestRoute() {
       cell: (r) => (
         <div className="flex items-center gap-2">
           <div className="text-lg font-bold tabular-nums">{r.scorePercent}%</div>
-          {r.passed ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-success/10 text-success border border-success/20 px-2 py-0.5 text-xs font-medium"><Check className="h-3 w-3" />{t("preTest.passed")}</span>
-          ) : (
-            <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 text-destructive border border-destructive/20 px-2 py-0.5 text-xs font-medium"><X className="h-3 w-3" />{t("status.REJECTED")}</span>
-          )}
+          <span className="inline-flex items-center gap-1 rounded-full bg-muted text-muted-foreground border border-border px-2 py-0.5 text-xs font-medium">
+            <ClipboardList className="h-3 w-3" />{t("preTest.assessment")}
+          </span>
         </div>
       ),
     },
