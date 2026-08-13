@@ -14,6 +14,12 @@ export function newQuestionDefaults(testType: "PRE_TEST" | "FINAL_TEST") {
   };
 }
 
+/** Localized label for a question type (e.g. TRUE_FALSE → "True / False"). */
+export function questionTypeLabel<T extends string>(t: (key: T) => string, type: string): string {
+  const label = t(`questions.type.${type}` as T);
+  return label && !label.startsWith("questions.type.") ? label : type.replace("_", " ");
+}
+
 /**
  * Returns an error message, or null when the question is valid. The backend
  * rejects fewer than 2 options or zero correct answers, so catch it here.

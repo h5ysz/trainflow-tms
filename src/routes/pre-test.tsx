@@ -18,7 +18,7 @@ import { useList } from "@/lib/api/hooks";
 import { api } from "@/lib/api/client";
 import { useAppStore } from "@/lib/store/app-store";
 import { useEntityActions } from "@/hooks/use-entity-actions";
-import { newQuestionDefaults, validateQuestion } from "@/lib/questions";
+import { newQuestionDefaults, validateQuestion, questionTypeLabel } from "@/lib/questions";
 
 interface CourseOption { id: string; title: string; code: string; }
 interface Question {
@@ -27,6 +27,7 @@ interface Question {
   courseTitle?: string | null;
   type: string;
   text: string;
+  textAr?: string | null;
   options: string[];
   correctAnswers: number[];
   points: number;
@@ -79,11 +80,21 @@ export function PreTestRoute() {
       key: "text",
       header: t("preTest.questionText"),
       cell: (r) => (
-        <div className="flex items-center gap-3">
+        <div className="flex items-start gap-3">
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-muted text-xs font-mono font-semibold shrink-0">{r.order}</div>
-          <div className="min-w-0">
-            <div className="text-sm font-medium truncate max-w-md">{r.text}</div>
-            <div className="text-xs text-muted-foreground">{r.courseCode || "—"} · {r.type.replace("_", " ")}</div>
+          <div className="min-w-0 space-y-0.5">
+            <div className="text-sm font-medium">{r.textAr || r.text}</div>
+            {r.textAr ? <div className="text-xs text-muted-foreground">{r.text}</div> : null}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+              <span className="text-muted-foreground">{r.courseCode || "—"}</span>
+              <span className="rounded bg-muted px-1.5 py-0.5 font-medium">{questionTypeLabel(t, r.type)}</span>
+              <span className="text-muted-foreground">{r.options.length} {t("questions.options")} · {t("questions.correct")}: {r.correctAnswers.length}</span>
+            </div>
+            {r.options.length > 0 && (
+              <div className="text-xs text-muted-foreground truncate max-w-lg">
+                {r.options.map((o, oi) => `${oi + 1}. ${o}`).join("   ")}
+              </div>
+            )}
           </div>
         </div>
       ),

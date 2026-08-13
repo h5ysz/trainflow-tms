@@ -72,7 +72,7 @@ const SINGLE_ANSWER_TYPES = ["SINGLE_CHOICE", "TRUE_FALSE"];
  * module permissions, exactly as the start/submit endpoints are.
  */
 export function ExamAttemptRoute() {
-  const { t, locale, dir } = useI18n();
+  const { t, dir } = useI18n();
   const { toast } = useToast();
   const { user, routeParam, navigate } = useAppStore();
 
@@ -231,8 +231,9 @@ export function ExamAttemptRoute() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium">
-                      {locale === "ar" && q.textAr ? q.textAr : q.text}
+                      {q.textAr || q.text}
                     </p>
+                    {q.textAr ? <p className="text-xs text-muted-foreground mt-0.5">{q.text}</p> : null}
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {q.points} {t("preTest.points")} · {single ? t("exam.pickOne") : t("exam.pickMany")}
                     </p>
@@ -244,7 +245,7 @@ export function ExamAttemptRoute() {
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={q.imageUrl}
-                      alt={locale === "ar" && q.textAr ? q.textAr : q.text}
+                      alt={q.textAr || q.text}
                       className="max-h-72 w-auto max-w-full rounded-md border border-border bg-muted/30 object-contain"
                     />
                   </div>
