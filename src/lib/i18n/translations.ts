@@ -807,6 +807,10 @@ export const dict = {
     "qr.noToken": "No QR code yet — use Regenerate to create one",
     "qr.copyFailed": "Could not copy the link to the clipboard",
     "qr.popupBlocked": "Your browser blocked the print window. Allow pop-ups for this site.",
+    "qr.validFrom": "Active from",
+    "qr.validTo": "Active until",
+    "qr.activateNow": "Activate Now",
+    "qr.anytimeHint": "The QR is only scannable within this window — set it to activate the barcode at any moment, even mid-session.",
 
     // Pre-Test
     "preTest.title": "Pre-Test",
@@ -987,6 +991,9 @@ export const dict = {
     "session.assignTrainer": "Assign Trainer",
     "session.activateQr": "Activate QR Check-in",
     "session.qrActivated": "QR check-in activated",
+    "session.manualAttendance": "Manual Check-in",
+    "session.manualAttendanceConfirm": "Mark this trainee as present (manual check-in)?",
+    "session.manualAttendanceSuccess": "Trainee marked as present",
     "session.generateFromRequest": "Generate Enrollments from Request",
     "session.generateCertificates": "Generate Certificates",
     "session.certificatesHint": "Certificates are issued only to trainees who attended, passed the final test, and submitted an evaluation.",
@@ -2250,6 +2257,10 @@ export const dict = {
     "qr.noToken": "لا يوجد رمز QR بعد — استخدم إعادة الإنشاء لإنشائه",
     "qr.copyFailed": "تعذر نسخ الرابط إلى الحافظة",
     "qr.popupBlocked": "منع متصفحك نافذة الطباعة. اسمح بالنوافذ المنبثقة لهذا الموقع.",
+    "qr.validFrom": "صالح من",
+    "qr.validTo": "صالح حتى",
+    "qr.activateNow": "تفعيل الآن",
+    "qr.anytimeHint": "الرمز يُمسح فقط خلال هذه النافذة — فعّله في أي لحظة حتى منتصف الجلسة.",
 
     // Pre-Test
     "preTest.title": "الاختبار القبلي",
@@ -2429,6 +2440,9 @@ export const dict = {
     "session.assignTrainer": "إسناد مدرب",
     "session.activateQr": "تفعيل تسجيل الحضور بـ QR",
     "session.qrActivated": "تم تفعيل تسجيل الحضور بـ QR",
+    "session.manualAttendance": "تحضير يدوي",
+    "session.manualAttendanceConfirm": "تسجيل هذا المتدرب كحاضر (تحضير يدوي)؟",
+    "session.manualAttendanceSuccess": "تم تسجيل المتدرب كحاضر",
     "session.generateFromRequest": "إنشاء التسجيلات من الطلب",
     "session.generateCertificates": "إصدار الشهادات",
     "session.certificatesHint": "تُصدر الشهادات فقط للمتدربين الذين حضروا ونجحوا في الاختبار النهائي وقدموا التقييم.",

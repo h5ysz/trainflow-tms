@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   CalendarDays, ArrowLeft, ArrowRight, Users, Play, Pause, RotateCcw, CheckCircle2,
   GraduationCap, QrCode, BadgeCheck, Plus, Trash2, AlertCircle, Loader2, Building2, Fingerprint,
-  RefreshCw, ArrowRightLeft, ClipboardCheck, Zap,
+  RefreshCw, ArrowRightLeft, ClipboardCheck, Zap, UserCheck,
 } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
@@ -98,6 +98,12 @@ const EVENT_ICONS = {
 
 type LifecycleEvent = keyof typeof EVENT_ICONS;
 
+/** Format a Date as a local `datetime-local` input value: YYYY-MM-DDTHH:mm. */
+function toLocalInput(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export function SessionDetailRoute() {
   const { t, locale, dir } = useI18n();
   const { toast } = useToast();
@@ -118,6 +124,9 @@ export function SessionDetailRoute() {
   const [selectedTrainer, setSelectedTrainer] = useState("");
   const [removeTarget, setRemoveTarget] = useState<Enrollment | null>(null);
   const [certResults, setCertResults] = useState<CertResult[] | null>(null);
+  const [qrFrom, setQrFrom] = useState("");
+  const [qrTo, setQrTo] = useState("");
+  const [manualTarget, setManualTarget] = useState<Enrollment | null>(null);
 
   // ── Replace Trainee state ──
   const [replaceTarget, setReplaceTarget] = useState<Enrollment | null>(null);
@@ -182,6 +191,18 @@ export function SessionDetailRoute() {
         .catch(() => {});
     }
   }, [trainers.length]);
+
+  // Prefill the QR window once the session is known: from "now" (so the QR can
+  // be activated at any moment, even mid-session) to the session end (or now+1h).
+  useEffect(() => {
+    if (!session) return;
+    if (qrFrom !== "" || qrTo !== "") return;
+    const now = new Date();
+    const toRaw = session.endDate ? new Date(session.endDate) : new Date(now.getTime() + 60 * 60 * 1000);
+    if (toRaw <= now) toRaw.setTime(now.getTime() + 60 * 60 * 1000);
+    setQrFrom(toLocalInput(now));
+    setQrTo(toLocalInput(toRaw));
+  }, [session, qrFrom, qrTo]);
 
   // Load available sessions (same course) when the Move OR Retest dialog opens.
   useEffect(() => {
@@ -364,10 +385,45 @@ export function SessionDetailRoute() {
       await load();
     });
 
-  const activateQr = () =>
+  const doActivateQr = (from?: string, to?: string) =>
     run("qr", async () => {
-      await api.post(`/sessions/${sessionId}/qr-activate`, {});
+      // Ensure a scannable token exists (sessions created without a token).
+      if (!session?.qrToken) {
+        await api.post(`/sessions/${sessionId}/qr`, {});
+      }
+      await api.post(`/sessions/${sessionId}/qr-activate`, {
+        qrActiveFrom: from ? new Date(from).toISOString() : undefined,
+        qrActiveTo: to ? new Date(to).toISOString() : undefined,
+      });
       toast({ title: t("misc.success"), description: t("session.qrActivated") });
+      await load();
+    });
+
+  const activateQr = () => doActivateQr(qrFrom || undefined, qrTo || undefined);
+
+  // Activate immediately: window = now → session end (or now+1h fallback).
+  const activateQrNow = () => {
+    const from = toLocalInput(new Date());
+    let to = qrTo || "";
+    if (to <= from) {
+      const fallback = new Date();
+      fallback.setTime(fallback.getTime() + 60 * 60 * 1000);
+      to = toLocalInput(fallback);
+    }
+    setQrFrom(from);
+    setQrTo(to);
+    void doActivateQr(from, to);
+  };
+
+  const markManualAttendance = () =>
+    run("manual", async () => {
+      if (!manualTarget) return;
+      await api.post(`/sessions/${sessionId}/manual-attendance`, { traineeId: manualTarget.traineeId });
+      toast({
+        title: t("misc.success"),
+        description: t("session.manualAttendanceSuccess") || "Trainee marked as present",
+      });
+      setManualTarget(null);
       await load();
     });
 
@@ -439,6 +495,18 @@ export function SessionDetailRoute() {
       cell: (row) =>
         canEdit ? (
           <div className="inline-flex items-center gap-0.5">
+            {user?.role === "TRAINER" && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-emerald-600"
+                onClick={() => setManualTarget(row)}
+                title={t("session.manualAttendance") || "Manual Check-in"}
+                disabled={row.attendanceStatus === "PRESENT" || busy === "manual"}
+              >
+                {busy === "manual" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserCheck className="h-3.5 w-3.5" />}
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -630,7 +698,7 @@ export function SessionDetailRoute() {
           </TabsContent>
 
           <TabsContent value="qr" className="mt-4">
-            <Card className="p-6 space-y-4 max-w-lg text-center">
+            <Card className="p-6 space-y-4 max-w-xl text-center">
               {session?.qrToken ? (
                 <>
                   <QrImage
@@ -651,10 +719,40 @@ export function SessionDetailRoute() {
                   <QrCode className="h-10 w-10 text-muted-foreground/40" />
                 </div>
               )}
-              <Button disabled={!canEdit || busy === "qr"} onClick={() => void activateQr()}>
-                {busy === "qr" ? <Loader2 className="h-4 w-4 me-1.5 animate-spin" /> : <QrCode className="h-4 w-4 me-1.5" />}
-                {t("session.activateQr")}
-              </Button>
+
+              <div className="grid grid-cols-2 gap-3 text-start">
+                <Field label={t("qr.validFrom") || "Active from"}>
+                  <Input
+                    type="datetime-local"
+                    value={qrFrom}
+                    onChange={(e) => setQrFrom(e.target.value)}
+                    disabled={!canEdit || busy === "qr"}
+                  />
+                </Field>
+                <Field label={t("qr.validTo") || "Active until"}>
+                  <Input
+                    type="datetime-local"
+                    value={qrTo}
+                    onChange={(e) => setQrTo(e.target.value)}
+                    disabled={!canEdit || busy === "qr"}
+                  />
+                </Field>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                {t("qr.anytimeHint") || "The QR is only scannable within this window — set it to activate the barcode at any moment, even mid-session."}
+              </p>
+
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Button disabled={!canEdit || busy === "qr"} onClick={() => void activateQrNow()}>
+                  {busy === "qr" ? <Loader2 className="h-4 w-4 me-1.5 animate-spin" /> : <Play className="h-4 w-4 me-1.5" />}
+                  {t("qr.activateNow")}
+                </Button>
+                <Button variant="outline" disabled={!canEdit || busy === "qr"} onClick={() => void activateQr()}>
+                  <QrCode className="h-4 w-4 me-1.5" />
+                  {t("session.activateQr")}
+                </Button>
+              </div>
             </Card>
           </TabsContent>
 
@@ -707,6 +805,16 @@ export function SessionDetailRoute() {
         destructive
         loading={busy === "remove"}
         onConfirm={() => void removeEnrollment()}
+      />
+
+      <ConfirmDialog
+        open={manualTarget !== null}
+        onOpenChange={(o) => !o && setManualTarget(null)}
+        title={t("session.manualAttendance") || "Manual Check-in"}
+        description={`${t("session.manualAttendanceConfirm") || "Mark as present (manual check-in)?"} — ${manualTarget?.trainee?.fullName ?? ""}`}
+        confirmLabel={t("session.manualAttendance") || "Manual Check-in"}
+        loading={busy === "manual"}
+        onConfirm={() => void markManualAttendance()}
       />
 
       {/* ── Replace Trainee Dialog ── */}
