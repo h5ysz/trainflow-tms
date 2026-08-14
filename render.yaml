@@ -83,30 +83,30 @@ services:
       # ─── AI Provider ───
       # If no API key is set, the AI assistant returns a graceful
       # "not configured" message instead of crashing.
-      # Provider selection is automatic (priority: Mock → Gemini → OpenAI → NoOp).
+      # Provider selection is automatic (priority: Gemini → OpenAI → NoOp).
+      # The app routes all AI through OpenRouter's FREE tier (OpenAI-compatible):
+      # zero cost, no credit card required.
       #
-      # ─── Mock provider (offline, no keys) ───
-      # AI_MOCK_ENABLED=true forces the deterministic offline provider so the
-      # AI question generator works on the demo/test deploy without API keys.
-      # It builds bilingual questions from the real uploaded material text
-      # (topic templates cover the seeded OSH/safety courses). Remove this var
-      # (or delete the value) once real Gemini/OpenAI keys are added — Mock has
-      # the highest priority while this flag is set.
-      - key: AI_MOCK_ENABLED
-        value: "true"
-      #
-      # ─── Gemini (default real provider) ───
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: GEMINI_MODEL
-        sync: false
-      # ─── OpenAI (alternative provider) ───
+      # ─── OpenAI-compatible — OpenRouter FREE ───
+      # OPENAI_MODEL=openrouter/free is OpenRouter's auto-router: it picks an
+      # available free model per request (the free roster rotates), so the app
+      # keeps working as models come and go. Free tier is rate-limited to
+      # ~20 requests/minute per key.
+      # IMPORTANT: OPENAI_API_KEY in the Render dashboard MUST be an OpenRouter
+      # key (sk-or-v1-...) from https://openrouter.ai/keys — a normal OpenAI key
+      # returns 401 against this base URL.
+      - key: OPENAI_BASE_URL
+        value: https://openrouter.ai/api/v1
+      - key: OPENAI_MODEL
+        value: openrouter/free
       - key: OPENAI_API_KEY
         sync: false
-      - key: OPENAI_MODEL
-        sync: false
-      - key: OPENAI_BASE_URL
-        sync: false
+      #
+      # ─── Gemini (paid alternative — commented out so it cannot shadow OpenAI) ───
+      # - key: GEMINI_API_KEY
+      #   sync: false
+      # - key: GEMINI_MODEL
+      #   sync: false
 
       # ─── Cloudinary (file upload storage) ───
       # Permanent file storage for ID images and additional documents.
