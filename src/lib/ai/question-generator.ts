@@ -468,6 +468,14 @@ function unwrapQuestionArray(value: unknown): unknown[] | null {
       const list = keys.map((k) => obj[k]);
       if (list.some((q) => q && typeof q === "object")) return list;
     }
+    // Some models group questions by allowed type ({ "SINGLE_CHOICE": [...], ... }).
+    const grouped = keys.map((k) => obj[k]);
+    if (
+      grouped.length > 0 &&
+      grouped.every((v) => Array.isArray(v) && v.every((q) => q && typeof q === "object"))
+    ) {
+      return grouped.flat();
+    }
   }
   return null;
 }
@@ -733,11 +741,14 @@ export async function generateBilingualQuestions(opts: GenerationOptions): Promi
     } catch (e) {
       // Log the actual provider output so the root cause is visible in the
       // server logs instead of only a client-side "Invalid JSON response".
+      const msg = e instanceof Error ? e.message : String(e);
       console.error(
         `[ai-generate] provider returned non-JSON content (model=${model ?? "?"}). ` +
           `First 1500 chars of raw response >>> ${raw.slice(0, 1500)}`,
       );
-      throw e;
+      throw new QuestionGenerationError(
+        `${msg} [diag model=${model ?? "?"} raw=${raw.slice(0, 1200)}]`,
+      );
     }
     if (array.length === 0) {
       throw new QuestionGenerationError("The AI returned no questions. Please regenerate.");
