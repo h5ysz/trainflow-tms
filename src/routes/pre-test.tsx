@@ -83,6 +83,7 @@ export function PreTestRoute() {
       cell: (r) => (
         <div className="flex items-start gap-3">
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-muted text-xs font-mono font-semibold shrink-0">{r.order}</div>
+          {r.imageUrl ? <img src={r.imageUrl} alt="" className="h-14 w-14 shrink-0 rounded-md border object-cover" /> : null}
           <div className="min-w-0 space-y-0.5">
             <div className="text-sm font-medium">{r.textAr || r.text}</div>
             {r.textAr ? <div className="text-xs text-muted-foreground">{r.text}</div> : null}
@@ -329,6 +330,11 @@ export function PreTestRoute() {
           <Field label={t("questions.imageUrl")}>
             <Input placeholder="/question-images/saf02/figure-1-2.png" value={(formData.imageUrl as string) ?? ""} onChange={(e) => setField("imageUrl", e.target.value)} />
           </Field>
+          {formData.imageUrl ? (
+            <div className="rounded-lg border bg-muted/40 p-2">
+              <img src={formData.imageUrl as string} alt="" className="mx-auto max-h-40 rounded object-contain" />
+            </div>
+          ) : null}
         </div>
       </FormDialog>
 

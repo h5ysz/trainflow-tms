@@ -101,6 +101,39 @@ describe("getNavForRole", () => {
   });
 });
 
+describe("course-materials module (trainer-managed materials)", () => {
+  it("gives the trainer upload/replace/delete on materials only", () => {
+    const trainer = ["courses.view", "course-materials.view", "course-materials.create", "course-materials.edit", "course-materials.delete"];
+    expect(canPerformAction(trainer, "course-materials", "create")).toBe(true);
+    expect(canPerformAction(trainer, "course-materials", "edit")).toBe(true);
+    expect(canPerformAction(trainer, "course-materials", "delete")).toBe(true);
+    expect(canPerformAction(trainer, "course-materials", "view")).toBe(true);
+  });
+
+  it("does NOT leak material management into full course editing", () => {
+    // The whole point of the dedicated module: a trainer can manage files but
+    // still cannot edit the course records themselves.
+    const trainer = ["courses.view", "course-materials.create", "course-materials.edit", "course-materials.delete"];
+    expect(canPerformAction(trainer, "courses", "edit")).toBe(false);
+    expect(canPerformAction(trainer, "courses", "create")).toBe(false);
+    expect(canPerformAction(trainer, "courses", "delete")).toBe(false);
+    expect(canAccessModule(["course-materials.edit"], "courses")).toBe(false);
+  });
+
+  it("stays a standalone module (no alias onto courses)", () => {
+    // courses.view alone must NOT unlock material management.
+    expect(canPerformAction(["courses.view"], "course-materials", "create")).toBe(false);
+    // and the module wildcard grants every material action directly.
+    expect(canPerformAction(["course-materials.*"], "course-materials", "delete")).toBe(true);
+  });
+
+  it("a role with only courses.edit still manages materials (coordinator regression)", () => {
+    const coordinator = ["courses.*", "course-materials.*"];
+    expect(canPerformAction(coordinator, "course-materials", "create")).toBe(true);
+    expect(canPerformAction(coordinator, "courses", "edit")).toBe(true);
+  });
+});
+
 describe("nav/module registry consistency", () => {
   it("gives every nav item a module in ALL_MODULES", () => {
     const modules = new Set<string>(ALL_MODULES as readonly string[]);

@@ -15,7 +15,7 @@ import {
   LayoutDashboard, Building2, Contact, Users, Award, UserSquare, BookOpen,
   ClipboardList, CalendarDays, CalendarRange, CalendarClock, UserCheck, QrCode,
   FilePen, FileCheck2, Star, BadgeCheck, BarChart3, ScrollText,
-  Bell, Settings, Search, UserPlus, ShieldCheck,
+  Bell, Settings, Search, UserPlus, ShieldCheck, ListChecks,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -27,7 +27,7 @@ const ICONS: Record<string, LucideIcon> = {
   LayoutDashboard, Building2, Contact, Users, Award, UserSquare, BookOpen,
   ClipboardList, CalendarDays, CalendarRange, CalendarClock, UserCheck, QrCode,
   FilePen, FileCheck2, Star, BadgeCheck, BarChart3, ScrollText,
-  Bell, Settings, UserPlus, ShieldCheck,
+  Bell, Settings, UserPlus, ShieldCheck, ListChecks,
 };
 
 export function CommandPalette() {

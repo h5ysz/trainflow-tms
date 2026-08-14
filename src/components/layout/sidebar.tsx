@@ -29,7 +29,7 @@ import {
   ClipboardList, CalendarDays, CalendarRange, CalendarClock, UserCheck, QrCode,
   FilePen, FileCheck2, Star, BadgeCheck, BarChart3, ScrollText,
   Bell, Settings, UserPlus, ShieldCheck, BookUser, ClipboardCheck, TrendingUp, RefreshCw,
-  LogOut, Sparkles, ChevronsLeft, ChevronsRight,
+  LogOut, Sparkles, ChevronsLeft, ChevronsRight, ListChecks,
   type LucideIcon,
 } from "lucide-react";
 
@@ -38,7 +38,7 @@ const ICONS: Record<string, LucideIcon> = {
   ClipboardList, CalendarDays, CalendarRange, CalendarClock, UserCheck, QrCode,
   FilePen, FileCheck2, Star, BadgeCheck, BarChart3, ScrollText,
   Bell, Settings, UserPlus, ShieldCheck, BookUser, ClipboardCheck, TrendingUp, RefreshCw,
-  Sparkles,
+  Sparkles, ListChecks,
 };
 
 const GROUP_ORDER: NavItem["group"][] = ["dashboard", "training", "assessment", "reports", "system"];

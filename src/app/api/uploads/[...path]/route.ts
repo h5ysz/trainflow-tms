@@ -22,6 +22,10 @@ const MIME: Record<string, string> = {
   ".webp": "image/webp",
   ".gif": "image/gif",
   ".pdf": "application/pdf",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".doc": "application/msword",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
 
@@ -50,6 +54,7 @@ export const GET = async (req: Request, ctx: { params: Promise<{ path: string[] 
     return new Response(data, {
       headers: {
         "Content-Type": contentType,
+        "Content-Disposition": `inline; filename="${path.basename(resolved)}"`,
         "Cache-Control": "private, max-age=3600",
         "Content-Length": String(data.length),
       },

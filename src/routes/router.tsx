@@ -21,6 +21,7 @@ import { AttendanceRoute } from "./attendance";
 import { QrCodeRoute } from "./qr-code";
 import { PreTestRoute } from "./pre-test";
 import { FinalTestRoute } from "./final-test";
+import { ExamSetsRoute } from "./exam-sets";
 import { ExamAttemptRoute } from "./exam-attempt";
 import { CourseEvaluationRoute } from "./course-evaluation";
 import { CertificatesRoute } from "./certificates";
@@ -45,9 +46,13 @@ import { BankAccountsRoute } from "./bank-accounts";
 import { FinancialSettingsRoute } from "./financial-settings";
 import { FinancialReportsRoute } from "./financial-reports";
 import { TraineeDetailRoute } from "./trainee-detail";
+import { CourseDetailRoute } from "./course-detail";
 import { AiDashboardRoute } from "./ai-dashboard";
 
-const ROUTES: Record<RouteKey, React.ComponentType> = {
+// `course-materials` is a permission module, not a navigable page — it gates the
+// material upload/replace/delete routes reached from the course-detail page, so
+// it intentionally has no ROUTES entry. Partial keeps the type honest about that.
+const ROUTES: Partial<Record<RouteKey, React.ComponentType>> = {
   dashboard: DashboardRoute,
   companies: CompaniesRoute,
   "company-contacts": CompanyContactsRoute,
@@ -55,6 +60,8 @@ const ROUTES: Record<RouteKey, React.ComponentType> = {
   "trainer-qualifications": TrainerQualificationsRoute,
   trainees: TraineesRoute,
   courses: CoursesRoute,
+  // Reached from the courses list; intentionally absent from navItems.
+  "course-detail": CourseDetailRoute,
   workshops: WorkshopsRoute,
   requests: TrainingRequestsRoute,
   sessions: TrainingSessionsRoute,
@@ -65,6 +72,7 @@ const ROUTES: Record<RouteKey, React.ComponentType> = {
   "qr-code": QrCodeRoute,
   "pre-test": PreTestRoute,
   "final-test": FinalTestRoute,
+  "exam-sets": ExamSetsRoute,
   // Reached from the pre-test / final-test pages; intentionally absent from navItems.
   "exam-attempts": ExamAttemptRoute,
   evaluation: CourseEvaluationRoute,

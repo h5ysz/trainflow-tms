@@ -9,6 +9,7 @@
 
 import { db } from "@/lib/db";
 import { nextRefNumber } from "@/lib/api/ref-number";
+import { resolveActiveSetQuestions, selectQuestionsFromBank } from "@/lib/api/exam-sets";
 
 export interface QuestionSetItem {
   questionId: string;
@@ -63,39 +64,6 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 /**
- * Select questions from the course Question Bank for a given test type.
- * Randomly selects if there are more questions than needed.
- *
- * @param courseId - the course to pull questions from
- * @param testType - PRE_TEST or FINAL_TEST
- * @param numQuestions - max questions to select (null = all active questions)
- */
-export async function selectQuestionsFromBank(
-  courseId: string,
-  testType: "PRE_TEST" | "FINAL_TEST",
-  numQuestions?: number
-) {
-  const allQuestions = await db.question.findMany({
-    where: {
-      courseId,
-      testType,
-      isActive: true,
-      deletedAt: null,
-    },
-    orderBy: { order: "asc" },
-  });
-
-  if (allQuestions.length === 0) return [];
-
-  // If numQuestions specified and we have more than needed, randomly sample
-  if (numQuestions && numQuestions < allQuestions.length) {
-    return shuffle(allQuestions).slice(0, numQuestions);
-  }
-
-  return allQuestions;
-}
-
-/**
  * Identify a trainee within a session. The national ID is authoritative when present;
  * the display name is only a fallback for records captured without one.
  */
@@ -139,8 +107,13 @@ export async function createExamAttempt(opts: {
 
   const passScore = session.course.passScore;
 
-  // Select questions from bank
-  const questions = await selectQuestionsFromBank(session.courseId, testType, numQuestions);
+  // Select questions: the trainer-approved session set takes precedence. The
+  // trainer generates + approves the exam set, so the exam uses exactly those
+  // questions (order/options are still randomized per trainee below). Until a
+  // set has been approved we fall back to a random sample from the bank — the
+  // previous behavior. The system never swaps questions on its own.
+  const approvedSetQuestions = await resolveActiveSetQuestions(sessionId, testType);
+  const questions = approvedSetQuestions ?? (await selectQuestionsFromBank(session.courseId, testType, numQuestions));
   if (questions.length === 0) {
     throw new Error(`No active ${testType} questions found in the Question Bank for course ${session.course.code}`);
   }

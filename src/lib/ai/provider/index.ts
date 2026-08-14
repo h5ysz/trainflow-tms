@@ -5,9 +5,11 @@
 // It never knows or cares which provider is active.
 //
 // Selection logic (priority order):
-//   1. Gemini     — if GEMINI_API_KEY is set (DEFAULT provider)
-//   2. OpenAI     — if OPENAI_API_KEY is set
-//   3. NoOp       — always available as fallback
+//   1. Mock      — if AI_MOCK_ENABLED=true (offline, deterministic; used by
+//                  tests + manual demo when no API keys are configured)
+//   2. Gemini    — if GEMINI_API_KEY is set (DEFAULT real provider)
+//   3. OpenAI    — if OPENAI_API_KEY is set
+//   4. NoOp      — always available as fallback
 //
 // The provider instance is cached for the process lifetime. Env var changes
 // require a restart (consistent with how JWT_SECRET and other secrets work).
@@ -16,6 +18,7 @@ import type { AIProvider } from "./types";
 import { GeminiProvider } from "./gemini";
 import { OpenAIProvider } from "./openai";
 import { NoOpProvider } from "./noop";
+import { MockProvider } from "./mock";
 
 let cachedProvider: AIProvider | null = null;
 
@@ -23,9 +26,11 @@ let cachedProvider: AIProvider | null = null;
  * Returns the active AI provider.
  *
  * Priority:
- *   1. Gemini (if GEMINI_API_KEY is set) — DEFAULT
- *   2. OpenAI (if OPENAI_API_KEY is set)
- *   3. NoOp (fallback — returns a "not configured" message)
+ *   1. Mock (if AI_MOCK_ENABLED=true) — offline deterministic provider for
+ *      tests and demos (no API key required)
+ *   2. Gemini (if GEMINI_API_KEY is set) — DEFAULT
+ *   3. OpenAI (if OPENAI_API_KEY is set)
+ *   4. NoOp (fallback — returns a "not configured" message)
  *
  * The result is cached. Subsequent calls return the same instance.
  */
@@ -36,7 +41,13 @@ export function getAIProvider(): AIProvider {
 }
 
 function detectProvider(): AIProvider {
-  // 1. Gemini (default, highest priority)
+  // 1. Mock (offline, deterministic — for tests / demo without API keys)
+  const mockEnv = process.env.AI_MOCK_ENABLED || process.env.AI_MOCK;
+  if (mockEnv === "1" || mockEnv === "true" || mockEnv === "TRUE") {
+    return new MockProvider();
+  }
+
+  // 2. Gemini (default, highest priority)
   if (process.env.GEMINI_API_KEY) {
     try {
       return new GeminiProvider();
@@ -45,7 +56,7 @@ function detectProvider(): AIProvider {
     }
   }
 
-  // 2. OpenAI
+  // 3. OpenAI
   if (process.env.OPENAI_API_KEY) {
     try {
       return new OpenAIProvider();
@@ -54,7 +65,7 @@ function detectProvider(): AIProvider {
     }
   }
 
-  // 3. NoOp fallback (always available)
+  // 4. NoOp fallback (always available)
   return new NoOpProvider();
 }
 
