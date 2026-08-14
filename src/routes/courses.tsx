@@ -15,6 +15,7 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { BookOpen, Plus, Clock, Users, Award, AlertCircle } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { useEntityActions } from "@/hooks/use-entity-actions";
+import { useAppStore } from "@/lib/store/app-store";
 
 interface Course {
   id: string;
@@ -52,6 +53,7 @@ const NEW_COURSE = {
 
 export function CoursesRoute() {
   const { t } = useI18n();
+  const { navigate } = useAppStore();
 
   const { data, pagination, loading, error, page, setPage, search, setSearch, refetch } =
     useList<Course>("/courses");
@@ -125,6 +127,7 @@ export function CoursesRoute() {
         <RowActions
           canEdit={canEdit}
           canDelete={canDelete}
+          onView={() => navigate("course-detail", row.id)}
           onEdit={() => void openEdit(row)}
           onDelete={() => setDeleteTarget(row)}
         />

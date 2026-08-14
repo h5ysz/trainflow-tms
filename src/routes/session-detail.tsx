@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/common/empty-state";
 import { StatusBadge } from "@/components/common/status-badge";
 import { CertReleasePanel } from "@/components/common/cert-release-panel";
 import { SessionContactDirectory } from "@/components/common/session-contact-directory";
+import { SessionExamSets } from "@/components/common/session-exam-sets";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -111,6 +112,15 @@ export function SessionDetailRoute() {
 
   const sessionId = routeParam;
   const canEdit = user ? canPerformAction(user.permissions, "sessions", "edit") : false;
+
+  // Trainer-owned exam question sets are authorized against the pre-test /
+  // final-test modules (the same modules that authorize the Question Bank).
+  const canViewExams = user
+    ? canPerformAction(user.permissions, "pre-test", "view") || canPerformAction(user.permissions, "final-test", "view")
+    : false;
+  const canManageExams = user
+    ? canPerformAction(user.permissions, "pre-test", "edit") || canPerformAction(user.permissions, "final-test", "edit")
+    : false;
 
   const [session, setSession] = useState<Session | null>(null);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
@@ -602,6 +612,7 @@ export function SessionDetailRoute() {
             <TabsTrigger value="lifecycle">{t("session.lifecycle")}</TabsTrigger>
             <TabsTrigger value="trainer">{t("nav.trainers")}</TabsTrigger>
             <TabsTrigger value="qr">{t("nav.qrCode")}</TabsTrigger>
+            {canViewExams && <TabsTrigger value="exams">{t("session.examsTab")}</TabsTrigger>}
             <TabsTrigger value="certificates">{t("nav.certificates")}</TabsTrigger>
             <TabsTrigger value="release">{t("certRelease.title")}</TabsTrigger>
           </TabsList>
@@ -755,6 +766,12 @@ export function SessionDetailRoute() {
               </div>
             </Card>
           </TabsContent>
+
+          {canViewExams && (
+            <TabsContent value="exams" className="mt-4">
+              {session ? <SessionExamSets sessionId={session.id} canManage={canManageExams} /> : null}
+            </TabsContent>
+          )}
 
           <TabsContent value="certificates" className="mt-4 space-y-4">
             <Card className="p-6 space-y-3">

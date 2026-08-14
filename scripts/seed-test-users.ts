@@ -48,6 +48,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "companies.*", "company-contacts.*", "trainers.*", "trainer-qualifications.*",
     "trainees.*", "courses.*", "requests.*", "sessions.*", "scheduling.*",
     "attendance.*", "qr-code.*", "pre-test.*", "final-test.*", "evaluation.*",
+    "course-materials.*",
     "certificates.*", "reports.view",
     "report-schedules.*", "notifications.view", "audit-log.view",
     "user-approvals.view", "user-approvals.create", "user-approvals.edit",
@@ -68,6 +69,11 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   TRAINER: [
     "dashboard.view",
     "courses.view",
+    // Course materials: trainer manages the uploaded files (PDF/PowerPoint/Word)
+    // of the courses they run — upload, replace, delete, view. Granted as a
+    // dedicated module so the trainer does NOT get `courses.edit` (full course
+    // record editing stays with the coordinator).
+    "course-materials.view", "course-materials.create", "course-materials.edit", "course-materials.delete",
     "trainees.view",
     "sessions.view", "sessions.edit",
     "attendance.view", "attendance.create", "attendance.edit",

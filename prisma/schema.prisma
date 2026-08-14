@@ -584,16 +584,28 @@ model WorkshopTrainerAuthorization {
   @@index([status])
 }
 
-// Sprint 6: Course Resources — external materials (PDF, PPT, URL, QR link)
+// Sprint 6: Course Resources — course material attachments.
+// Two kinds of rows live in this table:
+//   - External pointers (PDF, PowerPoint, URL, QR link): `url` is a link.
+//   - Uploaded course materials (Phase 1): the file is stored on disk under
+//     public/uploads/course-materials/ and served via /api/uploads/...;
+//     `storagePath` keeps the on-disk relative path so the future AI Question
+//     Generator can read the file content back for question extraction.
+//     fileName/fileSize/fileMime mirror the stored file for the UI.
 model CourseResource {
   id          String   @id @default(uuid())
   courseId    String
   course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  type        String   // "PDF" | "POWERPOINT" | "URL" | "QR_CODE"
+  type        String   // "PDF" | "POWERPOINT" | "WORD" | "URL" | "QR_CODE"
   title       String
   titleAr     String?
   url         String
   description String?
+  // Uploaded-file metadata (null for external URL/QR_CODE pointers)
+  fileName    String?
+  fileSize    Int?
+  fileMime    String?
+  storagePath String?
   order       Int      @default(0)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
@@ -601,6 +613,8 @@ model CourseResource {
   createdBy   String?
   updatedBy   String?
   deletedAt   DateTime?
+
+  questions Question[]
 
   @@index([courseId])
   @@index([type])
@@ -611,6 +625,10 @@ model Question {
   id             String         @id @default(uuid())
   courseId       String? // nullable → bank-only question
   course         Course?        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  // Optional link to the course material this question was generated from.
+  // SetNull so deleting a material never deletes questions already in the bank.
+  materialId     String?
+  material       CourseResource? @relation(fields: [materialId], references: [id], onDelete: SetNull)
   type           QuestionType   @default(SINGLE_CHOICE)
   testType       TestType       @default(PRE_TEST)
   text           String
@@ -639,6 +657,7 @@ model Question {
   deletedAt      DateTime?
 
   @@index([courseId, testType])
+  @@index([materialId])
   @@index([category])
   @@index([difficulty])
 }
@@ -936,6 +955,7 @@ model TrainingSession {
   sessionPayments  SessionPayment[]
   invoices         Invoice[]
   notificationLogs NotificationLog[]
+  examSets        SessionExamSet[]
 
   @@index([status])
   @@index([trainerId])
@@ -1103,6 +1123,47 @@ model ExamAttempt {
   @@index([status])
   @@index([traineeEmail])
   @@index([companyId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SESSION EXAM QUESTION SET
+// The trainer controls WHICH questions a session's exam uses. Generating a set
+// draws a random sample from the course Question Bank (default: every active
+// question for the test type). The trainer reviews the preview — including the
+// correct answers beside each question — then Regenerates or Approves.
+//
+//   DRAFT  → generated but NOT yet accepted; the exam does NOT use it.
+//   APPROVED → the session's exam uses exactly these questions (the engine only
+//              ever reads the LATEST approved set; question + option order are
+//              still randomized per trainee at attempt time).
+//
+// Nothing regenerates or replaces a set automatically — no cron, no timeout.
+// Approving a new set simply creates a newer approved version; older versions
+// are kept for audit and the Question Bank is never mutated.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SessionExamSet {
+  id           String   @id @default(uuid())
+  sessionId    String
+  session      TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  testType     TestType // PRE_TEST | FINAL_TEST
+  status       String   @default("DRAFT") // DRAFT | APPROVED
+  version      Int      @default(1) // increments per generated set
+  numQuestions Int      @default(0)
+  // JSON array of question ids in the trainer-approved order. References the
+  // bank — images (imageUrl) stay attached to the questions and keep working.
+  questionIds  String
+  // Audit
+  approvedAt   DateTime?
+  approvedBy   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  createdBy    String?
+  updatedBy    String?
+  deletedAt    DateTime?
+
+  @@index([sessionId, testType])
+  @@index([status])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

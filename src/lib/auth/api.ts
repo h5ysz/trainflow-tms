@@ -374,10 +374,10 @@ export function allowedTestTypesFor(user: AuthUser, action: Action): TestType[] 
 export function testTypeWhere(
   requested: string | undefined,
   allowed: TestType[]
-): string | { in: TestType[] } | null {
+): TestType | { in: TestType[] } | null {
   if (!requested) return { in: allowed };
   if (!allowed.includes(requested as TestType)) return null;
-  return requested;
+  return requested as TestType;
 }
 
 type ExamHandler<T> = (ctx: {

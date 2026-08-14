@@ -15,6 +15,8 @@ export type RouteKey =
   | "trainer-qualifications"
   | "trainees"
   | "courses"
+  | "course-detail"
+  | "course-materials"
   | "workshops"
   | "requests"
   | "sessions"
@@ -26,6 +28,7 @@ export type RouteKey =
   | "pre-test"
   | "final-test"
   | "exam-attempts"
+  | "exam-sets"
   | "evaluation"
   | "certificates"
   | "reports"
@@ -69,7 +72,8 @@ export const ALL_MODULES: RouteKey[] = [
   "trainees", "courses", "workshops", "requests", "sessions", "scheduling", "attendance", "qr-code",
   "pre-test", "final-test", "evaluation", "certificates", "reports", "report-schedules",
   "notifications", "audit-log", "settings", "user-approvals", "user-management", "roles",
-  "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard", "session-detail", "trainee-detail", "ai-dashboard",
+  "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard", "session-detail", "trainee-detail", "course-detail", "course-materials", "ai-dashboard",
+  "exam-sets",
 ];
 
 // Module visibility per role
@@ -95,6 +99,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "trainer-qualifications",
     "trainees",
     "courses",
+    "course-detail",
     "workshops",
     "requests",
     "sessions",
@@ -123,7 +128,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
   ],
   COMPANY_ADMIN: [
     "dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
-    "trainees", "courses", "workshops", "requests", "sessions", "session-detail", "trainee-detail",
+    "trainees", "courses", "course-detail", "workshops", "requests", "sessions", "session-detail", "trainee-detail",
     "scheduling", "attendance", "certificates", "reports", "report-schedules",
     "notifications", "audit-log", "user-approvals", "user-management",
     "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard",
@@ -140,6 +145,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "trainer-qualifications",
     "trainees",
     "courses",
+    "course-detail",
     "workshops",
     "requests",
     "sessions",
@@ -195,6 +201,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "trainer-qualifications",
     "trainees",
     "courses",
+    "course-detail",
     "workshops",
     "requests",
     "sessions",
@@ -213,7 +220,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
   ],
   AUDITOR: [
     "dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
-    "trainees", "courses", "workshops", "requests", "sessions", "session-detail", "trainee-detail",
+    "trainees", "courses", "course-detail", "workshops", "requests", "sessions", "session-detail", "trainee-detail",
     "scheduling", "attendance", "qr-code", "pre-test", "final-test", "exam-attempts",
     "evaluation", "certificates", "reports", "notifications", "audit-log",
     "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard", "session-detail", "trainee-detail",
@@ -248,6 +255,7 @@ const OPERATIONAL_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
   "trainer-qualifications": ["view", "create", "edit", "delete"],
   trainees: ["view", "create", "edit", "delete"],
   courses: ["view", "create", "edit", "delete"],
+  "course-materials": ["view", "create", "edit", "delete"],
   workshops: ["view", "create", "edit", "delete"],
   requests: ["view", "create", "edit", "delete"],
   sessions: ["view", "create", "edit", "delete"],
@@ -276,6 +284,13 @@ const OPERATIONAL_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
 const TRAINER_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
   dashboard: ["view"],
   courses: ["view"],
+  // Course materials: trainers manage the uploaded files (PDF/PowerPoint/Word)
+  // for the courses they run — upload, replace, delete. This is a dedicated
+  // module so trainers get it WITHOUT `courses.edit` (which would let them edit
+  // the course records themselves). Server-side, every material write is scoped
+  // to the trainer's own sessions (ensureTrainerCanAccessCourse in
+  // src/lib/api/course-materials.ts).
+  "course-materials": ["view", "create", "edit", "delete"],
   trainees: ["view"],
   sessions: ["view", "edit"],
   attendance: ["view", "create", "edit"],
@@ -367,7 +382,12 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
 const MODULE_ALIASES: Partial<Record<RouteKey, RouteKey[]>> = {
   "session-detail": ["sessions"],
   "trainee-detail": ["trainees"],
+  "course-detail": ["courses"],
   "exam-attempts": ["pre-test", "final-test"],
+  // The standalone "Exam Questions" manager is a view over the Question Bank /
+  // session exam sets — it authorizes against the modules that actually gate
+  // them, so no separate DB grant is required.
+  "exam-sets": ["pre-test", "final-test"],
 };
 
 function hasPermission(permissions: string[], module: RouteKey, action: Action): boolean {
@@ -420,6 +440,7 @@ export const navItems: NavItem[] = [
   // Assessment
   { key: "pre-test", labelKey: "nav.preTest", icon: "FilePen", group: "assessment" },
   { key: "final-test", labelKey: "nav.finalTest", icon: "FileCheck2", group: "assessment" },
+  { key: "exam-sets", labelKey: "nav.examSets", icon: "ListChecks", group: "assessment" },
   { key: "evaluation", labelKey: "nav.evaluation", icon: "Star", group: "assessment" },
   { key: "certificates", labelKey: "nav.certificates", icon: "BadgeCheck", group: "assessment" },
 

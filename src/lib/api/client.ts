@@ -172,6 +172,11 @@ export const api = {
     body.append("file", file);
     return request<T>(path, { method: "POST", body });
   },
+  putFile: <T>(path: string, file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return request<T>(path, { method: "PUT", body });
+  },
 };
 
 /**
