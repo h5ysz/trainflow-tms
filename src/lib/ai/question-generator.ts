@@ -23,15 +23,22 @@ import type { ChatMessage } from "@/lib/ai/provider";
 import { DO_NOT_REPEAT_TEXT_BEGIN, DO_NOT_REPEAT_TEXT_END, FIGURES_BEGIN, FIGURES_END } from "@/lib/ai/prompt-markers";
 
 /**
- * Model pinned for question generation. Passed as a per-request override so
- * generation always uses a model known to be capable — even if the environment
- * OPENAI_MODEL is the openrouter/free auto-router (which can route to models
- * that cannot generate questions) or is overridden in the Render dashboard.
- * Overridable via OPENAI_GENERATOR_MODEL; default is the largest capable FREE
- * model currently on OpenRouter (the free roster rotates over time).
+ * Models pinned for question generation, tried in order. Passed as a
+ * per-request override so generation always uses a model known to be capable —
+ * even if the environment OPENAI_MODEL is the openrouter/free auto-router
+ * (which can route to models that cannot generate questions) or is overridden
+ * in the Render dashboard. The primary is overridable via
+ * OPENAI_GENERATOR_MODEL; the free roster rotates over time, so the primary is
+ * followed by a fallback chain of smaller, more reliable FREE models and
+ * finally the auto-router. Whichever model actually answers is reported back
+ * in the response `model` field.
  */
-const QUESTION_GENERATOR_MODEL =
-  process.env.OPENAI_GENERATOR_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free";
+const QUESTION_GENERATOR_MODELS = [
+  process.env.OPENAI_GENERATOR_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "nvidia/nemotron-3-super-120b-a12b:free",
+  "google/gemma-4-31b-it:free",
+  "openrouter/free",
+].filter(Boolean) as string[];
 
 export const QUESTION_TYPES = ["SINGLE_CHOICE", "MULTIPLE_CHOICE", "TRUE_FALSE", "SHORT_ANSWER"] as const;
 export type GeneratedQuestionType = (typeof QUESTION_TYPES)[number];
@@ -723,9 +730,8 @@ export async function generateBilingualQuestions(opts: GenerationOptions): Promi
   const requestCount = Math.min(MAX_COUNT, Math.ceil(count * 1.5));
 
   const runGeneration = async (): Promise<{ questions: GeneratedQuestion[]; model?: string }> => {
-    const generateOnce = async (): Promise<{ questions: GeneratedQuestion[]; model?: string }> => {
+    const generateOnce = async (model: string): Promise<{ questions: GeneratedQuestion[]; model?: string }> => {
       let raw: string;
-      let model: string | undefined;
       try {
         const response = await provider.chat({
           messages: [
@@ -734,10 +740,10 @@ export async function generateBilingualQuestions(opts: GenerationOptions): Promi
           ],
           temperature: 0.4,
           maxTokens: 4000,
-          model: QUESTION_GENERATOR_MODEL,
+          model,
         });
         raw = response.content;
-        model = response.model;
+        model = response.model ?? model;
       } catch (e) {
         const cause = e instanceof Error ? e.message : String(e);
         throw new QuestionGenerationError(`AI question generation failed: ${cause}`);
@@ -767,19 +773,19 @@ export async function generateBilingualQuestions(opts: GenerationOptions): Promi
       return { questions: array.map((q, i) => validateGeneratedQuestion(q, i)), model };
     };
 
-    // Generation uses a pinned capable model, but free-tier rate limits and
-    // transient upstream errors are common — retry with backoff so a single
-    // 429 / flaky response does not fail the whole batch.
+    // Try the pinned model chain. Free-tier rate limits and transient upstream
+    // errors are common, so each model gets a couple of attempts with backoff;
+    // if the primary is unhealthy, fall back to smaller models automatically.
     let lastError: unknown;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        return await generateOnce();
-      } catch (e) {
-        lastError = e;
-        console.error(
-          `[ai-generate] attempt ${attempt + 1} of 3 failed: ${e instanceof Error ? e.message : String(e)}`,
-        );
-        if (attempt < 2) {
+    for (const model of QUESTION_GENERATOR_MODELS) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          return await generateOnce(model);
+        } catch (e) {
+          lastError = e;
+          console.error(
+            `[ai-generate] model=${model} attempt ${attempt + 1} of 2 failed: ${e instanceof Error ? e.message : String(e)}`,
+          );
           await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
         }
       }
