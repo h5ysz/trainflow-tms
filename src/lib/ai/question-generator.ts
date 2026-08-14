@@ -712,49 +712,72 @@ export async function generateBilingualQuestions(opts: GenerationOptions): Promi
   const requestCount = Math.min(MAX_COUNT, Math.ceil(count * 1.5));
 
   const runGeneration = async (): Promise<{ questions: GeneratedQuestion[]; model?: string }> => {
-    let raw: string;
-    let model: string | undefined;
-    try {
-      const response = await provider.chat({
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: buildUserPrompt({ ...opts, count: requestCount }) },
-        ],
-        temperature: 0.4,
-        maxTokens: 4000,
-        responseFormat: "json",
-      });
-      raw = response.content;
-      model = response.model;
-    } catch (e) {
-      const cause = e instanceof Error ? e.message : String(e);
-      throw new QuestionGenerationError(`AI question generation failed: ${cause}`);
-    }
+    const generateOnce = async (): Promise<{ questions: GeneratedQuestion[]; model?: string }> => {
+      let raw: string;
+      let model: string | undefined;
+      try {
+        const response = await provider.chat({
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: buildUserPrompt({ ...opts, count: requestCount }) },
+          ],
+          temperature: 0.4,
+          maxTokens: 4000,
+          responseFormat: "json",
+        });
+        raw = response.content;
+        model = response.model;
+      } catch (e) {
+        const cause = e instanceof Error ? e.message : String(e);
+        throw new QuestionGenerationError(`AI question generation failed: ${cause}`);
+      }
 
-    if (!raw || raw.trim().length === 0) {
-      throw new QuestionGenerationError("The AI returned an empty response. Please regenerate.");
-    }
+      if (!raw || raw.trim().length === 0) {
+        throw new QuestionGenerationError("The AI returned an empty response. Please regenerate.");
+      }
 
-    let array: unknown[];
-    try {
-      array = extractQuestionArray(raw);
-    } catch (e) {
-      // Log the actual provider output so the root cause is visible in the
-      // server logs instead of only a client-side "Invalid JSON response".
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error(
-        `[ai-generate] provider returned non-JSON content (model=${model ?? "?"}). ` +
-          `First 1500 chars of raw response >>> ${raw.slice(0, 1500)}`,
-      );
-      throw new QuestionGenerationError(
-        `${msg} [diag model=${model ?? "?"} raw=${raw.slice(0, 1200)}]`,
-      );
-    }
-    if (array.length === 0) {
-      throw new QuestionGenerationError("The AI returned no questions. Please regenerate.");
-    }
+      let array: unknown[];
+      try {
+        array = extractQuestionArray(raw);
+      } catch (e) {
+        // Log the actual provider output so the root cause is visible in the
+        // server logs instead of only a client-side "Invalid JSON response".
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(
+          `[ai-generate] provider returned non-JSON content (model=${model ?? "?"}). ` +
+            `First 1500 chars of raw response >>> ${raw.slice(0, 1500)}`,
+        );
+        throw new QuestionGenerationError(
+          `${msg} [diag model=${model ?? "?"} raw=${raw.slice(0, 1200)}]`,
+        );
+      }
+      if (array.length === 0) {
+        throw new QuestionGenerationError("The AI returned no questions. Please regenerate.");
+      }
 
-    return { questions: array.map((q, i) => validateGeneratedQuestion(q, i)), model };
+      return { questions: array.map((q, i) => validateGeneratedQuestion(q, i)), model };
+    };
+
+    // The openrouter/free router can land on a non-generative model (e.g. a
+    // content-safety classifier) whenever the capable free models are busy.
+    // Retry a few times with backoff — each attempt may hit a different model —
+    // so a single unlucky routing does not fail the whole batch.
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await generateOnce();
+      } catch (e) {
+        lastError = e;
+        console.error(
+          `[ai-generate] attempt ${attempt + 1} of 3 failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+        if (attempt < 2) {
+          await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+        }
+      }
+    }
+    if (lastError instanceof Error) throw lastError;
+    throw new QuestionGenerationError(String(lastError));
   };
 
   const first = await runGeneration();
