@@ -80,12 +80,22 @@ services:
       - key: APP_URL
         value: https://trainflow-tms.onrender.com
 
-      # ─── AI Copilot Provider ───
+      # ─── AI Provider ───
       # If no API key is set, the AI assistant returns a graceful
       # "not configured" message instead of crashing.
-      # Provider selection is automatic (priority: Gemini → OpenAI → NoOp).
+      # Provider selection is automatic (priority: Mock → Gemini → OpenAI → NoOp).
       #
-      # ─── Gemini (default provider) ───
+      # ─── Mock provider (offline, no keys) ───
+      # AI_MOCK_ENABLED=true forces the deterministic offline provider so the
+      # AI question generator works on the demo/test deploy without API keys.
+      # It builds bilingual questions from the real uploaded material text
+      # (topic templates cover the seeded OSH/safety courses). Remove this var
+      # (or delete the value) once real Gemini/OpenAI keys are added — Mock has
+      # the highest priority while this flag is set.
+      - key: AI_MOCK_ENABLED
+        value: "true"
+      #
+      # ─── Gemini (default real provider) ───
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
