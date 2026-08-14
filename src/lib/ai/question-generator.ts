@@ -251,7 +251,7 @@ const MAX_EXCLUDE_INPUT = 60;
 const SYSTEM_PROMPT = `You are a professional question generator for a bilingual training-management system (English + Arabic).
 Every question you produce MUST be fully bilingual: an English version AND an Arabic version. It is FORBIDDEN to output any question in only one language.
 
-Reply with ONLY a valid JSON array of question objects. No markdown fences, no commentary, no trailing text.
+Reply with ONLY a valid JSON object of the exact shape { "questions": [ ...question objects... ] }. No markdown fences, no commentary, no trailing text.
 
 Schema for each element (ALL fields):
 {
@@ -435,14 +435,48 @@ export function extractJsonValue(raw: string): unknown {
   throw new QuestionGenerationError("The AI response did not contain valid JSON. Please regenerate.");
 }
 
-/** Accepts either a JSON array or a { "questions": [...] } envelope. */
+/** Envelope keys some models wrap the question list in. */
+const QUESTION_ARRAY_KEYS = ["questions", "data", "items", "result", "results", "response", "outputs"] as const;
+
+/**
+ * Unwrap a model response down to a list of questions. Accepts:
+ *   - a bare array
+ *   - a JSON string that parses to an array (models forced into json_object
+ *     sometimes stringify the list)
+ *   - an object with one of the known envelope keys holding an array/string
+ *   - a number-keyed object ({ "0": {...}, "1": {...} })
+ */
+function unwrapQuestionArray(value: unknown): unknown[] | null {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      /* not a JSON string */
+    }
+    return null;
+  }
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    for (const key of QUESTION_ARRAY_KEYS) {
+      const hit = unwrapQuestionArray(obj[key]);
+      if (hit) return hit;
+    }
+    const keys = Object.keys(obj);
+    if (keys.length > 0 && keys.every((k) => /^\d+$/.test(k))) {
+      const list = keys.map((k) => obj[k]);
+      if (list.some((q) => q && typeof q === "object")) return list;
+    }
+  }
+  return null;
+}
+
+/** Accepts a JSON array, a { "questions": [...] } envelope, or common variants. */
 export function extractQuestionArray(raw: string): unknown[] {
   const value = extractJsonValue(raw);
-  if (Array.isArray(value)) return value;
-  if (value && typeof value === "object") {
-    const qs = (value as Record<string, unknown>).questions;
-    if (Array.isArray(qs)) return qs;
-  }
+  const list = unwrapQuestionArray(value);
+  if (list) return list;
   throw new QuestionGenerationError("The AI response did not contain a list of questions. Please regenerate.");
 }
 
