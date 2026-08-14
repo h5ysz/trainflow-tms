@@ -88,17 +88,19 @@ services:
       # zero cost, no credit card required.
       #
       # ─── OpenAI-compatible — OpenRouter FREE ───
-      # OPENAI_MODEL=openrouter/free is OpenRouter's auto-router: it picks an
-      # available free model per request (the free roster rotates), so the app
-      # keeps working as models come and go. Free tier is rate-limited to
-      # ~20 requests/minute per key.
+      # OPENAI_MODEL is pinned to the largest capable FREE model currently on
+      # OpenRouter. The free roster rotates over time — if this model leaves the
+      # free tier, pick the next best from https://openrouter.ai/models?q=:free.
+      # (openrouter/free auto-router was abandoned: it kept routing question
+      # generation to nvidia/nemotron-3.5-content-safety, a safety classifier
+      # that cannot produce questions.)
       # IMPORTANT: OPENAI_API_KEY in the Render dashboard MUST be an OpenRouter
       # key (sk-or-v1-...) from https://openrouter.ai/keys — a normal OpenAI key
       # returns 401 against this base URL.
       - key: OPENAI_BASE_URL
         value: https://openrouter.ai/api/v1
       - key: OPENAI_MODEL
-        value: openrouter/free
+        value: nvidia/nemotron-3-ultra-550b-a55b:free
       - key: OPENAI_API_KEY
         sync: false
       #

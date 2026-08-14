@@ -723,7 +723,6 @@ export async function generateBilingualQuestions(opts: GenerationOptions): Promi
           ],
           temperature: 0.4,
           maxTokens: 4000,
-          responseFormat: "json",
         });
         raw = response.content;
         model = response.model;
