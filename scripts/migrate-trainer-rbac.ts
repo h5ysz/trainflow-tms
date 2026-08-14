@@ -6,8 +6,13 @@
 // requests, certificates, reports, audit log, approvals, dashboards, etc.
 // The set below is delivery-scoped: sessions/attendance/QR/tests/evaluations
 // plus read-only, server-scoped visibility of the trainer's own courses and
-// trainees. NO certificates (issuance stays with COORDINATOR), NO
+// trainees, plus course-materials (upload/replace/delete of the files of their
+// own courses). NO certificates (issuance stays with COORDINATOR), NO
 // administrative/financial/AI modules.
+//
+// This script runs on every deploy (render.yaml buildCommand), so its list is
+// the source of truth for what the TRAINER role holds in production — keep it
+// in sync with seed-test-users.ts's ROLE_PERMISSIONS.TRAINER.
 //
 // Idempotent — safe to re-run. Only touches the TRAINER Role row's `permissions`
 // array (mirrors scripts/migrate-ai-dashboard-permissions.ts). Does NOT modify
@@ -21,6 +26,7 @@ const db = new PrismaClient();
 const TRAINER_PERMISSIONS = [
   "dashboard.view",
   "courses.view",
+  "course-materials.view", "course-materials.create", "course-materials.edit", "course-materials.delete",
   "trainees.view",
   "sessions.view", "sessions.edit",
   "attendance.view", "attendance.create", "attendance.edit",
@@ -55,7 +61,8 @@ async function main() {
   console.log("     Removed: companies/company-contacts/trainers/trainer-qualifications/requests/");
   console.log("     scheduling/certificates/reports/audit-log/user-approvals/");
   console.log("     worker-passports/compliance-matrix/executive-dashboard/renewal-dashboard + all `.*` grants.");
-  console.log("     Added: courses.view, trainees.view, qr-code.create, pre-test.edit, final-test.edit.");
+  console.log("     Added: courses.view, trainees.view, qr-code.create, pre-test.edit, final-test.edit,");
+  console.log("     course-materials.view, course-materials.create, course-materials.edit, course-materials.delete.");
 }
 
 main()
