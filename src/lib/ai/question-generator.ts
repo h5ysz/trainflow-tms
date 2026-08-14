@@ -22,6 +22,17 @@ import { getAIProvider } from "@/lib/ai/provider";
 import type { ChatMessage } from "@/lib/ai/provider";
 import { DO_NOT_REPEAT_TEXT_BEGIN, DO_NOT_REPEAT_TEXT_END, FIGURES_BEGIN, FIGURES_END } from "@/lib/ai/prompt-markers";
 
+/**
+ * Model pinned for question generation. Passed as a per-request override so
+ * generation always uses a model known to be capable — even if the environment
+ * OPENAI_MODEL is the openrouter/free auto-router (which can route to models
+ * that cannot generate questions) or is overridden in the Render dashboard.
+ * Overridable via OPENAI_GENERATOR_MODEL; default is the largest capable FREE
+ * model currently on OpenRouter (the free roster rotates over time).
+ */
+const QUESTION_GENERATOR_MODEL =
+  process.env.OPENAI_GENERATOR_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free";
+
 export const QUESTION_TYPES = ["SINGLE_CHOICE", "MULTIPLE_CHOICE", "TRUE_FALSE", "SHORT_ANSWER"] as const;
 export type GeneratedQuestionType = (typeof QUESTION_TYPES)[number];
 export type GeneratedDifficulty = "EASY" | "MEDIUM" | "HARD";
@@ -723,6 +734,7 @@ export async function generateBilingualQuestions(opts: GenerationOptions): Promi
           ],
           temperature: 0.4,
           maxTokens: 4000,
+          model: QUESTION_GENERATOR_MODEL,
         });
         raw = response.content;
         model = response.model;
@@ -743,12 +755,10 @@ export async function generateBilingualQuestions(opts: GenerationOptions): Promi
         // server logs instead of only a client-side "Invalid JSON response".
         const msg = e instanceof Error ? e.message : String(e);
         console.error(
-          `[ai-generate] provider returned non-JSON content (model=${model ?? "?"}). ` +
+          `[ai-generate] provider returned unparseable content (model=${model ?? "?"}). ` +
             `First 1500 chars of raw response >>> ${raw.slice(0, 1500)}`,
         );
-        throw new QuestionGenerationError(
-          `${msg} [diag model=${model ?? "?"} raw=${raw.slice(0, 1200)}]`,
-        );
+        throw new QuestionGenerationError(msg);
       }
       if (array.length === 0) {
         throw new QuestionGenerationError("The AI returned no questions. Please regenerate.");
@@ -757,10 +767,9 @@ export async function generateBilingualQuestions(opts: GenerationOptions): Promi
       return { questions: array.map((q, i) => validateGeneratedQuestion(q, i)), model };
     };
 
-    // The openrouter/free router can land on a non-generative model (e.g. a
-    // content-safety classifier) whenever the capable free models are busy.
-    // Retry a few times with backoff — each attempt may hit a different model —
-    // so a single unlucky routing does not fail the whole batch.
+    // Generation uses a pinned capable model, but free-tier rate limits and
+    // transient upstream errors are common — retry with backoff so a single
+    // 429 / flaky response does not fail the whole batch.
     let lastError: unknown;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {

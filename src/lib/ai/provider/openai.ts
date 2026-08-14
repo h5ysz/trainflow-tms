@@ -102,8 +102,12 @@ export class OpenAIProvider implements AIProvider {
       ...(m.toolCallId && { tool_call_id: m.toolCallId }),
     }));
 
+    // Model override per request (question generator pins a specific model),
+    // falling back to the provider-wide OPENAI_MODEL when not provided.
+    const model = request.model ?? this.model;
+
     const body: Record<string, unknown> = {
-      model: this.model,
+      model,
       messages,
       temperature: request.temperature ?? 0.5,
       max_tokens: request.maxTokens ?? 2000,

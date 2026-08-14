@@ -42,6 +42,8 @@ export interface ChatRequest {
   maxTokens?: number;
   topP?: number;
   stop?: string | string[];
+  /** Model override for this request (provider default is used when omitted). */
+  model?: string;
 
   // ─── Future capabilities (optional, provider may ignore) ──────────────
   /** Function/tool definitions the model can call. */
