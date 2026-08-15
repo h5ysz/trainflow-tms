@@ -357,6 +357,15 @@ export const TEST_TYPE_MODULE: Record<TestType, RouteKey> = {
 };
 
 export function allowedTestTypesFor(user: AuthUser, action: Action): TestType[] {
+  // Read-only results access via the dedicated `exam-attempts` module (e.g. the
+  // coordinator): the caller may LIST attempt scores of BOTH test types but has
+  // no `create`/`edit` on pre-test/final-test, so start/submit/reopen/edit all
+  // still 403. This checks the DIRECT grant only (not the pre-test/final-test
+  // aliases), so a viewer holding just `pre-test.view` keeps seeing pre-test
+  // attempts only.
+  if (action === "view" && hasDirectExamResultsAccess(user)) {
+    return Object.keys(TEST_TYPE_MODULE) as TestType[];
+  }
   return (Object.keys(TEST_TYPE_MODULE) as TestType[]).filter((testType) => {
     // Not named `module`: that identifier is reserved in this module scope by the
     // bundler's CommonJS interop.
@@ -366,6 +375,22 @@ export function allowedTestTypesFor(user: AuthUser, action: Action): TestType[] 
       canPerformAction(user.permissions, routeKey, action)
     );
   });
+}
+
+function hasDirectExamResultsAccess(user: AuthUser): boolean {
+  const p = user.permissions;
+  return p.includes("*") || p.includes("exam-attempts.*") || p.includes("exam-attempts.view");
+}
+
+// True for a caller whose exam access comes ONLY from the results-only
+// `exam-attempts` grant (coordinator) — they may see attempt SCORES but never
+// the question content, so the exam-attempts handlers strip questionSet/answers.
+export function isExamResultsOnly(user: AuthUser): boolean {
+  if (!hasDirectExamResultsAccess(user)) return false;
+  return !(
+    canAccessModule(user.permissions, "pre-test") ||
+    canAccessModule(user.permissions, "final-test")
+  );
 }
 
 // Builds the `testType` clause for an assessment list query. Returns null when the

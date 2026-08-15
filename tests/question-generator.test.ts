@@ -1,7 +1,7 @@
 // Unit tests for the bilingual AI Question Generator: strict bilingual
 // validation (the product rule: every question ALWAYS Arabic + English), robust
 // JSON parsing of provider output, and the draftâ†’persist mapping.
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vitest";
 
 const mockProvider = {
   chat: vi.fn(),
@@ -29,6 +29,12 @@ beforeAll(() => {
   process.env.AI_MOCK_ENABLED = "true";
 });
 
+beforeEach(() => {
+  // Call history accumulates across tests; clear it so `mock.calls[0]` refers
+  // to the current test's first chat call (the generation prompt).
+  mockProvider.chat.mockClear();
+});
+
 afterAll(() => {
   delete process.env.AI_MOCK_ENABLED;
 });
@@ -39,6 +45,19 @@ const MATERIAL_TEXT =
 function mockResponse(content: unknown): void {
   mockProvider.chat.mockResolvedValueOnce({
     content: typeof content === "string" ? content : JSON.stringify(content),
+    finishReason: "stop",
+    model: "test-model",
+  });
+}
+
+// The generation pipeline now follows each successful batch with a best-effort
+// EN↔AR consistency pass (one extra chat call). Tests must stub those verdicts
+// or the second call errors and is silently swallowed.
+function mockConsistent(count: number): void {
+  mockProvider.chat.mockResolvedValueOnce({
+    content: JSON.stringify({
+      questions: Array.from({ length: count }, (_, i) => ({ index: i, consistent: true })),
+    }),
     finishReason: "stop",
     model: "test-model",
   });
@@ -79,6 +98,104 @@ describe("generateBilingualQuestions (via provider)", () => {
     expect(q.optionsAr).toEqual(["طھط±ظٹظ† ظپظ„ط§ظˆ", "ط؛ظٹط± ظ…ط³ظ…ظ‰", "ط؛ظٹط± ظ…ط¹ط±ظˆظپ"]);
     expect(q.correctAnswers).toEqual([0]);
     expect(q.difficulty).toBe("MEDIUM");
+  });
+
+  it("generates EXACTLY the requested number per type (counts)", async () => {
+    mockResponse([
+      validQuestion({ text: "Which system manages training sessions?", textAr: "أي نظام يدير الجلسات التدريبية؟" }),
+      validQuestion({ text: "Where are assessment results stored?", textAr: "أين تُخزَّن نتائج التقييم؟" }),
+    ]);
+    mockConsistent(2);
+    mockResponse([
+      validQuestion({
+        type: "TRUE_FALSE",
+        text: "Are mock providers allowed to simulate API failures?",
+        textAr: "هل يُسمح للموفرات الوهمية بمحاكاة فشل الواجهات؟",
+        options: ["True", "False"],
+        optionsAr: ["صحيح", "خطأ"],
+        correctAnswers: [0],
+      }),
+    ]);
+    mockConsistent(1);
+    const { questions, model } = await generateBilingualQuestions({
+      count: 3,
+      counts: { SINGLE_CHOICE: 2, TRUE_FALSE: 1 },
+      materialText: MATERIAL_TEXT,
+      materialTitle: "intro.pdf",
+      courseTitle: "TMS Basics",
+    });
+    expect(model).toBe("test-model");
+    expect(questions).toHaveLength(3);
+    expect(questions.filter((q) => q.type === "SINGLE_CHOICE")).toHaveLength(2);
+    expect(questions.filter((q) => q.type === "TRUE_FALSE")).toHaveLength(1);
+    expect(questions.filter((q) => q.type === "MULTIPLE_CHOICE")).toHaveLength(0);
+    expect(questions.filter((q) => q.type === "SHORT_ANSWER")).toHaveLength(0);
+    // Output stays ordered by QUESTION_TYPES (SINGLE_CHOICE first, TRUE_FALSE last).
+    expect(questions[0].type).toBe("SINGLE_CHOICE");
+    expect(questions[2].type).toBe("TRUE_FALSE");
+  });
+
+  it("strips images when imageMode is without_images", async () => {
+    mockResponse([validQuestion({ imageRef: 1, imageUrl: "/api/uploads/question-images/x.png" })]);
+    const { questions } = await generateBilingualQuestions({
+      count: 1,
+      imageMode: "without_images",
+      materialText: MATERIAL_TEXT,
+      materialTitle: "a.pdf",
+      courseTitle: "C",
+    });
+    expect(questions).toHaveLength(1);
+    expect(questions[0].imageRef).toBeUndefined();
+    expect(questions[0].imageUrl).toBeUndefined();
+  });
+
+  it("keeps imageRef/imageUrl when imageMode is auto or with_images", async () => {
+    mockResponse([validQuestion({ imageRef: 1, imageUrl: "/api/uploads/question-images/x.png" })]);
+    const { questions } = await generateBilingualQuestions({
+      count: 1,
+      imageMode: "with_images",
+      materialText: MATERIAL_TEXT,
+      materialTitle: "a.pdf",
+      courseTitle: "C",
+    });
+    expect(questions[0].imageRef).toBe(1);
+    expect(questions[0].imageUrl).toBe("/api/uploads/question-images/x.png");
+  });
+
+  it("hides figures and adds the image policy to the prompt in without_images mode", async () => {
+    mockResponse([validQuestion({ text: "Which system manages training sessions?", textAr: "أي نظام يدير الجلسات التدريبية؟" })]);
+    await generateBilingualQuestions({
+      count: 1,
+      imageMode: "without_images",
+      materialText: MATERIAL_TEXT,
+      materialTitle: "a.pdf",
+      courseTitle: "C",
+      figures: [{ index: 1, page: 1, pageText: "figure page text" }],
+    });
+    // The first chat call is the generation prompt (the consistency pass is a
+    // separate second call), so inspect calls[0] — not the last call.
+    const userMsg = (mockProvider.chat.mock.calls[0]![0].messages as Array<{ role: string; content: string }>).find(
+      (m) => m.role === "user",
+    )?.content as string;
+    expect(userMsg).toContain("IMAGE POLICY: DO NOT attach any image");
+    expect(userMsg).not.toContain("FIGURES_BEGIN");
+  });
+
+  it("lists figures and prefers images in with_images mode", async () => {
+    mockResponse([validQuestion({ text: "Which system manages training sessions?", textAr: "أي نظام يدير الجلسات التدريبية؟", imageRef: 1 })]);
+    await generateBilingualQuestions({
+      count: 1,
+      imageMode: "with_images",
+      materialText: MATERIAL_TEXT,
+      materialTitle: "a.pdf",
+      courseTitle: "C",
+      figures: [{ index: 1, page: 1, pageText: "figure page text" }],
+    });
+    const userMsg = (mockProvider.chat.mock.calls[0]![0].messages as Array<{ role: string; content: string }>).find(
+      (m) => m.role === "user",
+    )?.content as string;
+    expect(userMsg).toContain("FIGURES_BEGIN");
+    expect(userMsg).toContain("IMAGE POLICY: Prefer images");
   });
 
   it("parses JSON wrapped in markdown fences and prose", async () => {

@@ -3,12 +3,13 @@
 // GCCLAB TMS — Course Detail page
 // =====================================================================
 // Shows a course's information plus its Course Materials (Phase 1):
-// PDF / PowerPoint / Word files uploaded by coordinators. Reached from the
+// PDF / PowerPoint / Word files uploaded by trainers. Reached from the
 // courses list (RowActions → View).
 //
-//   - Any user with courses.view can open the materials.
-//   - Upload, replace and delete require course-materials.create/edit/delete
-//     (Super Admin / Coordinator / Trainer — trainers for their own courses).
+//   - The materials section (list, open, AI generator) requires
+//     course-materials.view — curriculum + AI test generation are trainer-only
+//     (Super Admin / Trainer).
+//   - Upload, replace and delete require course-materials.create/edit/delete.
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { useAppStore } from "@/lib/store/app-store";
@@ -92,6 +93,10 @@ export function CourseDetailRoute() {
     ? (["create", "edit", "delete"] as Action[]).some((a) => canPerformAction(user.permissions, "course-materials", a))
     : false;
 
+  // Curriculum + AI test generation are trainer-only — hide the whole section
+  // (and never fetch the list) for anyone without course-materials.view.
+  const canViewMaterials = user ? canPerformAction(user.permissions, "course-materials", "view") : false;
+
   const [course, setCourse] = useState<CourseDetail | null>(null);
   const [materials, setMaterials] = useState<CourseMaterial[]>([]);
   const [loading, setLoading] = useState(true);
@@ -110,18 +115,18 @@ export function CourseDetailRoute() {
     setLoading(true);
     setError(null);
     try {
-      const [c, m] = await Promise.all([
-        api.get<CourseDetail>(`/courses/${courseId}`),
-        api.get<CourseMaterial[]>(`/courses/${courseId}/materials`),
-      ]);
+      const c = await api.get<CourseDetail>(`/courses/${courseId}`);
       setCourse(c);
-      setMaterials(m);
+      if (canViewMaterials) {
+        const m = await api.get<CourseMaterial[]>(`/courses/${courseId}/materials`);
+        setMaterials(m);
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setLoading(false);
     }
-  }, [courseId]);
+  }, [courseId, canViewMaterials]);
 
   useEffect(() => {
     void load();
@@ -251,7 +256,9 @@ export function CourseDetailRoute() {
         </div>
       </Card>
 
-      {/* ─── Course materials ─────────────────────────────────────────── */}
+      {/* ─── Course materials (trainer-only) ─────────────────────────── */}
+      {canViewMaterials && (
+        <>
       <Card className="p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -358,6 +365,8 @@ export function CourseDetailRoute() {
         materials={materials}
         onApproved={() => void load()}
       />
+        </>
+      )}
 
       <ConfirmDialog
         open={deleteTarget !== null}

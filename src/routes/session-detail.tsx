@@ -115,9 +115,21 @@ export function SessionDetailRoute() {
 
   // Trainer-owned exam question sets are authorized against the pre-test /
   // final-test modules (the same modules that authorize the Question Bank).
-  const canViewExams = user
-    ? canPerformAction(user.permissions, "pre-test", "view") || canPerformAction(user.permissions, "final-test", "view")
-    : false;
+  // The coordinator does NOT manage tests — they start/end the session only —
+  // so the Exams tab (exam preparation) is never rendered for them even if a
+  // stale Role row still carries a pre-test/final-test grant.
+  const canViewExams =
+    !!user && user.role !== "COORDINATOR"
+      ? canPerformAction(user.permissions, "pre-test", "view") || canPerformAction(user.permissions, "final-test", "view")
+      : false;
+
+  // The session barcode (QR) is a trainer delivery tool for check-in — the
+  // coordinator never generates/activates a barcode for sessions, so the tab is
+  // hidden for them even if a stale Role row still carries a qr-code grant.
+  const canViewQr =
+    !!user && user.role !== "COORDINATOR"
+      ? canPerformAction(user.permissions, "qr-code", "view")
+      : false;
   const canManageExams = user
     ? canPerformAction(user.permissions, "pre-test", "edit") || canPerformAction(user.permissions, "final-test", "edit")
     : false;
@@ -611,7 +623,7 @@ export function SessionDetailRoute() {
             )}
             <TabsTrigger value="lifecycle">{t("session.lifecycle")}</TabsTrigger>
             <TabsTrigger value="trainer">{t("nav.trainers")}</TabsTrigger>
-            <TabsTrigger value="qr">{t("nav.qrCode")}</TabsTrigger>
+            {canViewQr && <TabsTrigger value="qr">{t("nav.qrCode")}</TabsTrigger>}
             {canViewExams && <TabsTrigger value="exams">{t("session.examsTab")}</TabsTrigger>}
             <TabsTrigger value="certificates">{t("nav.certificates")}</TabsTrigger>
             <TabsTrigger value="release">{t("certRelease.title")}</TabsTrigger>
@@ -708,8 +720,9 @@ export function SessionDetailRoute() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="qr" className="mt-4">
-            <Card className="p-6 space-y-4 max-w-xl text-center">
+          {canViewQr && (
+            <TabsContent value="qr" className="mt-4">
+              <Card className="p-6 space-y-4 max-w-xl text-center">
               {session?.qrToken ? (
                 <>
                   <QrImage
@@ -765,7 +778,8 @@ export function SessionDetailRoute() {
                 </Button>
               </div>
             </Card>
-          </TabsContent>
+            </TabsContent>
+          )}
 
           {canViewExams && (
             <TabsContent value="exams" className="mt-4">

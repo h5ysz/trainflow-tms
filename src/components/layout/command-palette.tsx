@@ -52,7 +52,7 @@ export function CommandPalette() {
 
   const items = useMemo(() => {
     if (!user) return [];
-    const nav = getNavForRole(user.permissions);
+    const nav = getNavForRole(user.permissions, user.role);
     // Same data-driven visibility as the sidebar: trainers only see Workshops
     // when assigned and Evaluation when they have sessions.
     if (user.role !== "TRAINER" || !user.trainerNav) return nav;

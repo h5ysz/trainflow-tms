@@ -57,6 +57,10 @@ export const POST = withExamAction("create", async ({ req, params, user, allowed
     ? Math.round((now.getTime() - attempt.startedAt.getTime()) / 1000)
     : null;
 
+  // The attempt was auto-submitted (or submitted late) once its time limit ran
+  // out. Whatever was answered before the deadline is graded as-is.
+  const timedOut = attempt.deadline != null && now.getTime() > attempt.deadline.getTime();
+
   // Update the exam attempt
   const updated = await db.examAttempt.update({
     where: { id },
@@ -66,6 +70,7 @@ export const POST = withExamAction("create", async ({ req, params, user, allowed
       passed: grading.passed,
       submittedAt: now,
       durationSec,
+      timedOut,
       answers: JSON.stringify(grading.answers),
       updatedBy: user.id,
     },
@@ -149,6 +154,7 @@ export const POST = withExamAction("create", async ({ req, params, user, allowed
       passed: grading.passed,
       passScore: attempt.passScore,
       durationSec,
+      timedOut,
       totalPoints: grading.totalPoints,
       earnedPoints: grading.earnedPoints,
     },
@@ -163,6 +169,7 @@ export const POST = withExamAction("create", async ({ req, params, user, allowed
     passed: grading.passed,
     passScore: attempt.passScore,
     durationSec,
+    timedOut,
     totalPoints: grading.totalPoints,
     earnedPoints: grading.earnedPoints,
     answers: grading.answers,

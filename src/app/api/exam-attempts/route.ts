@@ -1,6 +1,6 @@
 // /api/exam-attempts — list exam attempts
 import { db } from "@/lib/db";
-import { withExamAction, testTypeWhere, fail } from "@/lib/auth/api";
+import { withExamAction, isExamResultsOnly, testTypeWhere, fail } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
 import { parseJsonColumn } from "@/lib/api/json-column";
@@ -53,11 +53,15 @@ export const GET = withExamAction("view", async ({ req, user, allowedTestTypes }
     db.examAttempt.count({ where }),
   ]);
 
+  const resultsOnly = isExamResultsOnly(user);
+
   return list(
     rows.map((a) => ({
       ...a,
-      questionSet: parseJsonColumn(a.questionSet, [], "examAttempt.questionSet"),
-      answers: parseJsonColumn(a.answers, null, "examAttempt.answers"),
+      // A results-only caller (coordinator) may see scores but never the
+      // question content itself.
+      questionSet: resultsOnly ? [] : parseJsonColumn(a.questionSet, [], "examAttempt.questionSet"),
+      answers: resultsOnly ? null : parseJsonColumn(a.answers, null, "examAttempt.answers"),
     })),
     buildListMeta(total, q)
   );

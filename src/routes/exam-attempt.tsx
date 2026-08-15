@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { DataTable, type Column } from "@/components/common/data-table";
@@ -13,7 +13,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Progress } from "@/components/ui/progress";
 import {
   ClipboardList, Play, ArrowLeft, ArrowRight, CheckCircle2, XCircle,
-  AlertCircle, Loader2, Send,
+  AlertCircle, Loader2, Send, Timer,
 } from "lucide-react";
 import { useList } from "@/lib/api/hooks";
 import { api, ApiError } from "@/lib/api/client";
@@ -52,6 +52,7 @@ interface StartedExam {
   refNumber: string;
   testType: "PRE_TEST" | "FINAL_TEST";
   passScore: number;
+  deadline?: string | null;
   questions: ExamQuestion[];
 }
 
@@ -63,9 +64,17 @@ interface Graded {
   passScore: number;
   totalPoints: number;
   earnedPoints: number;
+  timedOut?: boolean;
 }
 
 const SINGLE_ANSWER_TYPES = ["SINGLE_CHOICE", "TRUE_FALSE"];
+
+const formatRemaining = (ms: number) => {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+};
 
 /**
  * Staff-proctored exam runner. Trainees have no login — a trainer opens the
@@ -90,6 +99,31 @@ export function ExamAttemptRoute() {
   const [graded, setGraded] = useState<Graded | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
+  // Countdown to the attempt's deadline; auto-submits when it reaches zero.
+  const [remainingMs, setRemainingMs] = useState<number | null>(null);
+  const autoSubmitted = useRef(false);
+
+  useEffect(() => {
+    if (!exam?.deadline) {
+      setRemainingMs(null);
+      return;
+    }
+    const tick = () => {
+      setRemainingMs(Math.max(0, new Date(exam.deadline!).getTime() - Date.now()));
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [exam?.deadline]);
+
+  useEffect(() => {
+    if (remainingMs !== 0 || !exam || graded || busy === "submit" || autoSubmitted.current) return;
+    autoSubmitted.current = true;
+    toast({ title: t("exam.timeUp"), description: t("exam.autoSubmitted") });
+    void submit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remainingMs, exam, graded, busy]);
+
   const Back = dir === "rtl" ? ArrowRight : ArrowLeft;
 
   const canStart = (a: Attempt) =>
@@ -112,6 +146,7 @@ export function ExamAttemptRoute() {
     setBusy(a.id);
     try {
       const res = await api.post<StartedExam>(`/exam-attempts/${a.id}/start`, {});
+      autoSubmitted.current = false;
       setExam(res);
       setAnswers({});
       setGraded(null);
@@ -187,6 +222,12 @@ export function ExamAttemptRoute() {
               {graded.passed ? t("finalTest.passed") : t("status.REJECTED")}
             </Badge>
           )}
+          {graded.timedOut && (
+            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              <Timer className="h-4 w-4" />
+              {t("exam.timedOut")}
+            </div>
+          )}
           <Button className="w-full" onClick={exitExam}>{t("action.back")}</Button>
         </Card>
       </div>
@@ -205,10 +246,22 @@ export function ExamAttemptRoute() {
           subtitle={`${t("exam.passScore")}: ${exam.passScore}%`}
           icon={ClipboardList}
           actions={
-            <Button variant="outline" onClick={exitExam}>
-              <Back className="h-4 w-4 me-1.5" />
-              {t("action.cancel")}
-            </Button>
+            <>
+              {remainingMs !== null && (
+                <Badge
+                  variant={remainingMs < 60_000 ? "destructive" : "default"}
+                  className="tabular-nums"
+                  title={t("exam.timeRemaining")}
+                >
+                  <Timer className="h-4 w-4 me-1.5" />
+                  {t("exam.timeRemaining")}: {formatRemaining(remainingMs)}
+                </Badge>
+              )}
+              <Button variant="outline" onClick={exitExam}>
+                <Back className="h-4 w-4 me-1.5" />
+                {t("action.cancel")}
+              </Button>
+            </>
           }
         />
 

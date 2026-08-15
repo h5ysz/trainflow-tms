@@ -6,6 +6,7 @@ import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
 import { validateTrainerAssignment, validationErrorToResponse } from "@/lib/api/trainer-assignment";
 import { scopeSessionList } from "@/lib/api/trainer-scope";
+import { canPerformAction } from "@/lib/auth/permissions";
 import { randomBytes, randomUUID } from "crypto";
 
 const ALLOWED_SORT_FIELDS = ["refNumber", "title", "startDate", "endDate", "createdAt", "status", "location", "city", "shift"];
@@ -66,6 +67,11 @@ export const GET = withModuleAction("sessions", "view", async ({ req, user }) =>
     db.trainingSession.count({ where }),
   ]);
 
+  // The QR check-in token is a delivery tool (module "qr-code"): only users who
+  // can view qr-code receive it. The coordinator manages attendance (MANUAL /
+  // scan) but must not see the session barcode or its token.
+  const canViewQr = canPerformAction(user.permissions, "qr-code", "view");
+
   return list(
     rows.map((s) => ({
       id: s.id,
@@ -102,8 +108,7 @@ export const GET = withModuleAction("sessions", "view", async ({ req, user }) =>
       classification: s.classification,
       locationMapUrl: s.locationMapUrl,
       durationDays: s.durationDays,
-      qrCodeToken: s.qrCodeToken,
-      qrCodeGeneratedAt: s.qrCodeGeneratedAt,
+      ...(canViewQr ? { qrCodeToken: s.qrCodeToken, qrCodeGeneratedAt: s.qrCodeGeneratedAt } : {}),
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
       attendanceCount: s._count.attendance,

@@ -7,10 +7,10 @@
 // future AI Question Generator can read the file content back for question
 // extraction without re-uploading.
 //
-//   GET   — list uploaded materials for a course (any authenticated user;
-//           trainers are scoped to the courses they run)
-//   POST  — upload a file (course-materials.create — Super Admin / Coordinator
-//           / Trainer for their own courses)
+//   GET   — list uploaded materials for a course (course-materials.view —
+//           Super Admin / Trainer, scoped to the courses the trainer runs)
+//   POST  — upload a file (course-materials.create — Super Admin / Trainer
+//           for their own courses)
 //     formData: file=..., title=<optional display name>
 //
 // POST dedup policy: re-uploading the SAME file (same name + size + content
@@ -38,8 +38,8 @@ function failOnUploadError(e: unknown): ReturnType<typeof fail> | null {
   return fail("Could not save uploaded file", 500);
 }
 
-// GET — list uploaded materials for a course
-export const GET = withModuleAction("courses", "view", async ({ user, params }) => {
+// GET — list uploaded materials for a course (curriculum is trainer-only)
+export const GET = withModuleAction("course-materials", "view", async ({ user, params }) => {
   const id = params.id as string;
   const course = await db.course.findUnique({ where: { id } });
   if (!course || course.deletedAt) return notFound("Course not found");

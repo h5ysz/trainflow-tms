@@ -19,7 +19,7 @@
 // This module never touches the database. It returns validated draft questions;
 // the approve route persists them as source=AI_GENERATED.
 import { getAIProvider } from "@/lib/ai/provider";
-import type { ChatMessage } from "@/lib/ai/provider";
+import type { AIProvider, ChatMessage } from "@/lib/ai/provider";
 import { DO_NOT_REPEAT_TEXT_BEGIN, DO_NOT_REPEAT_TEXT_END, FIGURES_BEGIN, FIGURES_END } from "@/lib/ai/prompt-markers";
 
 /**
@@ -89,12 +89,27 @@ export interface GeneratedQuestion {
 }
 
 export interface GenerationOptions {
-  /** How many questions the trainer asked for. */
+  /** How many questions the trainer asked for (balanced mode). */
   count: number;
-  /** Restrict to these types (empty = any). */
+  /** Restrict to these types (empty = any) — balanced mode. */
   types?: GeneratedQuestionType[];
   /** Restrict difficulty (undefined = any). */
   difficulty?: GeneratedDifficulty | "ANY";
+  /**
+   * Exact per-type counts (spec: exact per-type generation). When present and
+   * at least one type has a positive count, the generator returns EXACTLY the
+   * requested number per type, using a replacement loop to refill questions
+   * dropped by validation/deduplication. Takes precedence over `count`/`types`.
+   */
+  counts?: Partial<Record<GeneratedQuestionType, number>>;
+  /**
+   * Image policy for the batch.
+   *  - "auto" (default): the model attaches a figure only when genuinely relevant.
+   *  - "with_images": prefer attaching the figure the question is built on.
+   *  - "without_images": no images at all — figures are hidden from the prompt
+   *    and any imageRef/imageUrl is stripped from the result.
+   */
+  imageMode?: "auto" | "with_images" | "without_images";
   /** The REAL extracted text of the source material. */
   materialText: string;
   /** Display name of the source material (for the prompt). */
@@ -234,8 +249,14 @@ function isDuplicateOfStem(q: DedupQuestion, exclude: string): boolean {
   const norm = normalizeStem(q.text ?? "");
   const normEx = normalizeStem(exclude);
   if (norm.length > 0 && norm === normEx) return true;
-  const exTokens = new Set([...contentTokens(exclude), ...arabicTokens(exclude)]);
-  return dice(stemTokens(q), exTokens) >= 0.55;
+  // Compare on the English tested fact only. The Arabic stem is the question
+  // framing (in the mock it is a shared per-topic template), not the fact
+  // itself — counting its tokens made unrelated same-topic questions look like
+  // duplicates of every previously generated/banked question and could empty
+  // an entire batch. The bank/draft exclude list always carries the English
+  // side of each fact, so the English comparison loses no signal.
+  const exTokens = contentTokens(exclude);
+  return dice(contentTokens(q.text ?? ""), exTokens) >= 0.55;
 }
 
 /**
@@ -260,9 +281,15 @@ export function dedupeQuestions<T extends DedupQuestion>(items: T[], excludes: s
   return kept;
 }
 
-const MAX_COUNT = 25;
-/** Upper bound on the number of already-used questions passed into the prompt. */
-const MAX_EXCLUDE_INPUT = 60;
+const MAX_COUNT = 100;
+/**
+ * Upper bound on the number of already-used questions passed into the prompt.
+ * Must comfortably exceed MAX_RECENT_DRAFTS (120 session stems) plus the bank's
+ * stems for one material — otherwise the exclude list is truncated and the
+ * provider can re-emit facts from the tail, which the post-dedupe then drops
+ * (possibly emptying the whole batch).
+ */
+const MAX_EXCLUDE_INPUT = 200;
 
 // ─── Prompt building ─────────────────────────────────────────────────────────
 
@@ -318,7 +345,7 @@ Translation quality rules (NON-NEGOTIABLE — these are enforced by automatic va
 - NEVER paste or embed the English sentence inside an Arabic field. An Arabic field that is mostly English — or that contains the English sentence — is REJECTED and the whole batch fails.
 - NEVER carry raw PDF/Word formatting artifacts (box glyphs like □, broken symbols, control characters, page numbers, underline filler) into ANY field.
 - You MAY keep widely-used technical acronyms (e.g. PPE, AC/DC, NFPA, PTW) in Latin inside otherwise-Arabic text. Never translate them.
-- The English and Arabic versions must express the same question; do not let the languages drift into different questions.`;
+- The Arabic version is a TRANSLATION of the English version — the SAME question, the SAME tested fact, the SAME correct answer, never a different question. Write the Arabic FROM the English sentence, not from memory of the topic. The English and Arabic versions must express the same question; do not let the languages drift into different questions.`;
 
 function buildExcludeBlock(excludeTexts: string[]): string {
   const list = excludeTexts
@@ -355,6 +382,16 @@ function buildFiguresBlock(figures?: QuestionFigure[]): string {
   ].join("\n");
 }
 
+function buildImageModeDirective(mode: GenerationOptions["imageMode"]): string {
+  if (mode === "without_images") {
+    return 'IMAGE POLICY: DO NOT attach any image. Omit "imageRef" from EVERY question — even when a figure seems relevant — and ignore the FIGURES list entirely.';
+  }
+  if (mode === "with_images") {
+    return 'IMAGE POLICY: Prefer images. For every question genuinely built on a figure/diagram/sign/table/equipment photo from the FIGURES list, attach that figure via "imageRef". The figure must still actually show the tested fact — never attach one for layout reasons.';
+  }
+  return "";
+}
+
 function buildUserPrompt(opts: GenerationOptions): string {
   const types = opts.types && opts.types.length > 0 ? opts.types.join(",") : "any";
   const difficulty = opts.difficulty && opts.difficulty !== "ANY" ? opts.difficulty : "any";
@@ -370,7 +407,8 @@ function buildUserPrompt(opts: GenerationOptions): string {
     opts.materialText,
     "SOURCE_TEXT_END",
     buildExcludeBlock(opts.excludeTexts ?? []),
-    buildFiguresBlock(opts.figures),
+    buildFiguresBlock(opts.imageMode === "without_images" ? undefined : opts.figures),
+    buildImageModeDirective(opts.imageMode),
     "",
     `Generate exactly ${opts.count} questions. All questions must be bilingual (Arabic + English).`,
   ].join("\n");
@@ -710,33 +748,238 @@ export function validateGeneratedQuestion(raw: unknown, index: number): Generate
   };
 }
 
-// ─── Main entry ──────────────────────────────────────────────────────────────
+// ─── Bilingual consistency (EN ↔ AR) repair ──────────────────────────────────
+// Structural validation guarantees BOTH languages are present and the Arabic is
+// genuinely Arabic, but it cannot PROVE the Arabic is a faithful translation of
+// the English. Models occasionally drift: the Arabic tests a different fact or
+// asks a different question than the English. This lightweight second AI pass
+// checks each pair and rewrites ONLY the Arabic fields that do not express the
+// English question, so both versions always ask the same thing.
+//
+// Strictly best-effort and MUST NOT fail the batch: any provider/parse error, or
+// a correction that fails the same Arabic-quality checks, leaves the original
+// (structurally valid) Arabic in place. The mock provider is skipped — its pairs
+// are faithful by construction and its chat() only understands generation
+// prompts.
+
+const CONSISTENCY_SYSTEM_PROMPT = `You are a bilingual (English + Arabic) verification step in a training-question pipeline.
+
+You receive questions, each with an English version (text, options, explanation) and an Arabic version (textAr, optionsAr, explanationAr).
+
+For EACH question decide whether the Arabic version faithfully expresses THE SAME question as the English:
+- the SAME tested fact and the SAME meaning — never a different question;
+- the SAME correct answer as the English (read correctAnswers + options);
+- natural, professional Modern Standard Arabic — a translation of the English, not a literal word-for-word rendering;
+- the Arabic must NEVER disagree with the English.
+
+Mark a pair INCONSISTENT when the Arabic:
+- tests a different fact, asks a different question, or shifts the meaning of the English;
+- disagrees with the English about the correct answer;
+- is an inaccurate/awkward translation that a native reader would not accept as the same question.
+
+Reply with ONLY a valid JSON object of the shape { "questions": [...] }. No markdown fences, no commentary.
+
+For a CONSISTENT pair: { "index": 0, "consistent": true }
+For an INCONSISTENT pair, supply corrected Arabic:
+{
+  "index": 1, "consistent": false,
+  "textAr": "Arabic translation of the English stem",
+  "optionsAr": ["same count and order as the English options, each translated"],
+  "explanationAr": "Arabic translation of the English explanation (omit if the English has none)"
+}
+
+Rules:
+- textAr is required for every inconsistent pair.
+- optionsAr must mirror options EXACTLY (same length, same order) for choice questions; [] for SHORT_ANSWER; ["صحيح","خطأ"] for TRUE_FALSE.
+- explanationAr is required only when the English explanation exists.
+- Arabic must be natural MSA and technically accurate; NEVER paste English into an Arabic field; keep technical acronyms (PPE, AC/DC, NFPA) in Latin.
+- Do not touch English fields. Do not invent facts absent from the English question.`;
+
+interface ConsistencyVerdict {
+  index?: unknown;
+  consistent?: unknown;
+  textAr?: unknown;
+  optionsAr?: unknown;
+  explanationAr?: unknown;
+}
+
+function buildConsistencyUserContent(questions: GeneratedQuestion[]): string {
+  const payload = questions.map((q, i) => ({
+    index: i,
+    type: q.type,
+    text: q.text,
+    textAr: q.textAr,
+    options: q.options,
+    optionsAr: q.optionsAr,
+    correctAnswers: q.correctAnswers,
+    ...(q.explanation ? { explanation: q.explanation, explanationAr: q.explanationAr } : {}),
+  }));
+  return `Verify that each Arabic version faithfully translates its English version. Return your verdicts for all ${questions.length} questions.\n\n` + JSON.stringify(payload);
+}
 
 /**
- * Generate a validated batch of fully bilingual questions from real extracted
- * material text. Throws QuestionGenerationError / QuestionValidationError —
- * never returns partial or monolingual questions.
+ * Best-effort repair of EN↔AR drift. Returns the (possibly corrected) batch and
+ * NEVER throws: on any provider/parse error, or when a correction fails the same
+ * Arabic-quality checks, the original question is preserved.
  */
-export async function generateBilingualQuestions(opts: GenerationOptions): Promise<{ questions: GeneratedQuestion[]; model?: string }> {
-  const count = Math.max(1, Math.min(MAX_COUNT, opts.count));
-  const provider = getAIProvider();
-  const excludeTexts = (opts.excludeTexts ?? [])
+export async function repairBilingualConsistency(
+  provider: AIProvider,
+  questions: GeneratedQuestion[],
+  model?: string,
+): Promise<GeneratedQuestion[]> {
+  if (questions.length === 0) return questions;
+  try {
+    const response = await provider.chat({
+      messages: [
+        { role: "system", content: CONSISTENCY_SYSTEM_PROMPT },
+        { role: "user", content: buildConsistencyUserContent(questions) },
+      ],
+      temperature: 0.2,
+      maxTokens: 4000,
+      model,
+    });
+    const raw = response.content;
+    if (!raw || raw.trim().length === 0) return questions;
+
+    const verdicts = extractQuestionArray(raw) as ConsistencyVerdict[];
+    const next = questions.map((q) => ({ ...q }));
+    let repaired = 0;
+
+    for (const v of verdicts) {
+      const idx = Number(v.index);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= next.length) continue;
+      if (v.consistent === true || v.consistent === "true") continue;
+      const q = next[idx];
+      let changed = false;
+
+      if (isNonEmpty(v.textAr)) {
+        try {
+          const t = String(v.textAr).trim();
+          assertArabicQuality(t, `"textAr"`);
+          if (t !== q.textAr) {
+            q.textAr = t;
+            changed = true;
+          }
+        } catch {
+          /* keep original — a bad correction must not corrupt the draft */
+        }
+      }
+      if (Array.isArray(v.optionsAr) && q.options.length > 0 && v.optionsAr.length === q.options.length) {
+        const copy = v.optionsAr.map((s) => (typeof s === "string" ? s.trim() : ""));
+        if (copy.every((s) => s.length > 0)) {
+          try {
+            copy.forEach((s, i) => assertArabicQuality(s, `"optionsAr[${i}]"`));
+            if (copy.some((s, i) => s !== q.optionsAr[i])) {
+              q.optionsAr = copy;
+              changed = true;
+            }
+          } catch {
+            /* keep original */
+          }
+        }
+      }
+      if (q.explanation && isNonEmpty(v.explanationAr)) {
+        try {
+          const t = String(v.explanationAr).trim();
+          assertArabicQuality(t, `"explanationAr"`);
+          if (t !== q.explanationAr) {
+            q.explanationAr = t;
+            changed = true;
+          }
+        } catch {
+          /* keep original */
+        }
+      }
+
+      if (changed) repaired++;
+    }
+
+    if (repaired > 0) {
+      console.log(`[ai-generate] bilingual consistency pass repaired ${repaired} question(s).`);
+    }
+    return next;
+  } catch (e) {
+    // Best-effort: a verification failure must never fail generation.
+    console.warn(`[ai-generate] bilingual consistency pass skipped: ${e instanceof Error ? e.message : String(e)}`);
+    return questions;
+  }
+}
+
+// ─── Main entry ──────────────────────────────────────────────────────────────
+
+function cleanExcludes(excludes?: string[]): string[] {
+  return (excludes ?? [])
     .map((s) => String(s).trim())
     .filter((s) => s.length > 0);
+}
 
-  // Ask for more than needed so deduplication can drop repeats without leaving
-  // the batch short. A single provider call is faster than retry loops and the
-  // model already sees the do-not-repeat list.
-  const requestCount = Math.min(MAX_COUNT, Math.ceil(count * 1.5));
+/** Strip imageRef/imageUrl when the batch is generated without images. */
+function applyImageMode<T extends { imageRef?: number; imageUrl?: string }>(questions: T[], mode?: "auto" | "with_images" | "without_images"): T[] {
+  if (mode !== "without_images") return questions;
+  return questions.map((q) => {
+    const { imageRef: _ref, imageUrl: _url, ...rest } = q;
+    return rest as T;
+  });
+}
 
-  const runGeneration = async (): Promise<{ questions: GeneratedQuestion[]; model?: string }> => {
+const MAX_REPLACEMENT_ATTEMPTS = 9;
+
+/** Errors that a retry is unlikely to fix — retrying without backoff is safe
+ *  and fast; only transient upstream errors should sleep and retry. */
+const TRANSIENT_ERROR_HINTS = [
+  "rate limit",
+  "rate-limit",
+  "429",
+  "too many requests",
+  "temporarily",
+  "temporary",
+  "timed out",
+  "timeout",
+  "overloaded",
+  "busy",
+  "try again later",
+  "unavailable",
+  "503",
+  "upstream",
+  "capacity",
+  "retry",
+];
+
+function isTransientError(e: unknown): boolean {
+  const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
+  return TRANSIENT_ERROR_HINTS.some((hint) => msg.includes(hint));
+}
+
+/**
+ * Build a generation runner bound to one provider/material. Each call tries the
+ * pinned model chain (a couple of attempts per model with backoff); the primary
+ * falling back to smaller models automatically.
+ */
+function makeRunGeneration(provider: ReturnType<typeof getAIProvider>, opts: GenerationOptions, excludeTexts: string[]) {
+  return async (params: {
+    count: number;
+    types?: GeneratedQuestionType[];
+    extraExcludes?: string[];
+  }): Promise<{ questions: GeneratedQuestion[]; model?: string }> => {
+    // Ask for more than needed so deduplication can drop repeats without
+    // leaving the batch short. The model already sees the do-not-repeat list.
+    const requestCount = Math.min(MAX_COUNT, Math.ceil(params.count * 1.5));
+
     const generateOnce = async (model: string): Promise<{ questions: GeneratedQuestion[]; model?: string }> => {
       let raw: string;
       try {
         const response = await provider.chat({
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: buildUserPrompt({ ...opts, count: requestCount }) },
+            {
+              role: "user",
+              content: buildUserPrompt({
+                ...opts,
+                count: requestCount,
+                types: params.types && params.types.length > 0 ? params.types : opts.types,
+                excludeTexts: [...excludeTexts, ...(params.extraExcludes ?? [])],
+              }),
+            },
           ],
           temperature: 0.4,
           maxTokens: 4000,
@@ -770,22 +1013,32 @@ export async function generateBilingualQuestions(opts: GenerationOptions): Promi
         throw new QuestionGenerationError("The AI returned no questions. Please regenerate.");
       }
 
-      return { questions: array.map((q, i) => validateGeneratedQuestion(q, i)), model };
+      let questions = array.map((q, i) => validateGeneratedQuestion(q, i));
+      // EN↔AR consistency repair: the structural validator proves both languages
+      // exist, not that they say the same thing. The repair pass is best-effort
+      // (it can never throw) and is skipped for mock/noop providers.
+      if (provider.name !== "mock" && provider.name !== "noop") {
+        questions = await repairBilingualConsistency(provider, questions, model);
+      }
+
+      return { questions, model };
     };
 
-    // Try the pinned model chain. Free-tier rate limits and transient upstream
-    // errors are common, so each model gets a couple of attempts with backoff;
-    // if the primary is unhealthy, fall back to smaller models automatically.
     let lastError: unknown;
     for (const model of QUESTION_GENERATOR_MODELS) {
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
           return await generateOnce(model);
         } catch (e) {
-          lastError = e;
+          lastError = lastError ?? e;
           console.error(
             `[ai-generate] model=${model} attempt ${attempt + 1} of 2 failed: ${e instanceof Error ? e.message : String(e)}`,
           );
+          // Deterministic failures (unparseable JSON, empty response, no
+          // questions, a broken provider) fail the same way on retry — move to
+          // the next model immediately instead of sleeping through the whole
+          // backoff chain. Only transient upstream errors get retry/backoff.
+          if (!isTransientError(e)) continue;
           await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
         }
       }
@@ -793,27 +1046,30 @@ export async function generateBilingualQuestions(opts: GenerationOptions): Promi
     if (lastError instanceof Error) throw lastError;
     throw new QuestionGenerationError(String(lastError));
   };
+}
 
-  const first = await runGeneration();
-  const deduped = dedupeQuestions(first.questions, excludeTexts).slice(0, count);
+/** Balanced mode: a total count, optionally filtered by type/difficulty. */
+async function generateBalanced(opts: GenerationOptions): Promise<{ questions: GeneratedQuestion[]; model?: string }> {
+  const count = Math.max(1, Math.min(MAX_COUNT, opts.count));
+  const provider = getAIProvider();
+  const excludeTexts = cleanExcludes(opts.excludeTexts);
+  const runGeneration = makeRunGeneration(provider, opts, excludeTexts);
+  const requestCount = Math.min(MAX_COUNT, Math.ceil(count * 1.5));
+
+  const first = await runGeneration({ count: requestCount });
+  const deduped = applyImageMode(dedupeQuestions(first.questions, excludeTexts).slice(0, count), opts.imageMode);
   const model = first.model;
 
   // Top-up: if duplicates dropped the batch below the requested count, ask once
   // more with the accepted questions added to the do-not-repeat list.
   if (deduped.length < count) {
-    const shortfall = Math.min(count, requestCount);
-    const needs = shortfall - deduped.length;
+    const needs = Math.min(count, requestCount) - deduped.length;
     try {
-      const extraOpts: GenerationOptions = {
-        ...opts,
-        count: needs,
-        excludeTexts: [...excludeTexts, ...deduped.map((q) => q.text)],
-      };
-      const extra = await runGeneration();
-      const extraDeduped = dedupeQuestions(extra.questions, extraOpts.excludeTexts ?? []);
+      const extra = await runGeneration({ count: needs, extraExcludes: deduped.map((q) => q.text) });
+      const extraDeduped = dedupeQuestions(extra.questions, [...excludeTexts, ...deduped.map((q) => q.text)]);
       return {
         model,
-        questions: dedupeQuestions([...deduped, ...extraDeduped], excludeTexts).slice(0, count),
+        questions: applyImageMode(dedupeQuestions([...deduped, ...extraDeduped], excludeTexts).slice(0, count), opts.imageMode),
       };
     } catch {
       // The first batch is still valid — return it rather than failing the UI.
@@ -822,6 +1078,79 @@ export async function generateBilingualQuestions(opts: GenerationOptions): Promi
   }
 
   return { model, questions: deduped };
+}
+
+/**
+ * Exact per-type mode: generate EXACTLY the requested number of questions per
+ * type, refilling anything dropped by validation/deduplication with a bounded
+ * replacement loop. Types with a zero/absent count are not generated.
+ */
+async function generateExactPerType(opts: GenerationOptions): Promise<{ questions: GeneratedQuestion[]; model?: string }> {
+  const provider = getAIProvider();
+  const excludeTexts = cleanExcludes(opts.excludeTexts);
+  const runGeneration = makeRunGeneration(provider, opts, excludeTexts);
+
+  let accepted: GeneratedQuestion[] = [];
+  let model: string | undefined;
+
+  const allExcludes = () => [...excludeTexts, ...accepted.map((q) => q.text)];
+
+  for (const type of QUESTION_TYPES) {
+    const need = opts.counts?.[type] ?? 0;
+    if (need <= 0) continue;
+
+    let remaining = need;
+    let attempts = 0;
+    while (remaining > 0 && attempts < MAX_REPLACEMENT_ATTEMPTS) {
+      attempts++;
+      const before = accepted.length;
+      try {
+        const res = await runGeneration({ count: remaining, types: [type], extraExcludes: allExcludes() });
+        model = model ?? res.model;
+        for (const q of res.questions) {
+          if (dedupeQuestions([q], allExcludes()).length === 0) continue;
+          if (accepted.some((a) => isSemanticDuplicate(a, q))) continue;
+          accepted.push(q);
+        }
+      } catch (e) {
+        console.error(
+          `[ai-generate] per-type (${type}) round ${attempts} failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+        break;
+      }
+      const added = accepted.length - before;
+      if (added === 0) break; // no progress — stop topping up this type
+      remaining = need - accepted.filter((q) => q.type === type).length;
+    }
+
+    // Trim to the exact request so a top-up round can never over-produce a type.
+    if (accepted.filter((q) => q.type === type).length > need) {
+      let seen = 0;
+      accepted = accepted.filter((q) => {
+        if (q.type !== type) return true;
+        seen++;
+        return seen <= need;
+      });
+    }
+  }
+
+  return { model, questions: applyImageMode(accepted, opts.imageMode) };
+}
+
+/**
+ * Generate a validated batch of fully bilingual questions from real extracted
+ * material text. Throws QuestionGenerationError / QuestionValidationError —
+ * never returns partial or monolingual questions.
+ *
+ * When `opts.counts` requests at least one question, the batch is generated
+ * EXACTLY per type (each type's count is a hard target); otherwise the legacy
+ * balanced mode (total `count`, optional `types`/`difficulty` filter) is used.
+ */
+export async function generateBilingualQuestions(opts: GenerationOptions): Promise<{ questions: GeneratedQuestion[]; model?: string }> {
+  const hasExactCounts =
+    opts.counts !== undefined && QUESTION_TYPES.some((t) => (opts.counts?.[t] ?? 0) > 0);
+  if (hasExactCounts) return generateExactPerType(opts);
+  return generateBalanced(opts);
 }
 
 // ─── Draft → persisted question mapping (used by the approve route) ─────────

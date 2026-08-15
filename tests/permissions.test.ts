@@ -81,15 +81,36 @@ describe("module aliases", () => {
     expect(canAccessModule(["final-test.view"], "exam-attempts")).toBe(true);
     expect(canAccessModule(["companies.view"], "exam-attempts")).toBe(false);
   });
+
+  it("resolves exam-attempts from a direct results-only grant", () => {
+    // The coordinator's read-only results access: `exam-attempts.view` alone
+    // opens the results page (but grants no pre-test/final-test module access).
+    expect(canAccessModule(["exam-attempts.view"], "exam-attempts")).toBe(true);
+    expect(canAccessModule(["exam-attempts.view"], "pre-test")).toBe(false);
+    expect(canAccessModule(["exam-attempts.view"], "final-test")).toBe(false);
+    expect(canAccessModule(["exam-attempts.view"], "exam-sets")).toBe(false);
+  });
 });
 
 describe("getNavForRole", () => {
   it("returns every nav item for the superuser wildcard", () => {
-    expect(getNavForRole(["*"])).toHaveLength(navItems.length);
+    const keys = getNavForRole(["*"]).map((n) => n.key);
+    // "exam-attempts" is a results-only entry: the superuser reaches attempts from
+    // the pre-test/final-test pages, so it is deliberately not duplicated in nav.
+    expect(keys.length).toBe(navItems.length - 1);
+    expect(keys).not.toContain("exam-attempts");
   });
 
   it("returns nothing for an empty permission set", () => {
     expect(getNavForRole([])).toEqual([]);
+  });
+
+  it("shows the results-only nav entry only without a dedicated exam module", () => {
+    // Coordinator-style: results-only access → the standalone entry appears.
+    const resultsOnly = getNavForRole(["exam-attempts.view"]);
+    expect(resultsOnly.map((n) => n.key)).toContain("exam-attempts");
+    // Trainer/auditor-style: pre-test module present → no duplicate entry.
+    expect(getNavForRole(["pre-test.view"]).map((n) => n.key)).not.toContain("exam-attempts");
   });
 
   it("returns only the modules the permissions cover", () => {
@@ -98,6 +119,30 @@ describe("getNavForRole", () => {
     expect(keys).toContain("dashboard");
     expect(keys).toContain("requests");
     expect(keys).not.toContain("settings");
+  });
+
+  it("never shows trainer-delivery modules in the coordinator menu, even if re-granted", () => {
+    // A stale Role row could re-grant qr-code.*, but the session barcode belongs
+    // to the Trainer / Training Admin — the coordinator menu must not list it.
+    const staleQr = ["sessions.view", "exam-attempts.view", "qr-code.view", "qr-code.create"];
+    const keys = getNavForRole(staleQr, "COORDINATOR").map((n) => n.key);
+    expect(keys).not.toContain("qr-code");
+    // The results-only entry is still the coordinator's exam access point.
+    expect(keys).toContain("exam-attempts");
+    expect(keys).toContain("sessions");
+
+    // Even a wholesale re-grant of the delivery modules never surfaces them.
+    const wholesale = getNavForRole(["sessions.view", "qr-code.view", "pre-test.view", "final-test.view", "exam-sets.view"], "COORDINATOR").map((n) => n.key);
+    expect(wholesale).not.toContain("qr-code");
+    expect(wholesale).not.toContain("pre-test");
+    expect(wholesale).not.toContain("final-test");
+    expect(wholesale).not.toContain("exam-sets");
+
+    // The same grants DO surface for a trainer (who also holds the exam modules,
+    // so the standalone results-only entry stays suppressed for them).
+    const trainerKeys = getNavForRole(["sessions.view", "qr-code.view", "qr-code.create", "pre-test.view", "final-test.view"], "TRAINER").map((n) => n.key);
+    expect(trainerKeys).toContain("qr-code");
+    expect(trainerKeys).not.toContain("exam-attempts");
   });
 });
 
@@ -127,9 +172,12 @@ describe("course-materials module (trainer-managed materials)", () => {
     expect(canPerformAction(["course-materials.*"], "course-materials", "delete")).toBe(true);
   });
 
-  it("a role with only courses.edit still manages materials (coordinator regression)", () => {
-    const coordinator = ["courses.*", "course-materials.*"];
-    expect(canPerformAction(coordinator, "course-materials", "create")).toBe(true);
+  it("does NOT let a courses-only role manage materials (coordinator no longer has course-materials)", () => {
+    // Curriculum + AI test generation are trainer-only. A coordinator holding
+    // `courses.*` must NOT unlock material management.
+    const coordinator = ["courses.*"];
+    expect(canPerformAction(coordinator, "course-materials", "view")).toBe(false);
+    expect(canPerformAction(coordinator, "course-materials", "create")).toBe(false);
     expect(canPerformAction(coordinator, "courses", "edit")).toBe(true);
   });
 });

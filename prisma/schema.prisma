@@ -1109,6 +1109,10 @@ model ExamAttempt {
   startedAt         DateTime?
   submittedAt       DateTime?
   durationSec       Int?
+  // Hard time limit for the exam: the attempt must be submitted by this moment.
+  // Set when the trainee starts; the runner auto-submits when it is reached.
+  deadline          DateTime?
+  timedOut          Boolean         @default(false)
   // Answers — JSON: [{ questionId, selectedAnswerIndices: [...], correct: boolean }]
   answers           String?
   // Audit

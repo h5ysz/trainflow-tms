@@ -11,6 +11,18 @@ import { db } from "@/lib/db";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { resolveActiveSetQuestions, selectQuestionsFromBank } from "@/lib/api/exam-sets";
 
+/**
+ * Exam time limit in minutes. When a trainee starts an exam, the attempt's
+ * `deadline` is set to startedAt + this duration; the exam runner counts down
+ * and auto-submits when it is reached.
+ */
+export const EXAM_DURATION_MINUTES = 60;
+
+/** The moment an attempt started `EXAM_DURATION_MINUTES` ago must be submitted by. */
+export function examDeadlineFrom(startedAt: Date): Date {
+  return new Date(startedAt.getTime() + EXAM_DURATION_MINUTES * 60 * 1000);
+}
+
 export interface QuestionSetItem {
   questionId: string;
   order: number;           // the display order for this trainee

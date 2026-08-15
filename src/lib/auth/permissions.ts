@@ -63,14 +63,16 @@ export const ACTIONS: Action[] = ["view", "create", "edit", "delete"];
  * "module.action" strings with wildcards — "*", "companies.*", "reports.view"
  * — matching the vocabulary seeded in scripts/seed.ts.
  *
- * Excludes "session-detail" and "exam-attempts": those are views reached from
- * another page, not modules a role is granted separately. Exam start/submit
- * authorise against pre-test / final-test.
+ * "session-detail" / "trainee-detail" / "course-detail" are listed so the
+ * registry tests can verify nav coverage, but they carry no direct grants.
+ * "exam-attempts" IS directly grantable: `exam-attempts.view` gives a
+ * results-only role (e.g. the coordinator) read access to attempt SCORES
+ * without the questions or any ability to start/manage an exam.
  */
 export const ALL_MODULES: RouteKey[] = [
   "dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
   "trainees", "courses", "workshops", "requests", "sessions", "scheduling", "attendance", "qr-code",
-  "pre-test", "final-test", "evaluation", "certificates", "reports", "report-schedules",
+  "pre-test", "final-test", "exam-attempts", "evaluation", "certificates", "reports", "report-schedules",
   "notifications", "audit-log", "settings", "user-approvals", "user-management", "roles",
   "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard", "session-detail", "trainee-detail", "course-detail", "course-materials", "ai-dashboard",
   "exam-sets",
@@ -134,9 +136,12 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard",
   ],
   // Coordinator: request review + scheduling + execution oversight.
-  // Only QR Code, Pre-Test, and Final-Test are hidden from the coordinator's
-  // navigation (they belong to the Trainer / Training Admin). All other
-  // modules remain visible.
+  // The session barcode (QR), Pre-Test, Final-Test, and Exam Questions are
+  // hidden from the coordinator's navigation (they belong to the Trainer /
+  // Training Admin) — the coordinator has NO relation to barcodes, questions,
+  // test prep, or running tests. They keep only a results-only "Exam Results"
+  // entry (module "exam-attempts", `exam-attempts.view`): a read-only list of
+  // attempt scores, with question content stripped server-side.
   COORDINATOR: [
     "dashboard",
     "companies",
@@ -152,6 +157,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "session-detail",
     "scheduling",
     "attendance",
+    // Results-only (see the comment above the role map): scores without questions.
     "exam-attempts",
     "evaluation",
     "certificates",
@@ -255,15 +261,16 @@ const OPERATIONAL_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
   "trainer-qualifications": ["view", "create", "edit", "delete"],
   trainees: ["view", "create", "edit", "delete"],
   courses: ["view", "create", "edit", "delete"],
-  "course-materials": ["view", "create", "edit", "delete"],
   workshops: ["view", "create", "edit", "delete"],
   requests: ["view", "create", "edit", "delete"],
   sessions: ["view", "create", "edit", "delete"],
   scheduling: ["view", "create", "edit", "delete"],
   attendance: ["view", "create", "edit", "delete"],
-  "qr-code": ["view", "create", "edit", "delete"],
-  "pre-test": ["view", "create", "edit", "delete"],
-  "final-test": ["view", "create", "edit", "delete"],
+  // NOTE: qr-code, pre-test, and final-test are deliberately NOT here. The
+  // session barcode (QR) and the tests are trainer delivery tools (see
+  // TRAINER_PERMISSIONS below) — a coordinator manages the session lifecycle,
+  // not the barcode or the tests. They keep a read-only view of attempt scores
+  // via the dedicated `exam-attempts` grant (see COORDINATOR below).
   evaluation: ["view", "create", "edit", "delete"],
   certificates: ["view", "create", "edit", "delete"],
   reports: ["view"],
@@ -318,6 +325,10 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
   },
   COORDINATOR: {
     ...OPERATIONAL_PERMISSIONS,
+    // Results only: the coordinator reads attempt SCORES (list + detail), with
+    // question content stripped server-side. `view` alone — no create/edit — so
+    // start/submit/reopen/edit-result all stay 403 for them.
+    "exam-attempts": ["view"],
     "user-approvals": ["view", "create", "edit"],
     "report-schedules": ["view", "create", "edit", "delete"],
     "ai-dashboard": ["view"],
@@ -383,7 +394,10 @@ const MODULE_ALIASES: Partial<Record<RouteKey, RouteKey[]>> = {
   "session-detail": ["sessions"],
   "trainee-detail": ["trainees"],
   "course-detail": ["courses"],
-  "exam-attempts": ["pre-test", "final-test"],
+  // The "Exam Results" page lists/opens pre-test + final-test attempts. Trainers
+  // and auditors reach it through the pre-test/final-test modules; a results-only
+  // role (e.g. coordinator) holds a direct `exam-attempts.view` grant instead.
+  "exam-attempts": ["exam-attempts", "pre-test", "final-test"],
   // The standalone "Exam Questions" manager is a view over the Question Bank /
   // session exam sets — it authorizes against the modules that actually gate
   // them, so no separate DB grant is required.
@@ -441,6 +455,9 @@ export const navItems: NavItem[] = [
   { key: "pre-test", labelKey: "nav.preTest", icon: "FilePen", group: "assessment" },
   { key: "final-test", labelKey: "nav.finalTest", icon: "FileCheck2", group: "assessment" },
   { key: "exam-sets", labelKey: "nav.examSets", icon: "ListChecks", group: "assessment" },
+  // Results-only entry: shown only to roles without a dedicated pre-test/final-test
+  // module (see getNavForRole), so the coordinator can read attempt scores.
+  { key: "exam-attempts", labelKey: "nav.examAttempts", icon: "ClipboardList", group: "assessment" },
   { key: "evaluation", labelKey: "nav.evaluation", icon: "Star", group: "assessment" },
   { key: "certificates", labelKey: "nav.certificates", icon: "BadgeCheck", group: "assessment" },
 
@@ -461,6 +478,24 @@ export const navItems: NavItem[] = [
   { key: "settings", labelKey: "nav.settings", icon: "Settings", group: "system" },
 ];
 
-export function getNavForRole(permissions: string[]): NavItem[] {
-  return navItems.filter((item) => canAccessModule(permissions, item.key));
+// Trainer-delivery modules that must NEVER appear in the coordinator's menu,
+// even if a stale Role row re-grants them (the session barcode and test prep
+// belong to the Trainer / Training Admin). Permission-based filtering would
+// otherwise re-add the entry the moment such a grant exists.
+const COORDINATOR_HIDDEN_NAV = new Set<RouteKey>(["qr-code", "pre-test", "final-test", "exam-sets"]);
+
+export function getNavForRole(permissions: string[], role?: UserRole): NavItem[] {
+  return navItems.filter((item) => {
+    if (role === "COORDINATOR" && COORDINATOR_HIDDEN_NAV.has(item.key)) return false;
+    // The standalone "Exam Results" entry is only for roles that hold exam access
+    // WITHOUT a dedicated pre-test/final-test module (e.g. the coordinator). Anyone
+    // with pre-test/final-test reach attempts from those pages, so a duplicate
+    // entry is suppressed.
+    if (item.key === "exam-attempts") {
+      const hasExamModule =
+        canAccessModule(permissions, "pre-test") || canAccessModule(permissions, "final-test");
+      return canAccessModule(permissions, "exam-attempts") && !hasExamModule;
+    }
+    return canAccessModule(permissions, item.key);
+  });
 }

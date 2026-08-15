@@ -64,7 +64,7 @@ export function Sidebar({
   const { currentRoute, navigate, user, signOut, setSidebarCollapsed } = useAppStore();
 
   if (!user) return null;
-  const items = getNavForRole(user.permissions);
+  const items = getNavForRole(user.permissions, user.role);
 
   // Data-driven visibility: a trainer only sees Workshops when they actually have
   // one assigned, and Evaluation when they have sessions to evaluate. Flags come

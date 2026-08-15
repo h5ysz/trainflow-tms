@@ -47,8 +47,13 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   COORDINATOR: [
     "companies.*", "company-contacts.*", "trainers.*", "trainer-qualifications.*",
     "trainees.*", "courses.*", "requests.*", "sessions.*", "scheduling.*",
-    "attendance.*", "qr-code.*", "pre-test.*", "final-test.*", "evaluation.*",
-    "course-materials.*",
+    "attendance.*", "evaluation.*",
+    // Results ONLY: no qr-code (the session barcode), no pre-test/final-test
+    // prep, and no Exam Questions manager — those belong to the Trainer /
+    // Training Admin. The coordinator keeps a read-only view of attempt scores
+    // (`exam-attempts.view`); the API strips question content, and barcode/test
+    // creation plus start/submit/reopen/edit all remain 403.
+    "exam-attempts.view",
     "certificates.*", "reports.view",
     "report-schedules.*", "notifications.view", "audit-log.view",
     "user-approvals.view", "user-approvals.create", "user-approvals.edit",

@@ -5,6 +5,7 @@ import { recordStatusChange } from "@/lib/auth/audit";
 import { validateTrainerAssignment, validationErrorToResponse } from "@/lib/api/trainer-assignment";
 import { trainerDeniedSession } from "@/lib/api/trainer-scope";
 import { notifySessionScheduleUpdate } from "@/lib/notifications/session-update";
+import { canPerformAction } from "@/lib/auth/permissions";
 
 export const GET = withModuleAction("sessions", "view", async ({ params, user }) => {
   const id = params.id as string;
@@ -24,6 +25,16 @@ export const GET = withModuleAction("sessions", "view", async ({ params, user })
   // A trainer may only access sessions assigned to them.
   if (trainerDeniedSession(user, session.trainerId)) {
     return fail("Forbidden — you can only access your own sessions", 403);
+  }
+
+  // The session barcode belongs to the "qr-code" module (trainer delivery tool):
+  // strip it from the response for users without qr-code.view, so the
+  // coordinator never receives the session's QR token even by direct-URL GET.
+  if (!canPerformAction(user.permissions, "qr-code", "view")) {
+    const { qrCodeToken, qrCodeGeneratedAt, ...rest } = session;
+    void qrCodeToken;
+    void qrCodeGeneratedAt;
+    return ok(rest);
   }
 
   return ok(session);

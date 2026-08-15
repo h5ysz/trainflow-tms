@@ -1,6 +1,6 @@
 // /api/exam-attempts/[id] — get exam attempt details
 import { db } from "@/lib/db";
-import { withExamAction, ok, notFound, fail, type TestType } from "@/lib/auth/api";
+import { withExamAction, isExamResultsOnly, ok, notFound, fail, type TestType } from "@/lib/auth/api";
 import { resolveExamVersion } from "@/lib/api/exam-engine";
 import { parseJsonColumn } from "@/lib/api/json-column";
 import { trainerDeniedSession } from "@/lib/api/trainer-scope";
@@ -27,9 +27,12 @@ export const GET = withExamAction("view", async ({ params, user, allowedTestType
     return fail(`Forbidden — no access to ${attempt.testType} attempts`, 403);
   }
 
+  const resultsOnly = isExamResultsOnly(user);
   return ok({
     ...attempt,
-    questionSet: parseJsonColumn(attempt.questionSet, [], "examAttempt.questionSet"),
-    answers: parseJsonColumn(attempt.answers, null, "examAttempt.answers"),
+    // A results-only caller (coordinator) may see the score but never the
+    // question content itself.
+    questionSet: resultsOnly ? [] : parseJsonColumn(attempt.questionSet, [], "examAttempt.questionSet"),
+    answers: resultsOnly ? null : parseJsonColumn(attempt.answers, null, "examAttempt.answers"),
   });
 });

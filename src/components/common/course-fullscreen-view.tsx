@@ -10,12 +10,19 @@
 // take over the entire screen, and the native Fullscreen API needs a real DOM node to
 // mount on.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/lib/i18n/context";
 import { Button } from "@/components/ui/button";
 import { StatusBadge, PriorityBadge } from "@/components/common/status-badge";
-import { Building2, FileText, Maximize, Minimize, Users, X } from "lucide-react";
+import { api } from "@/lib/api/client";
+import {
+  type SessionBoard,
+  attendanceIsAwaitingCheckIn,
+  countBoardStatuses,
+  finalTestMeta,
+} from "@/lib/sessions/session-status-board";
+import { Building2, ClipboardList, FileText, Maximize, Minimize, RefreshCw, Users, X } from "lucide-react";
 
 export interface FullScreenCourse {
   course: {
@@ -41,6 +48,7 @@ export interface FullScreenCourse {
 }
 
 export interface FullScreenRequestInfo {
+  requestId?: string | null;
   requestRef?: string | null;
   priority?: string | null;
   status?: string | null;
@@ -64,6 +72,9 @@ export interface FullScreenRequestInfo {
     status?: string;
   }>;
 }
+
+// How often the live attendance & results board re-fetches while the display is open.
+const POLL_INTERVAL_MS = 15000;
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -105,6 +116,123 @@ function preferredLanguageLabel(value: string | null | undefined, isAr: boolean)
   if (value === "ar") return isAr ? "العربية" : "Arabic";
   if (value === "en") return "English";
   return isAr ? "العربية والإنجليزية" : "Arabic & English"; // bilingual or legacy
+}
+
+function AttendanceBadge({ status, isAr }: { status?: string | null; isAr: boolean }) {
+  // PRESENT / LATE / ABSENT / EXCUSED reuse the generic StatusBadge. A trainee
+  // who has not checked in yet (NOT_STARTED) reads "Awaiting check-in" instead
+  // of the generic "Not started" label.
+  if (!attendanceIsAwaitingCheckIn(status)) {
+    return <StatusBadge status={status as string} />;
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-medium whitespace-nowrap text-slate-600">
+      <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
+      {isAr ? "بانتظار الحضور" : "Awaiting check-in"}
+    </span>
+  );
+}
+
+function FinalTestBadge({ status, isAr }: { status?: string | null; isAr: boolean }) {
+  const meta = finalTestMeta(status);
+  if (!meta) return null;
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${meta.className}`}
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
+      {isAr ? meta.labelAr : meta.label}
+    </span>
+  );
+}
+
+// One session on the board: header (title/ref/dates/status), live summary chips
+// and each enrolled trainee with their attendance + final-test badges.
+function SessionStatusCard({
+  session,
+  isAr,
+  locale,
+}: {
+  session: SessionBoard;
+  isAr: boolean;
+  locale: string;
+}) {
+  const counts = countBoardStatuses(session.enrollments);
+  const summaryItems = [
+    counts.present > 0 && { label: `${counts.present} ${isAr ? "حاضر" : "Present"}`, className: "bg-green-100 text-green-800" },
+    counts.late > 0 && { label: `${counts.late} ${isAr ? "متأخر" : "Late"}`, className: "bg-amber-100 text-amber-800" },
+    counts.absent > 0 && { label: `${counts.absent} ${isAr ? "غائب" : "Absent"}`, className: "bg-red-100 text-red-800" },
+    counts.passed > 0 && { label: `${counts.passed} ${isAr ? "ناجح" : "Passed"}`, className: "bg-green-100 text-green-800" },
+    counts.failed > 0 && { label: `${counts.failed} ${isAr ? "راسب" : "Failed"}`, className: "bg-red-100 text-red-800" },
+  ].filter((x): x is { label: string; className: string } => Boolean(x));
+
+  const title = session.title ?? (isAr ? "جلسة تدريبية" : "Training session");
+
+  return (
+    <div className="rounded-xl border bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="truncate text-sm font-bold" dir="auto">
+              {title}
+            </span>
+            {session.status && <StatusBadge status={session.status} />}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+            {session.refNumber && <span className="font-mono">{session.refNumber}</span>}
+            {session.startDate && <span>{fmtDate(session.startDate, locale)}</span>}
+            {session.endDate && <span>→ {fmtDate(session.endDate, locale)}</span>}
+          </div>
+        </div>
+
+        {summaryItems.length > 0 && (
+          <div className="flex shrink-0 flex-wrap gap-1">
+            {summaryItems.map((c, i) => (
+              <span
+                key={i}
+                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${c.className}`}
+              >
+                {c.label}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {session.enrollments.length === 0 ? (
+        <div className="mt-3 rounded-lg border border-dashed px-4 py-5 text-center text-sm text-muted-foreground">
+          {isAr ? "لا يوجد متدربون مسجلون في هذه الجلسة" : "No trainees enrolled in this session"}
+        </div>
+      ) : (
+        <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {session.enrollments.map((row) => (
+            <div
+              key={row.id}
+              className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2"
+            >
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold" dir="auto">
+                  {row.trainee.fullName}
+                </div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                  {row.trainee.nationalId && (
+                    <span className="font-mono" dir="ltr">
+                      {row.trainee.nationalId}
+                    </span>
+                  )}
+                  {row.company?.name && <span className="truncate">{row.company.name}</span>}
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                <AttendanceBadge status={row.attendanceStatus} isAr={isAr} />
+                <FinalTestBadge status={row.finalTestStatus} isAr={isAr} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function CourseFullScreenView({
@@ -174,6 +302,39 @@ export function CourseFullScreenView({
       // Fullscreen can be denied; the overlay still works.
     }
   };
+
+  // ── Live attendance & results board ─────────────────────────────
+  // Fetches every session of the request (per-trainee attendance + final-test
+  // result) and refreshes periodically while the display is open. Authorized by
+  // `requests.view` server-side, so a contractor (المقاول) can track their
+  // workers on the big screen without holding `sessions.view`.
+  const requestId = info.requestId;
+  const [boardSessions, setBoardSessions] = useState<SessionBoard[] | null>(null);
+  const [boardError, setBoardError] = useState<string | null>(null);
+  const [boardLoading, setBoardLoading] = useState(false);
+  const [boardUpdatedAt, setBoardUpdatedAt] = useState<Date | null>(null);
+
+  const loadBoard = useCallback(async () => {
+    if (!requestId) return;
+    try {
+      const data = await api.get<{ sessions: SessionBoard[] }>(`/requests/${requestId}/session-status`);
+      setBoardSessions(data.sessions ?? []);
+      setBoardError(null);
+      setBoardUpdatedAt(new Date());
+    } catch (err) {
+      setBoardError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBoardLoading(false);
+    }
+  }, [requestId]);
+
+  useEffect(() => {
+    if (!open || !requestId) return;
+    setBoardLoading(true);
+    void loadBoard();
+    const timer = setInterval(() => void loadBoard(), POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [open, requestId, loadBoard]);
 
   if (!open) return null;
 
@@ -374,6 +535,70 @@ export function CourseFullScreenView({
             </div>
           )}
         </div>
+
+        {/* ── Live attendance & results board ── */}
+        {sessions.length > 0 && (
+          <section className="mt-5">
+            <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="flex items-center gap-2 text-sm font-bold">
+                <ClipboardList className="h-4 w-4 text-primary" />
+                {isAr ? "سجل الحضور والنتائج" : "Attendance & Results"}
+                {boardSessions !== null && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-800">
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-500" />
+                    </span>
+                    {isAr ? "مباشر" : "Live"}
+                  </span>
+                )}
+              </h3>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                {boardUpdatedAt && (
+                  <span>
+                    {isAr ? "آخر تحديث" : "Updated"} {boardUpdatedAt.toLocaleTimeString(locale)}
+                  </span>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1.5"
+                  onClick={() => {
+                    setBoardLoading(true);
+                    void loadBoard();
+                  }}
+                  disabled={boardLoading}
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${boardLoading ? "animate-spin" : ""}`} />
+                  {isAr ? "تحديث" : "Refresh"}
+                </Button>
+              </div>
+            </div>
+
+            {boardError && (
+              <div className="mb-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                {isAr ? "تعذر تحميل حالة الجلسات" : "Failed to load session status"}: {boardError}
+              </div>
+            )}
+
+            {boardError ? null : boardSessions === null ? (
+              <div className="flex items-center justify-center gap-2 rounded-xl border bg-white px-4 py-8 text-xs text-muted-foreground shadow-sm">
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                {isAr ? "جارٍ تحميل حالة الجلسات…" : "Loading session status…"}
+              </div>
+            ) : boardSessions.length === 0 ? (
+              <div className="rounded-xl border border-dashed bg-white px-4 py-8 text-center text-sm text-muted-foreground shadow-sm">
+                {isAr ? "لا توجد جلسات مرتبطة بهذا الطلب" : "No sessions linked to this request"}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {boardSessions.map((s) => (
+                  <SessionStatusCard key={s.id} session={s} isAr={isAr} locale={locale} />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Trainee cards */}
         <h3 className="mt-5 mb-2.5 flex items-center gap-2 text-sm font-bold">

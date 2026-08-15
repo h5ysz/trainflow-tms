@@ -1,7 +1,7 @@
 // /api/exam-attempts/[id]/start — start an exam (returns the randomized question set for display)
 import { db } from "@/lib/db";
 import { withExamAction, ok, notFound, fail, audit, type TestType } from "@/lib/auth/api";
-import { resolveExamVersion, traineeIdentityWhere } from "@/lib/api/exam-engine";
+import { resolveExamVersion, traineeIdentityWhere, examDeadlineFrom } from "@/lib/api/exam-engine";
 import { syncPreTestStatus, syncFinalTestStatus } from "@/lib/api/enrollment-sync";
 import { trainerDeniedSession } from "@/lib/api/trainer-scope";
 
@@ -77,14 +77,20 @@ export const POST = withExamAction("create", async ({ req, params, user, allowed
     }
   }
 
+  // The deadline the runner counts down to. Persisted when the attempt starts;
+  // for a resumed IN_PROGRESS attempt it is read back from the stored row.
+  let deadline = attempt.deadline ?? null;
+
   // Check attempt count
   if (attempt.status === "ASSIGNED") {
     const now = new Date();
+    deadline = examDeadlineFrom(now);
     await db.examAttempt.update({
       where: { id },
       data: {
         status: "IN_PROGRESS",
         startedAt: now,
+        deadline,
         updatedBy: user.id,
       },
     });
@@ -133,6 +139,7 @@ export const POST = withExamAction("create", async ({ req, params, user, allowed
     testType: attempt.testType,
     status: "IN_PROGRESS",
     passScore: version.passScore,
+    deadline: deadline ? deadline.toISOString() : null,
     questions: version.questions.map((q) => ({
       id: q.id,
       order: q.order,

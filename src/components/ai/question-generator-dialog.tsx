@@ -56,6 +56,9 @@ const QUESTION_TYPES = ["SINGLE_CHOICE", "MULTIPLE_CHOICE", "TRUE_FALSE", "SHORT
 const EXTRACTABLE_TYPES = ["PDF", "POWERPOINT", "WORD"];
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"] as const;
 
+type QuestionType = (typeof QUESTION_TYPES)[number];
+type ImageMode = "auto" | "with_images" | "without_images";
+
 export function QuestionGeneratorDialog({
   open,
   onOpenChange,
@@ -79,9 +82,13 @@ export function QuestionGeneratorDialog({
 
   const [selected, setSelected] = useState<string[]>([]);
   const [count, setCount] = useState(5);
-  const [types, setTypes] = useState<Array<(typeof QUESTION_TYPES)[number]>>([]);
+  const [perType, setPerType] = useState<Partial<Record<QuestionType, number>>>({});
+  const [types, setTypes] = useState<Array<QuestionType>>([]);
   const [difficulty, setDifficulty] = useState<string>("ANY");
   const [testType, setTestType] = useState<"PRE_TEST" | "FINAL_TEST">("PRE_TEST");
+  const [imageMode, setImageMode] = useState<ImageMode>("auto");
+
+  const hasExactCounts = QUESTION_TYPES.some((ty) => (perType[ty] ?? 0) > 0);
 
   const [step, setStep] = useState<"config" | "review">("config");
   const [draft, setDraft] = useState<AIQuestionDraft[]>([]);
@@ -93,9 +100,11 @@ export function QuestionGeneratorDialog({
   const reset = () => {
     setSelected([]);
     setCount(5);
+    setPerType({});
     setTypes([]);
     setDifficulty("ANY");
     setTestType("PRE_TEST");
+    setImageMode("auto");
     setStep("config");
     setDraft([]);
     setAiModel(null);
@@ -124,10 +133,12 @@ export function QuestionGeneratorDialog({
     try {
       const res = await api.post<GenerateResponse>(`/courses/${courseId}/materials/ai/generate`, {
         materialIds: selected,
-        count,
-        types: types.length > 0 ? types : undefined,
+        ...(hasExactCounts
+          ? { counts: perType }
+          : { count, types: types.length > 0 ? types : undefined }),
         difficulty: difficulty === "ANY" ? undefined : difficulty,
         testType,
+        imageMode,
         excludeTexts,
       });
       setDraft(res.questions);
@@ -299,14 +310,15 @@ export function QuestionGeneratorDialog({
                 </div>
               </Field>
 
-              <FormGrid cols={3}>
-                <Field label={t("courses.aiCount")} required>
+              <FormGrid cols={2}>
+                <Field label={t("courses.aiCount")} required hint={hasExactCounts ? t("courses.aiPerTypeReplaces") : undefined}>
                   <Input
                     type="number"
                     min={1}
-                    max={25}
+                    max={100}
                     value={count}
-                    onChange={(e) => setCount(Math.max(1, Math.min(25, Number(e.target.value) || 1)))}
+                    disabled={hasExactCounts}
+                    onChange={(e) => setCount(Math.max(1, Math.min(100, Number(e.target.value) || 1)))}
                   />
                 </Field>
                 <Field label={t("courses.aiDifficulty")}>
@@ -335,13 +347,45 @@ export function QuestionGeneratorDialog({
                     </SelectContent>
                   </Select>
                 </Field>
+                <Field label={t("courses.aiImageMode")}>
+                  <Select value={imageMode} onValueChange={(v) => setImageMode(v as ImageMode)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">{t("courses.aiImageMode.auto")}</SelectItem>
+                      <SelectItem value="with_images">{t("courses.aiImageMode.with_images")}</SelectItem>
+                      <SelectItem value="without_images">{t("courses.aiImageMode.without_images")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
               </FormGrid>
 
-              <Field label={t("courses.aiTypes")} hint={t("courses.aiTypesAny")}>
+              <Field label={t("courses.aiPerTypeCounts")} hint={t("courses.aiPerTypeHint")}>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {QUESTION_TYPES.map((ty) => (
+                    <Label key={ty} className="flex flex-col gap-1 text-xs">
+                      <span>{t(`courses.aiType.${ty}` as never)}</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={perType[ty] ?? 0}
+                        onChange={(e) => {
+                          const v = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                          setPerType((prev) => ({ ...prev, [ty]: v }));
+                        }}
+                      />
+                    </Label>
+                  ))}
+                </div>
+              </Field>
+
+              <Field label={t("courses.aiTypes")} hint={hasExactCounts ? t("courses.aiPerTypeReplaces") : t("courses.aiTypesAny")}>
                 <div className="flex flex-wrap gap-2">
                   {QUESTION_TYPES.map((ty) => (
                     <Label key={ty} className="flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm">
-                      <Checkbox checked={types.includes(ty)} onCheckedChange={() => toggleType(ty)} aria-label={ty} />
+                      <Checkbox checked={types.includes(ty)} onCheckedChange={() => toggleType(ty)} aria-label={ty} disabled={hasExactCounts} />
                       {t(`courses.aiType.${ty}` as never)}
                     </Label>
                   ))}
