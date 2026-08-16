@@ -15,12 +15,14 @@
 // IMPORTANT — the Arabic side is REAL Arabic text, never a verbatim copy of the
 // English sentence. The product rule is "English + Arabic", never "English +
 // copied English" (an earlier version of this mock committed exactly that bug).
-// This mock renders the Arabic side through a set of professional bilingual
-// topic templates (electrical safety / OSH), so the demo output is genuinely
-// bilingual. It is intentionally template-based: a real provider (Gemini /
-// OpenAI) running the generator's translation-quality rules produces true
-// per-sentence professional Arabic; this mock only demonstrates the pipeline,
-// the bilingual contract, and the strict validation that blocks pasted English.
+// Each question's Arabic is the Arabic of the TRUE statement its English
+// sentence maps to (index-matched bilingual topic templates for electrical
+// safety / OSH), so the two languages always express the SAME fact and
+// regenerations render different Arabic when the material's sentences differ.
+// The mock is intentionally template-based: a real provider (Gemini / OpenAI)
+// running the generator's translation-quality rules produces true per-sentence
+// professional Arabic; this mock only demonstrates the pipeline, the bilingual
+// contract, and the strict validation that blocks pasted English.
 import type { AIProvider, ChatRequest, ChatResponse, ProviderCapabilities } from "./types";
 import { DO_NOT_REPEAT_TEXT_BEGIN, DO_NOT_REPEAT_TEXT_END, FIGURES_BEGIN, FIGURES_END } from "@/lib/ai/prompt-markers";
 
@@ -35,6 +37,11 @@ const CAPABILITIES: ProviderCapabilities = {
 };
 
 const MODEL_ID = "mock-bilingual-generator";
+
+// Incremented per chat() call so distractor options differ across
+// regenerations even when the same fact is selected again (deterministic
+// sequence for a given order of calls).
+let requestSeq = 0;
 
 const MAX_QUESTIONS = 100;
 const QUESTION_TYPES = ["SINGLE_CHOICE", "MULTIPLE_CHOICE", "TRUE_FALSE", "SHORT_ANSWER"] as const;
@@ -215,7 +222,7 @@ interface TopicVariant {
   ar: string;
 }
 
-/** 4 Arabic question stems per difficulty level (index-matched to the trues). */
+/** Difficulty-grouped index (easy | medium | hard). */
 interface TopicStemGroup {
   easy: string[];
   medium: string[];
@@ -234,23 +241,11 @@ interface TopicTemplate {
   detect: RegExp;
   enTopic: string;
   arTopic: string;
-  /** 12 Arabic question stems — 4 EASY + 4 MEDIUM + 4 HARD (never cycled via %3). */
-  arStems: TopicStemGroup;
-  /**
-   * 12 English question stems, INDEX-MATCHED to arStems (same difficulty, same
-   * index = the same question in both languages). Each enStem is the exact
-   * English counterpart of its arStem, so the pair is a faithful bilingual
-   * question. The generator matches each source sentence to the enStem whose
-   * subject is closest and renders the ARABIC side from that stem — which makes
-   * the Arabic question always ask about the SAME fact the English sentence
-   * states, instead of a canned per-topic stem that drifts off-subject.
-   */
-  enStems: TopicStemGroup;
-  /** 12 English+Arabic true statements — 4 per difficulty, one per stem index. */
+
+  /** 12 English+Arabic true statements — 4 per difficulty level. */
   trues: TopicTrueGroup;
   /** English+Arabic false statements (distractors). Topic-scoped, never reused within a question. */
   wrongs: TopicVariant[];
-  explAr: string;
 }
 
 export const TOPICS: TopicTemplate[] = [
@@ -259,46 +254,6 @@ export const TOPICS: TopicTemplate[] = [
     detect: /personal protective equipment|\bppe\b|protective equipment|gloves|helmet|goggles|face shield/i,
     enTopic: "personal protective equipment (PPE)",
     arTopic: "معدات الوقاية الشخصية",
-    arStems: {
-      easy: [
-        "ما الذي يجب على العامل فعله وفقًا للمادة عند العمل على أنظمة كهربائية مكهربة؟",
-        "كيف يجب اختيار معدات الوقاية الشخصية وفقًا للمادة؟",
-        "ماذا يعني ارتداء معدات الوقاية الشخصية بالنسبة لإجراءات العمل الآمنة وفقًا للمادة؟",
-        "ماذا تحمي الخوذ والنظارات الواقية وفقًا للمادة؟",
-      ],
-      medium: [
-        "ما الذي يجب على العامل فعله بمعدات الوقاية الشخصية قبل كل استخدام؟",
-        "كيف يجب اختيار القفازات الواقية وفقًا للمادة؟",
-        "ماذا يجب أن يفعل العامل بمعدات الوقاية الشخصية البالية أو التالفة؟",
-        "ما المتطلب التدريبي المرتبط بمعدات الوقاية الشخصية وفقًا للمادة؟",
-      ],
-      hard: [
-        "لماذا لا يُكتفى بمعدات الوقاية الشخصية عند العمل على الأنظمة المكهربة؟",
-        "ما الترتيب الصحيح لإجراءات الحماية وفقًا للمادة؟",
-        "كيف تعمل معدات الوقاية الشخصية إلى جانب الضوابط الهندسية وفقًا للمادة؟",
-        "قارن بين عزل الطاقة وارتداء المعدات الواقية وفقًا للمادة.",
-      ],
-    },
-    enStems: {
-      easy: [
-        "What must a worker do according to the material when working on live electrical systems?",
-        "How must personal protective equipment be selected according to the material?",
-        "What does wearing PPE mean for safe working procedures according to the material?",
-        "What do helmets and goggles protect according to the material?",
-      ],
-      medium: [
-        "What must a worker do with PPE before each use?",
-        "How must protective gloves be selected according to the material?",
-        "What must a worker do with worn-out or damaged PPE?",
-        "What training requirement relates to PPE according to the material?",
-      ],
-      hard: [
-        "Why is PPE not enough when working on live systems?",
-        "What is the correct order of protection measures according to the material?",
-        "How does PPE work alongside engineering controls according to the material?",
-        "Compare isolating energy with wearing protective equipment according to the material.",
-      ],
-    },
     trues: {
       easy: [
         { en: "Workers must wear appropriate personal protective equipment when working on live electrical systems.", ar: "يجب على العمال ارتداء معدات الوقاية الشخصية المناسبة عند العمل على الأنظمة الكهربائية المكهربة." },
@@ -329,53 +284,12 @@ export const TOPICS: TopicTemplate[] = [
       { en: "Only the supervisor must wear PPE on site.", ar: "المشرف هو الشخص الوحيد الذي يجب أن يرتدي معدات الوقاية الشخصية في الموقع." },
       { en: "Face shields are only required for welding tasks.", ar: "لا تُشترط واقيات الوجه إلا في أعمال اللحام." },
     ],
-    explAr: "تنص المادة على إلزامية ارتداء معدات الوقاية الشخصية المناسبة عند العمل على الأنظمة المكهربة، مع مراعاة مطابقتها لأخطار المهمة دون أن تُغني عن الإجراءات الآمنة.",
   },
   {
     id: "fire",
     detect: /fire|extinguisher|smoke|flammable|combustible/i,
     enTopic: "fire safety",
     arTopic: "السلامة من الحرائق",
-    arStems: {
-      easy: [
-        "ما المطلوب وفقًا للمادة فيما يتعلق بطفايات الحريق؟",
-        "ما الالتزام المفروض على جميع العمال فيما يتعلق بالحرائق وفقًا للمادة؟",
-        "أين يجب توفير بطانية الحريق وفقًا للمادة؟",
-        "من يجب تدريبه لقيادة عمليات الإخلاء وفقًا للمادة؟",
-      ],
-      medium: [
-        "كيف يجب تخزين المواد القابلة للاشتعال وفقًا للمادة؟",
-        "ما الذي يجب فعله بطفاية الحريق بعد كل استخدام وفقًا للمادة؟",
-        "ما القاعدة المتعلقة بصنابير الحريق وفقًا للمادة؟",
-        "ما الإجراء الصحيح تجاه طفاية حريق استُخدمت في الإطفاء وفقًا للمادة؟",
-      ],
-      hard: [
-        "لماذا يجب اختبار كاشفات الدخان والحرارة بانتظام وفقًا للمادة؟",
-        "ما السبب في إبقاء مسارات الهروب خالية دائمًا وفقًا للمادة؟",
-        "ما الإجراء الصحيح تجاه الغبار القابل للاشتعال وفقًا للمادة؟",
-        "كيف يجب حفظ السوائل القابلة للاشتعال وفقًا للمادة؟",
-      ],
-    },
-    enStems: {
-      easy: [
-        "What is required according to the material regarding fire extinguishers?",
-        "What obligation applies to all workers regarding fires according to the material?",
-        "Where must a fire blanket be provided according to the material?",
-        "Who must be trained to lead evacuations according to the material?",
-      ],
-      medium: [
-        "How must flammable materials be stored according to the material?",
-        "What must be done with a fire extinguisher after every use according to the material?",
-        "What rule applies to fire hydrants according to the material?",
-        "What is the correct action for a fire extinguisher that has been discharged?",
-      ],
-      hard: [
-        "Why must smoke and heat detectors be tested regularly according to the material?",
-        "Why must escape routes be kept clear at all times according to the material?",
-        "What is the correct action for combustible dust according to the material?",
-        "How must flammable liquids be kept according to the material?",
-      ],
-    },
     trues: {
       easy: [
         { en: "Fire extinguishers must be kept accessible and inspected regularly.", ar: "يجب أن تكون طفايات الحريق في متناول اليد وتُفحص بانتظام." },
@@ -406,53 +320,12 @@ export const TOPICS: TopicTemplate[] = [
       { en: "A fire blanket is only needed in industrial kitchens.", ar: "لا تُشترط بطانية الحريق إلا في المطابخ الصناعية." },
       { en: "Fire extinguishers can be refilled at any time after a discharge.", ar: "يمكن إعادة تعبئة طفاية الحريق في أي وقت بعد الإطفاء." },
     ],
-    explAr: "تشدد المادة على إتاحة طفايات الحريق وفحصها دوريًا، وتخزين المواد القابلة للاشتعال بعيدًا عن مصادر الحرارة.",
   },
   {
     id: "shock",
     detect: /electric shock|live parts|live conductor|de-energi|energis|isolat|proved dead|dead before/i,
     enTopic: "electric shock protection",
     arTopic: "الوقاية من الصدمة الكهربائية",
-    arStems: {
-      easy: [
-        "ما الإجراء الصحيح قبل البدء بالعمل على موصلات كهربائية وفقًا للمادة؟",
-        "ماذا قد تُحدث الصدمة الكهربائية وفقًا للمادة؟",
-        "متى يُسمح بالعمل على الأجزاء المكهربة وفقًا للمادة؟",
-        "ما الذي يميز جسم الإنسان فيما يتعلق بالكهرباء وفقًا للمادة؟",
-      ],
-      medium: [
-        "ما الذي يجب على العامل التحقق منه قبل لمس أي دائرة وفقًا للمادة؟",
-        "متى يجب إعادة اختبار الدائرة وفقًا للمادة؟",
-        "من المسموح له العمل على الأجزاء المكهربة وفقًا للمادة؟",
-        "ما فائدة إجراءات الإقفال أثناء العمل وفقًا للمادة؟",
-      ],
-      hard: [
-        "قارن بين العزل والعازل وفقًا للمادة.",
-        "متى تكون الصدمة الكهربائية في أشد خطورتها وفقًا للمادة؟",
-        "لماذا يجب التحقق من انعدام الجهد حتى عند إيقاف تشغيل المفتاح وفقًا للمادة؟",
-        "ما الإجراء الذي يحمي العمال الآخرين القريبين من منطقة العمل وفقًا للمادة؟",
-      ],
-    },
-    enStems: {
-      easy: [
-        "What is the correct step before starting work on electrical conductors according to the material?",
-        "What can an electric shock do according to the material?",
-        "When is work on live parts permitted according to the material?",
-        "What is true of the human body regarding electricity according to the material?",
-      ],
-      medium: [
-        "What must a worker check before touching any circuit according to the material?",
-        "When must a circuit be re-tested according to the material?",
-        "Who is allowed to work on live parts according to the material?",
-        "What is the benefit of lockout procedures during work according to the material?",
-      ],
-      hard: [
-        "Compare isolation and insulation according to the material.",
-        "When is an electric shock most dangerous according to the material?",
-        "Why must the absence of voltage be proved even when the switch is off according to the material?",
-        "What measure protects other workers near the work area according to the material?",
-      ],
-    },
     trues: {
       easy: [
         { en: "Live conductors must be isolated and proved dead before work begins.", ar: "يجب عزل الموصلات المكهربة والتحقق من انعدام الجهد قبل بدء العمل." },
@@ -483,53 +356,12 @@ export const TOPICS: TopicTemplate[] = [
       { en: "Lockout is only needed during maintenance, not installation.", ar: "لا يُشترط الإقفال إلا أثناء الصيانة وليس أثناء التركيب." },
       { en: "Once isolated, a circuit can never become live again.", ar: "لا يمكن أن تصبح الدائرة مكهربة مجددًا بعد عزلـها." },
     ],
-    explAr: "تؤكد المادة على عزل الأجزاء المكهربة والتحقق من انعدام الجهد قبل العمل، وإمكانية إصابة الآخرين بالصدمة الكهربائية.",
   },
   {
     id: "voltage",
     detect: /voltage|approach distance|overhead line|transmission|substation|\bkV\b|high voltage/i,
     enTopic: "safe working near high voltage",
     arTopic: "العمل الآمن بالقرب من الجهد العالي",
-    arStems: {
-      easy: [
-        "ما الذي يجب على العمال مراعاته بالقرب من الخطوط الهوائية وفقًا للمادة؟",
-        "على من تنطبق مسافة الاقتراب الدنيا وفقًا للمادة؟",
-        "كيف تُعامل خطوط الطاقة الهوائية ما لم يُثبت خلاف ذلك وفقًا للمادة؟",
-        "ما الذي يمكن أن يفعله الجهد العالي دون ملامسة الخط وفقًا للمادة؟",
-      ],
-      medium: [
-        "كيف يجب تخطيط المهام بالقرب من الخطوط الهوائية وفقًا للمادة؟",
-        "ما الذي يجب على المشرف التحقق منه قبل العمل بالقرب من الخطوط الهوائية وفقًا للمادة؟",
-        "ما الذي يجب فعله بالسلالم والرافعات بالقرب من الموصلات الهوائية وفقًا للمادة؟",
-        "من الذي يجب الاتصال به قبل العمل بالقرب من خطوط الطاقة وفقًا للمادة؟",
-      ],
-      hard: [
-        "لماذا يجب الحفاظ على مسافة الاقتراب حتى دون ملامسة الخط وفقًا للمادة؟",
-        "ما مجموعة إجراءات التحكم المطلوبة عند العمل بالقرب من الجهد العالي وفقًا للمادة؟",
-        "كيف تتغير مسافة الاقتراب مع ارتفاع الجهد وفقًا للمادة؟",
-        "ما الإجراء الواجب عند تشغيل الرافعات بالقرب من الخطوط الهوائية وفقًا للمادة؟",
-      ],
-    },
-    enStems: {
-      easy: [
-        "What must workers observe near overhead lines according to the material?",
-        "Whom does the minimum approach distance apply to according to the material?",
-        "How are overhead power lines treated unless proved otherwise according to the material?",
-        "What can high voltage do without touching the line according to the material?",
-      ],
-      medium: [
-        "How must tasks near overhead lines be planned according to the material?",
-        "What must the supervisor check before working near overhead lines according to the material?",
-        "What must be done with ladders and cranes near overhead conductors according to the material?",
-        "Who must be contacted before working near power lines according to the material?",
-      ],
-      hard: [
-        "Why must the approach distance be kept even without touching the line according to the material?",
-        "What set of control measures is required when working near high voltage according to the material?",
-        "How does the approach distance change as the voltage rises according to the material?",
-        "What action is required when operating cranes near overhead lines according to the material?",
-      ],
-    },
     trues: {
       easy: [
         { en: "Workers must keep the safe approach distance from overhead lines.", ar: "يجب على العمال الحفاظ على مسافة الاقتراب الآمنة من الخطوط الهوائية." },
@@ -560,53 +392,12 @@ export const TOPICS: TopicTemplate[] = [
       { en: "Work near overhead lines requires no prior planning.", ar: "لا يتطلب العمل بالقرب من الخطوط الهوائية أي تخطيط مسبق." },
       { en: "The utility provider must only be notified after work is complete.", ar: "لا يُخطر مزود الكهرباء إلا بعد انتهاء العمل." },
     ],
-    explAr: "تحدد المادة مسافة اقتراب آمنة إلزامية من الخطوط الهوائية ومنشآت الجهد العالي، وتنطبق على جميع العاملين.",
   },
   {
     id: "permit",
     detect: /permit to work|work permit|\bpermit\b|authoris|authorized|competent person|qualified/i,
     enTopic: "authorization for electrical work",
     arTopic: "التصريح بالعمل على الأنظمة الكهربائية",
-    arStems: {
-      easy: [
-        "من المسموح له بتنفيذ العمل الكهربائي وفقًا للمادة؟",
-        "ما الشرط المطلوب قبل البدء بالعمل المكهرب وفقًا للمادة؟",
-        "ما الذي يجب على الشخص المصرح له التحقق منه قبل البدء وفقًا للمادة؟",
-        "ماذا يُوثق تصريح العمل وفقًا للمادة؟",
-      ],
-      medium: [
-        "من يجب أن يوقَّع تصريح العمل وفقًا للمادة؟",
-        "ماذا يجب فعله عندما تتغير شروط التصريح وفقًا للمادة؟",
-        "متى يُصدر تصريح العمل وفقًا للمادة؟",
-        "ماذا يجب على حامل التصريح فعله عند انتهاء العمل وفقًا للمادة؟",
-      ],
-      hard: [
-        "لماذا يجب إلغاء التصريح عند توقف العمل لفترة طويلة وفقًا للمادة؟",
-        "كيف يحمي تصريح العمل الأشخاص وفقًا للمادة؟",
-        "ما إجراء التسليم المطلوب عند بدء وردية جديدة وفقًا للمادة؟",
-        "متى يجب إعادة التحقق من منطقة العمل وفقًا للمادة؟",
-      ],
-    },
-    enStems: {
-      easy: [
-        "Who is allowed to carry out electrical work according to the material?",
-        "What condition is required before live work begins according to the material?",
-        "What must the authorised person check before starting according to the material?",
-        "What does the work permit record according to the material?",
-      ],
-      medium: [
-        "Who must sign the work permit according to the material?",
-        "What must be done when the conditions of the permit change according to the material?",
-        "When is the work permit issued according to the material?",
-        "What must the permit holder do when the work is finished according to the material?",
-      ],
-      hard: [
-        "Why must the permit be cancelled when work stops for a long period according to the material?",
-        "How does the work permit protect people according to the material?",
-        "What handover is required when a new shift starts according to the material?",
-        "When must the work area be checked again according to the material?",
-      ],
-    },
     trues: {
       easy: [
         { en: "Electrical work must only be carried out by competent, authorised persons.", ar: "يجب ألا يُنفَّذ العمل الكهربائي إلا أشخاص مؤهلون ومصرح لهم." },
@@ -637,53 +428,12 @@ export const TOPICS: TopicTemplate[] = [
       { en: "Checking the work area is the contractor's responsibility only.", ar: "التحقق من منطقة العمل مسؤولية المقاول وحده." },
       { en: "A permit is not needed for jobs shorter than one hour.", ar: "لا حاجة لتصريح العمل في المهام التي تقل عن ساعة واحدة." },
     ],
-    explAr: "تنص المادة على أن العمل الكهربائي يُنفَّذ حصريًا من قبل أشخاص مؤهلين ومصرح لهم وبموجب تصريح عمل مسبق.",
   },
   {
     id: "risk",
     detect: /hazard|\brisk\b|risk assessment|danger|dangerous/i,
     enTopic: "hazard and risk assessment",
     arTopic: "تقييم المخاطر والأخطار",
-    arStems: {
-      easy: [
-        "ما الإجراء الواجب اتباعه قبل بدء العمل وفقًا للمادة؟",
-        "بماذا يتعامل العمال مع الأخطار المحددة وفقًا للمادة؟",
-        "ماذا يجب على العمال فعله تجاه الأخطار التي لا يستطيعون السيطرة عليها وفقًا للمادة؟",
-        "كيف يُعرَّف الخطر وفقًا للمادة؟",
-      ],
-      medium: [
-        "كيف يُقيَّم مستوى الخطر وفقًا للمادة؟",
-        "متى يجب مراجعة إجراءات التحكم وفقًا للمادة؟",
-        "ما الذي يجب إبلاغ العمال به قبل بدء المهمة وفقًا للمادة؟",
-        "ماذا يجب على منفذ العمل التحقق منه وفقًا للمادة؟",
-      ],
-      hard: [
-        "لماذا يجب ضبط الخطر حتى لو لم يصب أحد بعد وفقًا للمادة؟",
-        "لماذا يُفضَّل استبعاد الخطر على غيره من إجراءات التحكم وفقًا للمادة؟",
-        "ما خطر إجراء تحكم غير مُصان وفقًا للمادة؟",
-        "ما الأفضل عند وجود خطر شديد وفقًا للمادة؟",
-      ],
-    },
-    enStems: {
-      easy: [
-        "What step must be taken before work begins according to the material?",
-        "How are identified hazards handled by workers according to the material?",
-        "What must workers do about hazards they cannot control according to the material?",
-        "How is a hazard defined according to the material?",
-      ],
-      medium: [
-        "How is the risk level assessed according to the material?",
-        "When must the control measures be reviewed according to the material?",
-        "What must workers be told before the task starts according to the material?",
-        "What must the person doing the work check according to the material?",
-      ],
-      hard: [
-        "Why must a hazard be controlled even if nobody has been hurt yet according to the material?",
-        "Why is eliminating the hazard preferred over other controls according to the material?",
-        "What is the danger of a control that is not maintained according to the material?",
-        "What is best when a hazard is severe according to the material?",
-      ],
-    },
     trues: {
       easy: [
         { en: "A risk assessment must be carried out before work begins.", ar: "يجب إجراء تقييم المخاطر قبل بدء العمل." },
@@ -714,53 +464,12 @@ export const TOPICS: TopicTemplate[] = [
       { en: "The risk level depends only on how often the task is done.", ar: "يعتمد مستوى الخطر على مدى تكرار المهمة فقط." },
       { en: "Once a control is installed, it never needs maintenance.", ar: "لا يحتاج إجراء التحكم إلى صيانة بعد تركيبه." },
     ],
-    explAr: "تشدد المادة على إجراء تقييم المخاطر قبل بدء العمل، وتحديد الأخطار ووضع إجراءات التحكم المناسبة لها.",
   },
   {
     id: "height",
     detect: /height|ladder|scaffold|fall protection|falling|harness|working at height/i,
     enTopic: "working at height",
     arTopic: "العمل على الارتفاع",
-    arStems: {
-      easy: [
-        "ما المطلوب عند العمل على الارتفاع وفقًا للمادة؟",
-        "ماذا يجب التحقق منه قبل استخدام السلالم والسقالات وفقًا للمادة؟",
-        "ما القاعدة المتعلقة بالحمولة الآمنة للمعدات وفقًا للمادة؟",
-        "ماذا تحمي الحواجز الواقية العمال منه وفقًا للمادة؟",
-      ],
-      medium: [
-        "على أي أساس يجب وضع قاعدة السلَّم وفقًا للمادة؟",
-        "كم نقطة تلامس يجب أن يحافظ عليها العامل أثناء صعود السلَّم وفقًا للمادة؟",
-        "كيف يجب أن يواجه مستخدم السلَّم السلَّم أثناء الصعود وفقًا للمادة؟",
-        "كيف تُمنع سقوط الأدوات من الارتفاع وفقًا للمادة؟",
-      ],
-      hard: [
-        "لماذا يجب اختيار نقاط تثبيت حزام الأمان بعناية وفقًا للمادة؟",
-        "من يجب أن يفحص السقالة قبل كل وردية وفقًا للمادة؟",
-        "ما أفضل وسيلة حماية على الحواف المفتوحة وفقًا للمادة؟",
-        "ما الأسلوب الأكثر أمانًا عند العمل على الارتفاع وفقًا للمادة؟",
-      ],
-    },
-    enStems: {
-      easy: [
-        "What is required when working at height according to the material?",
-        "What must be checked before using ladders and scaffolds according to the material?",
-        "What rule applies to the safe working load of equipment according to the material?",
-        "What do guardrails protect workers from according to the material?",
-      ],
-      medium: [
-        "On what must the base of a ladder be set according to the material?",
-        "How many points of contact must a worker keep while climbing a ladder according to the material?",
-        "How must the ladder user face the ladder while climbing according to the material?",
-        "How are falling tools prevented when working at height according to the material?",
-      ],
-      hard: [
-        "Why must harness anchor points be chosen carefully according to the material?",
-        "Who must inspect the scaffold before every shift according to the material?",
-        "What is the best protection on open edges according to the material?",
-        "What is the safest approach when working at height according to the material?",
-      ],
-    },
     trues: {
       easy: [
         { en: "Fall protection must be used when working at height.", ar: "يجب استخدام وسائل الحماية من السقوط عند العمل على الارتفاع." },
@@ -791,53 +500,12 @@ export const TOPICS: TopicTemplate[] = [
       { en: "Objects may be thrown down from a scaffold to save time.", ar: "يمكن رمي الأجسام من السقالة لتوفير الوقت." },
       { en: "Guardrails are unnecessary on low scaffolds.", ar: "لا حاجة للحواجز الواقية في السقالات المنخفضة." },
     ],
-    explAr: "تؤكد المادة على استخدام وسائل الحماية من السقوط عند العمل على الارتفاع وفحص السلالم والسقالات قبل الاستخدام.",
   },
   {
     id: "emergency",
     detect: /first aid|emergency|accident|incident|rescue|ambulance/i,
     enTopic: "emergency procedures",
     arTopic: "إجراءات الطوارئ",
-    arStems: {
-      easy: [
-        "ما الذي يجب أن يعرفه جميع العمال وفقًا للمادة؟",
-        "بماذا يلتزم العمال عند وقوع حادث وفقًا للمادة؟",
-        "ما المطلوب فيما يتعلق بمرافق الإسعافات الأولية وفقًا للمادة؟",
-        "كيف يجب أن تكون مخارج الطوارئ وفقًا للمادة؟",
-      ],
-      medium: [
-        "ما التصرف الصحيح عند وقوع حادث وفقًا للمادة؟",
-        "أين يجب تعليق قائمة أرقام الاتصال الطارئة وفقًا للمادة؟",
-        "ما المتطلب المتعلق بمسعفي الإسعافات الأولية وفقًا للمادة؟",
-        "متى يمكن نقل العامل المصاب وفقًا للمادة؟",
-      ],
-      hard: [
-        "لماذا يجب الإبلاغ عن الحوادث حتى دون إصابات وفقًا للمادة؟",
-        "ما أول إجراء في حالة الطوارئ الطبية وفقًا للمادة؟",
-        "لماذا تساعد تدريبات الطوارئ العمال وفقًا للمادة؟",
-        "متى يجب معرفة مسارات الإخلاء وفقًا للمادة؟",
-      ],
-    },
-    enStems: {
-      easy: [
-        "What must all workers know according to the material?",
-        "What must workers do when an accident happens according to the material?",
-        "What is required regarding first aid facilities according to the material?",
-        "How must emergency exits be according to the material?",
-      ],
-      medium: [
-        "What is the correct action when an accident occurs according to the material?",
-        "Where must the emergency contact list be posted according to the material?",
-        "What is required of first aiders according to the material?",
-        "When may an injured worker be moved according to the material?",
-      ],
-      hard: [
-        "Why must accidents be reported even without injuries according to the material?",
-        "What is the first action in a medical emergency according to the material?",
-        "Why do emergency drills help workers according to the material?",
-        "When must evacuation routes be known according to the material?",
-      ],
-    },
     trues: {
       easy: [
         { en: "Workers must know the emergency procedures and emergency contacts.", ar: "يجب أن يكون العمال على دراية بإجراءات الطوارئ وأرقام الاتصال الطارئة." },
@@ -868,53 +536,12 @@ export const TOPICS: TopicTemplate[] = [
       { en: "Emergency exits may be locked during working hours.", ar: "يمكن قفل مخارج الطوارئ خلال ساعات العمل." },
       { en: "First aid is a task for the medical team only, not trained workers.", ar: "الإسعافات الأولية مهمة الطاقم الطبي فقط، وليست من مهام العمال المدربين." },
     ],
-    explAr: "تؤكد المادة على معرفة الجميع بإجراءات الطوارئ وأرقام الاتصال، والإبلاغ الفوري عن الحوادث، وتوفر مرافق الإسعافات.",
   },
   {
     id: "housekeeping",
     detect: /housekeeping|tidy|clean|obstruction|clutter|good housekeeping/i,
     enTopic: "housekeeping and storage",
     arTopic: "الترتيب والنظافة والتخزين",
-    arStems: {
-      easy: [
-        "ما المطلوب من العمال فيما يتعلق بمنطقة العمل وفقًا للمادة؟",
-        "كيف يجب تخزين المواد غير المستخدمة وفقًا للمادة؟",
-        "ما أثر النظافة والترتيب على مخاطر الانزلاق وفقًا للمادة؟",
-        "كيف يجب أن تبقى الممرات وفقًا للمادة؟",
-      ],
-      medium: [
-        "متى يجب تنظيف الانسكابات وفقًا للمادة؟",
-        "متى تُعاد الأدوات إلى أماكن تخزينها وفقًا للمادة؟",
-        "أين يجب التخلص من النفايات والقصاصات وفقًا للمادة؟",
-        "ماذا يجب على العمال فعله بالكابلات والخراطيم وفقًا للمادة؟",
-      ],
-      hard: [
-        "لماذا تقلل النظافة والترتيب من مخاطر الحريق وفقًا للمادة؟",
-        "ما الطريقة الأكثر فاعلية لمنع الانزلاق والتعثر وفقًا للمادة؟",
-        "كيف يجب تنظيم مناطق التخزين وفقًا للمادة؟",
-        "ما أثر عدم الترتيب على رؤية الأخطار وفقًا للمادة؟",
-      ],
-    },
-    enStems: {
-      easy: [
-        "What is required of workers regarding the work area according to the material?",
-        "How must unused materials be stored according to the material?",
-        "What is the effect of cleanliness and tidiness on slip risks according to the material?",
-        "How must walkways be kept according to the material?",
-      ],
-      medium: [
-        "When must spills be cleaned up according to the material?",
-        "When must tools be returned to their storage according to the material?",
-        "Where must waste and scraps be disposed of according to the material?",
-        "What must workers do with cables and hoses according to the material?",
-      ],
-      hard: [
-        "Why does cleanliness and tidiness reduce fire risks according to the material?",
-        "What is the most effective way to prevent slips and trips according to the material?",
-        "How must storage areas be organised according to the material?",
-        "What is the effect of untidiness on seeing hazards according to the material?",
-      ],
-    },
     trues: {
       easy: [
         { en: "Work areas must be kept clean, tidy, and free of obstructions.", ar: "يجب أن تبقى مناطق العمل نظيفة ومرتبة وخالية من العوائق." },
@@ -945,53 +572,12 @@ export const TOPICS: TopicTemplate[] = [
       { en: "Tools can be left at the work spot for the next shift.", ar: "يمكن ترك الأدوات في مكان العمل للوردية التالية." },
       { en: "Clutter in storage areas does not affect safety.", ar: "لا يؤثر الازدحام في مناطق التخزين على السلامة." },
     ],
-    explAr: "تشدد المادة على النظافة والترتيب في مناطق العمل وإزالة العوائق وتخزين المواد بشكل صحيح وآمن.",
   },
   {
     id: "signage",
     detect: /safety sign|warning sign|warning label|signage|labels?|notice|markings?/i,
     enTopic: "safety signs and warnings",
     arTopic: "لافتات السلامة والتحذيرات",
-    arStems: {
-      easy: [
-        "كيف يجب التعامل مع لافتات السلامة وفقًا للمادة؟",
-        "بماذا تشير اللافتات التحذيرية وفقًا للمادة؟",
-        "ماذا يجب فعله باللافتات التالفة أو المفقودة وفقًا للمادة؟",
-        "كيف تنقل رموز السلامة التحذيرات وفقًا للمادة؟",
-      ],
-      medium: [
-        "ما الذي يجب أن يفهمه العمال في منطقة عملهم وفقًا للمادة؟",
-        "أين يجب وضع اللافتات وفقًا للمادة؟",
-        "متى يجب إطلاع العمال الجدد على معنى اللافتات وفقًا للمادة؟",
-        "متى يمكن إزالة اللافتات وفقًا للمادة؟",
-      ],
-      hard: [
-        "لماذا يجب أن تبقى اللافتة التحذيرية حتى بعد وقوع حادث وفقًا للمادة؟",
-        "لماذا تساعد الألوان في اللافتات العمال وفقًا للمادة؟",
-        "ما الإجراء المطلوب عندما تبهت اللافتة وفقًا للمادة؟",
-        "متى تكون اللافتات فعّالة وفقًا للمادة؟",
-      ],
-    },
-    enStems: {
-      easy: [
-        "How must safety signs be treated according to the material?",
-        "What do warning signs indicate according to the material?",
-        "What must be done with damaged or missing signs according to the material?",
-        "How do safety symbols convey warnings according to the material?",
-      ],
-      medium: [
-        "What must workers understand in their work area according to the material?",
-        "Where must signs be placed according to the material?",
-        "When must new workers be taught the meaning of signs according to the material?",
-        "When may signs be removed according to the material?",
-      ],
-      hard: [
-        "Why must a warning sign remain even after an incident according to the material?",
-        "Why do colours on signs help workers according to the material?",
-        "What action is required when a sign fades according to the material?",
-        "When are signs effective according to the material?",
-      ],
-    },
     trues: {
       easy: [
         { en: "Safety signs must be visible, legible, and followed at all times.", ar: "يجب أن تكون لافتات السلامة واضحة ومقروءة ويُلتزم بها في جميع الأوقات." },
@@ -1022,53 +608,12 @@ export const TOPICS: TopicTemplate[] = [
       { en: "Signs should be placed only after an incident has occurred.", ar: "لا تُوضع اللافتات إلا بعد وقوع حادث." },
       { en: "Colour codes are the same for warnings and instructions.", ar: "الألوان متطابقة في اللافتات التحذيرية والإرشادية." },
     ],
-    explAr: "تؤكد المادة على وضوح لافتات السلامة والالتزام بها في جميع الأوقات، وأنها تحدد أخطارًا لا يجوز تجاهلها.",
   },
   {
     id: "maintenance",
     detect: /inspection|maintenance|inspect|tested|fault|faulty|damage|damaged/i,
     enTopic: "inspection and maintenance",
     arTopic: "الفحص والصيانة",
-    arStems: {
-      easy: [
-        "ماذا يجب فعله بالمعدات وفقًا للمادة؟",
-        "ماذا يجب أن يحدث للمعدات المعيبة وفقًا للمادة؟",
-        "كيف تُميَّز المعدات المعيبة وفقًا للمادة؟",
-        "ما فائدة سجلات الصيانة وفقًا للمادة؟",
-      ],
-      medium: [
-        "ما التصرف الصحيح عند اكتشاف عطل في المعدة وفقًا للمادة؟",
-        "من المسموح له إصلاح المعدات وفقًا للمادة؟",
-        "كيف يجب تخطيط الصيانة المجدولة وفقًا للمادة؟",
-        "ما المطلوب قبل بدء أعمال الصيانة وفقًا للمادة؟",
-      ],
-      hard: [
-        "لماذا يجب وضع علامة على المعدات المعيبة بدلًا من إزالتها فقط وفقًا للمادة؟",
-        "ما الإجراء الذي يمنع تشغيل آلة مُصلحة قبل الأوان وفقًا للمادة؟",
-        "ما خطر استخدام معدات غير مُختبَرة وفقًا للمادة؟",
-        "متى تكون سجلات الفحص مفيدة وفقًا للمادة؟",
-      ],
-    },
-    enStems: {
-      easy: [
-        "What must be done with equipment according to the material?",
-        "What must happen to faulty equipment according to the material?",
-        "How is defective equipment identified according to the material?",
-        "What is the benefit of maintenance records according to the material?",
-      ],
-      medium: [
-        "What is the correct action when a fault is found in equipment according to the material?",
-        "Who is allowed to repair equipment according to the material?",
-        "How must scheduled maintenance be planned according to the material?",
-        "What is required before maintenance work begins according to the material?",
-      ],
-      hard: [
-        "Why must defective equipment be tagged rather than just removed according to the material?",
-        "What prevents a repaired machine from being started too early according to the material?",
-        "What is the risk of using untested equipment according to the material?",
-        "When are inspection records useful according to the material?",
-      ],
-    },
     trues: {
       easy: [
         { en: "Equipment must be inspected and maintained on a regular basis.", ar: "يجب فحص المعدات وصيانتها بشكل منتظم." },
@@ -1099,53 +644,12 @@ export const TOPICS: TopicTemplate[] = [
       { en: "Machines can be worked on without isolating the power.", ar: "يمكن العمل على الآلات دون عزل الطاقة." },
       { en: "An inspection is enough; no record needs to be kept.", ar: "يكفي الفحص دون الحاجة إلى حفظ سجل." },
     ],
-    explAr: "تشدد المادة على الفحص والصيانة الدورية للمعدات، وإخراج المعدات المعيبة من الخدمة ووضع علامات عليها حتى إصلاحها.",
   },
   {
     id: "safe-work",
     detect: /safe work|safety rules|employees? must|workers? must|training|course material|work procedure/i,
     enTopic: "safe working requirements",
     arTopic: "متطلبات العمل الآمن",
-    arStems: {
-      easy: [
-        "ما الالتزام العام المفروض على الموظفين وفقًا للمادة؟",
-        "لماذا تُقدَّم المادة التدريبية وفقًا للمادة؟",
-        "ماذا يجب على العمال فعله عند ملاحظة ظروف غير آمنة وفقًا للمادة؟",
-        "ما الذي يجب اتباعه في كل مهمة وفقًا للمادة؟",
-      ],
-      medium: [
-        "ما الذي يجب على العمال التأكد منه قبل بدء المهمة وفقًا للمادة؟",
-        "ما المطلوب فيما يتعلق بالأدوات في كل مهمة وفقًا للمادة؟",
-        "ماذا يفعل العامل غير المتأكد من المهمة وفقًا للمادة؟",
-        "كيف يجب اتباع تعليمات السلامة وفقًا للمادة؟",
-      ],
-      hard: [
-        "لماذا تسري قواعد السلامة حتى دون حضور المشرف وفقًا للمادة؟",
-        "ما السلوك الذي يخلق أكبر خطر في الموقع وفقًا للمادة؟",
-        "على ماذا تعتمد ثقافة السلامة وفقًا للمادة؟",
-        "لماذا يجب تجديد التدريب وفقًا للمادة؟",
-      ],
-    },
-    enStems: {
-      easy: [
-        "What general duty applies to employees according to the material?",
-        "Why is training material provided according to the material?",
-        "What must workers do when they notice unsafe conditions according to the material?",
-        "What must be followed in every task according to the material?",
-      ],
-      medium: [
-        "What must workers confirm before starting a task according to the material?",
-        "What is required regarding tools in every task according to the material?",
-        "What does a worker who is unsure about a task do according to the material?",
-        "How must safety instructions be followed according to the material?",
-      ],
-      hard: [
-        "Why do safety rules apply even without the supervisor present according to the material?",
-        "What behaviour creates the greatest risk on site according to the material?",
-        "What does a safety culture depend on according to the material?",
-        "Why must training be refreshed according to the material?",
-      ],
-    },
     trues: {
       easy: [
         { en: "Employees must follow the safety rules at all times.", ar: "يجب على الموظفين اتباع قواعد السلامة في جميع الأوقات." },
@@ -1176,53 +680,12 @@ export const TOPICS: TopicTemplate[] = [
       { en: "Asking questions about a task shows a lack of skill.", ar: "طرح الأسئلة حول المهمة دليل على ضعف المهارة." },
       { en: "Training is only needed when starting a new job.", ar: "لا حاجة للتدريب إلا عند بدء عمل جديد." },
     ],
-    explAr: "تؤكد المادة على التزام جميع الموظفين بقواعد السلامة في جميع الأوقات وتعزيز ثقافة السلامة في العمل.",
   },
   {
     id: "general",
     detect: /[\s\S]/,
     enTopic: "the material content",
     arTopic: "محتوى المادة",
-    arStems: {
-      easy: [
-        "ما العبارة الصحيحة وفقًا للمادة التدريبية؟",
-        "أي مما يلي يتوافق مع محتوى المادة التدريبية؟",
-        "ما العبارة التي تدعمها المادة التدريبية؟",
-        "أي حقيقة وردت في مادة الدورة وفقًا لما ذُكر؟",
-      ],
-      medium: [
-        "أي قاعدة يجب تطبيقها عمليًا وفقًا للمادة التدريبية؟",
-        "ماذا توضح المادة التدريبية في هذا الشأن؟",
-        "ما الواجب المنصوص عليه للعمال وفقًا للمادة التدريبية؟",
-        "ما الإجراء الذي توجّه إليه المادة التدريبية العمال؟",
-      ],
-      hard: [
-        "ما المطلب الذي تنص المادة على عدم إغفاله؟",
-        "ما النقطة الأساسية التي تتوقع المادة تذكرها؟",
-        "ما القاعدة التي تعتبرها المادة أساسية للعمل الآمن؟",
-        "ما الممارسة التي تحددها مادة الدورة بأنها إلزامية؟",
-      ],
-    },
-    enStems: {
-      easy: [
-        "Which statement is correct according to the training material?",
-        "Which of the following matches the training material?",
-        "Which statement does the training material support?",
-        "Which fact is given in the course material as stated?",
-      ],
-      medium: [
-        "Which rule must be applied in practice according to the training material?",
-        "What does the training material explain about this?",
-        "What duty is stated for workers according to the training material?",
-        "What instruction does the training material direct workers to follow?",
-      ],
-      hard: [
-        "Which requirement does the material state must not be overlooked?",
-        "What is the key point the material expects to be remembered?",
-        "Which rule does the material consider essential for safe work?",
-        "Which practice does the course material identify as mandatory?",
-      ],
-    },
     trues: {
       easy: [
         { en: "This statement is given in the training material.", ar: "هذه العبارة وردت في المادة التدريبية." },
@@ -1253,7 +716,6 @@ export const TOPICS: TopicTemplate[] = [
       { en: "The material lists this statement as optional.", ar: "تعدّد المادة هذه العبارة ضمن الأمور الاختيارية." },
       { en: "This instruction is not part of the safe work procedures.", ar: "هذا الإجراء ليس جزءًا من إجراءات العمل الآمنة." },
     ],
-    explAr: "وردت العبارة في المادة التدريبية المرفوعة، وهي أساس السؤال.",
   },
 ];
 
@@ -1297,32 +759,38 @@ function pickWrong(pool: TopicVariant[], seed: number, usedEn: string[]): TopicV
 }
 
 /**
- * Rank the level's enStems by subject similarity to the source sentence, best
- * first. The winning stem's index selects BOTH the Arabic stem (textAr) and the
- * true statement (answer) — they are index-matched per difficulty level, so the
- * Arabic question always asks about the SAME fact the English sentence states,
- * instead of a canned per-topic stem that drifts off-subject.
+ * Rank every true statement of the topic (all 12, across EASY/MEDIUM/HARD) by
+ * subject similarity to the source sentence, best first. The winning statement
+ * provides BOTH the Arabic translation (textAr) and the correct answer, so the
+ * Arabic side is a faithful translation of the sentence's fact — not a canned
+ * per-topic stem that drifts off-subject.
  */
-function rankedStemIndices(sentence: string, level: keyof TopicStemGroup, t: TopicTemplate): number[] {
-  const stems = t.enStems[level];
-  return stems
-    .map((s, i) => ({ i, score: mockSimilarity(sentence, s) }))
-    .sort((a, b) => b.score - a.score)
-    .map((x) => x.i);
+function rankedTrueIndices(
+  sentence: string,
+  t: TopicTemplate,
+): Array<{ level: keyof TopicStemGroup; idx: number; score: number }> {
+  const out: Array<{ level: keyof TopicStemGroup; idx: number; score: number }> = [];
+  for (const level of ["easy", "medium", "hard"] as const) {
+    t.trues[level].forEach((tr, idx) => out.push({ level, idx, score: mockSimilarity(sentence, tr.en) }));
+  }
+  return out.sort((a, b) => b.score - a.score);
 }
 
 /**
  * Build one question. `text` is always a REAL sentence from the material.
- * `textAr` is the Arabic stem whose English counterpart best matches that
- * sentence, and the correct statement is index-matched to the same stem — so
- * the two languages always ask the same thing. `usedIdx` is the set of stem
- * indices already assigned in this batch's difficulty level: each sentence gets
- * its best-ranked stem that is still free, which keeps same-topic batches from
- * repeating an Arabic stem (that would make the validator treat a good question
- * as a duplicate and silently shrink the batch). When every stem of the level
- * is taken (batch larger than the template), the level counter `idx` wraps.
- * `seed` is the global question index: it varies the distractors per question,
- * so two questions never repeat the same options.
+ * `textAr` is the Arabic of the TRUE statement matched to that sentence, so the
+ * English and Arabic sides express the same fact — they never drift into
+ * different questions. `usedIdx` holds the `level:index` keys already assigned
+ * in this batch: each sentence gets its best-ranked true statement that is
+ * still free (the ranking spans all 12 trues of the topic, so even a sentence
+ * whose best fact lives in another difficulty tier still gets a faithful
+ * translation instead of a merely topically-related one), which keeps
+ * same-topic batches from repeating an Arabic rendering (that would make the
+ * validator treat a good question as a duplicate and silently shrink the
+ * batch). When every true of the topic is taken (batch larger than the
+ * template), the level counter `idx` wraps. `seed` varies the distractors per
+ * question (and across regenerations), so two questions never repeat the same
+ * options.
  */
 function buildQuestion(
   sentence: string,
@@ -1332,26 +800,30 @@ function buildQuestion(
   idx: number,
   seed: number,
   imageRef?: number,
-  usedIdx: Set<number> = new Set(),
+  usedIdx: Set<string> = new Set(),
 ) {
   const level = difficulty.toLowerCase() as keyof TopicStemGroup;
-  const arStems = t.arStems[level];
-  const trues = t.trues[level];
-  const ranked = rankedStemIndices(sentence, level, t);
-  let stemIdx = ranked.find((i) => !usedIdx.has(i));
-  if (stemIdx === undefined) stemIdx = ranked[idx % ranked.length];
-  usedIdx.add(stemIdx);
-  const stem = arStems[stemIdx];
-  const correct = trues[stemIdx % trues.length];
+  const ranked = rankedTrueIndices(sentence, t);
+  let match = ranked.find((r) => !usedIdx.has(r.level + ":" + r.idx));
+  if (!match) match = ranked[idx % ranked.length];
+  usedIdx.add(match.level + ":" + match.idx);
+  const correct = t.trues[match.level][match.idx];
+  // textAr is the ARABIC TRANSLATION of the fact the sentence states — the
+  // Arabic side of the true statement matched to the sentence — so the two
+  // languages always say the same thing (never a canned per-topic stem). The
+  // Arabic explanation mirrors the English explanation the same way: both are
+  // the matched fact, so every bilingual field (text, options, explanation)
+  // stays consistent.
+  const textAr = correct.ar;
   const base = {
     type,
     text: sentence,
-    textAr: stem,
+    textAr,
     difficulty,
     category: t.id === "general" ? "Material Content" : t.enTopic,
     tags: [t.enTopic, "AI-generated"],
     explanation: sentence,
-    explanationAr: t.explAr,
+    explanationAr: correct.ar,
     ...(imageRef !== undefined ? { imageRef } : {}),
   };
 
@@ -1361,8 +833,9 @@ function buildQuestion(
     case "SHORT_ANSWER":
       return { ...base, options: [], optionsAr: [], correctAnswers: [] };
     case "MULTIPLE_CHOICE": {
-      const a = trues[stemIdx % trues.length];
-      const b = trues[(stemIdx + 1) % trues.length];
+      const levelTrues = t.trues[match.level];
+      const a = correct;
+      const b = levelTrues[(match.idx + 1) % levelTrues.length];
       const w = pickWrong(t.wrongs, seed * 3 + 1, [a.en, b.en]);
       return { ...base, options: [a.en, b.en, w.en], optionsAr: [a.ar, b.ar, w.ar], correctAnswers: [0, 1] };
     }
@@ -1466,23 +939,25 @@ export class MockProvider implements AIProvider {
     }
 
     const questions: unknown[] = [];
+    const requestSeed = requestSeq++;
     // Content is selected by a per-topic-per-difficulty counter — never by a
-    // modulo that re-uses the same stem/answer every N questions. Each level
-    // also tracks which stem indices it already assigned, so same-topic batches
-    // keep their Arabic stems distinct (see buildQuestion).
-    const usedStemIdx = new Map<string, Set<number>>();
+    // modulo that re-uses the same stem/answer every N questions. Each topic
+    // also tracks which true statements it already assigned (across ALL its
+    // levels), so same-topic batches keep their Arabic renderings distinct and
+    // faithful — see buildQuestion.
+    const usedStemIdx = new Map<string, Set<string>>();
     for (let i = 0; i < count; i++) {
       if (i >= ordered.length) break;
       const { sentence, topic, diff } = ordered[i];
       const type = typePool[i % typePool.length];
-      const key = topic.id + ":" + diff;
-      const idx = diffCounters.get(key) ?? 0;
-      diffCounters.set(key, idx + 1);
-      const usedSet = usedStemIdx.get(key) ?? new Set<number>();
+      const key = topic.id;
+      const idx = diffCounters.get(topic.id + ":" + diff) ?? 0;
+      diffCounters.set(topic.id + ":" + diff, idx + 1);
+      const usedSet = usedStemIdx.get(key) ?? new Set<string>();
       usedStemIdx.set(key, usedSet);
       const imageRef = relevantFigureIndex(sentence, figures, usedFigures);
       if (imageRef !== undefined) usedFigures.add(imageRef);
-      questions.push(buildQuestion(sentence, type, topic, diff, idx, i, imageRef, usedSet));
+      questions.push(buildQuestion(sentence, type, topic, diff, idx, i + requestSeed * 5, imageRef, usedSet));
     }
 
     return { content: JSON.stringify({ questions }), model: MODEL_ID };

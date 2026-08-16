@@ -18,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sparkles, Loader2, Trash2, Plus, RotateCcw } from "lucide-react";
+import { Sparkles, Loader2, Trash2, Plus, RotateCcw, Upload } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -92,10 +92,12 @@ export function QuestionGeneratorDialog({
 
   const [step, setStep] = useState<"config" | "review">("config");
   const [draft, setDraft] = useState<AIQuestionDraft[]>([]);
+  const [extUrls, setExtUrls] = useState<Record<number, string>>({});
   const [aiModel, setAiModel] = useState<string | null>(null);
   const [aiPrompt, setAiPrompt] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [approving, setApproving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState<number | null>(null);
 
   const reset = () => {
     setSelected([]);
@@ -107,8 +109,10 @@ export function QuestionGeneratorDialog({
     setImageMode("auto");
     setStep("config");
     setDraft([]);
+    setExtUrls({});
     setAiModel(null);
     setAiPrompt(null);
+    setUploadingImage(null);
   };
 
   const close = () => {
@@ -156,6 +160,32 @@ export function QuestionGeneratorDialog({
     const current = draft.map((q) => q.text).filter((t): t is string => Boolean(t));
     setDraft([]);
     await handleGenerate(current);
+  };
+
+  const handleUploadImage = async (index: number, file: File | undefined) => {
+    if (!file) return;
+    if (!/^image\/(jpeg|png|webp)$/i.test(file.type)) {
+      toast({ title: t("courses.aiUploadImageError"), description: t("courses.aiUploadImageTypes"), variant: "destructive" });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast({
+        title: t("courses.aiUploadImageError"),
+        description: t("courses.aiUploadImageTooLarge"),
+        variant: "destructive",
+      });
+      return;
+    }
+    setUploadingImage(index);
+    try {
+      const res = await api.postFile<{ url: string }>(`/courses/${courseId}/materials/ai/upload-image`, file);
+      updateQuestion(index, { imageUrl: res.url });
+      toast({ title: t("courses.aiUploadImageSuccess") });
+    } catch (e) {
+      toast({ title: t("courses.aiUploadImageError"), description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setUploadingImage(null);
+    }
   };
 
   const updateQuestion = (index: number, patch: Partial<AIQuestionDraft>) => {
@@ -471,6 +501,58 @@ export function QuestionGeneratorDialog({
                   </div>
                 </div>
               )}
+
+              <div className="rounded-lg border bg-background p-3">
+                <p className="mb-1.5 text-xs font-medium text-muted-foreground">{t("courses.aiImageAttachLabel")}</p>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Button asChild variant="outline" size="sm" className="shrink-0">
+                    <label className="cursor-pointer">
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="sr-only"
+                        disabled={uploadingImage !== null}
+                        onChange={(e) => {
+                          void handleUploadImage(qi, e.target.files?.[0]);
+                          e.target.value = "";
+                        }}
+                      />
+                      {uploadingImage === qi ? (
+                        <Loader2 className="h-3.5 w-3.5 me-1 animate-spin" />
+                      ) : (
+                        <Upload className="h-3.5 w-3.5 me-1" />
+                      )}
+                      {uploadingImage === qi ? t("courses.aiUploading") : t("courses.aiUploadDeviceImage")}
+                    </label>
+                  </Button>
+                  <div className="flex flex-1 items-center gap-2">
+                    <Input
+                      dir="ltr"
+                      placeholder="https://example.com/image.png"
+                      value={extUrls[qi] ?? ""}
+                      onChange={(e) => setExtUrls((prev) => ({ ...prev, [qi]: e.target.value }))}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      disabled={!((extUrls[qi] ?? "").trim())}
+                      onClick={() => {
+                        const url = (extUrls[qi] ?? "").trim();
+                        if (!/^(https?:\/\/|\/)/i.test(url)) {
+                          toast({ title: t("courses.aiExternalImageInvalid"), variant: "destructive" });
+                          return;
+                        }
+                        updateQuestion(qi, { imageUrl: url });
+                        setExtUrls((prev) => ({ ...prev, [qi]: "" }));
+                      }}
+                    >
+                      <Plus className="h-3.5 w-3.5 me-1" /> {t("courses.aiAddExternalImage")}
+                    </Button>
+                  </div>
+                </div>
+                <p className="mt-1.5 text-xs text-muted-foreground">{t("courses.aiUploadImageHint")}</p>
+              </div>
 
               {q.type !== "SHORT_ANSWER" && (
                 <div className="space-y-2">

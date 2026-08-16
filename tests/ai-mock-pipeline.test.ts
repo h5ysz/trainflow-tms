@@ -83,6 +83,10 @@ describe("Mock AI provider — full pipeline", () => {
       expect(["EASY", "MEDIUM", "HARD"]).toContain(q.difficulty);
       expect(q.explanation).toBeTruthy();
       expect(q.explanationAr).toBeTruthy();
+      // Full EN↔AR consistency: the Arabic side of every field translates the
+      // English side of the same question — never a canned per-topic paragraph.
+      expect(q.explanation).toBe(q.text);
+      expect(q.explanationAr).toBe(q.textAr);
     }
 
     // Questions are grounded in the real extracted text, not fabricated.
