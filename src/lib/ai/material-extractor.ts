@@ -232,7 +232,13 @@ export async function extractMaterialText(material: {
   const dir = path.resolve(courseMaterialsDir());
   // Defence in depth: storagePath is written by the server (random hex name), but
   // never let a crafted path escape the materials directory.
-  if (material.storagePath.includes("..") || path.isAbsolute(material.storagePath)) {
+  if (
+    material.storagePath.includes("..") ||
+    path.isAbsolute(material.storagePath) ||
+    /^[a-zA-Z]:[\\/]/.test(material.storagePath) ||
+    material.storagePath.startsWith("/") ||
+    material.storagePath.startsWith("\\")
+  ) {
     throw new MaterialExtractionError("Invalid storage path.");
   }
   const fullPath = path.resolve(dir, material.storagePath.replace(/^course-materials[/\\]/, ""));
