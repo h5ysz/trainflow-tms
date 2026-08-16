@@ -8,6 +8,7 @@ import { validateTrainerAssignment, validationErrorToResponse } from "@/lib/api/
 import { scopeSessionList } from "@/lib/api/trainer-scope";
 import { canPerformAction } from "@/lib/auth/permissions";
 import { randomBytes, randomUUID } from "crypto";
+import { notifySessionScheduled } from "@/lib/notifications/session-events";
 
 const ALLOWED_SORT_FIELDS = ["refNumber", "title", "startDate", "endDate", "createdAt", "status", "location", "city", "shift"];
 
@@ -216,6 +217,15 @@ export const POST = withModuleAction("sessions", "create", async ({ req, user })
     req,
     metadata: { shift, durationHours: finalDuration, capacity: session.capacity, trainerId },
   });
+
+  // ── SESSION_SCHEDULED: tell the assigned trainer + enrolled contractors the
+  //    session is on the calendar (in-app + Email/WhatsApp/SMS). A notification
+  //    failure never fails the session creation. ──
+  try {
+    await notifySessionScheduled(session.id);
+  } catch (e) {
+    console.error(`SESSION_SCHEDULED failed for session ${session.refNumber}:`, (e as Error).message);
+  }
 
   return created(session);
 });

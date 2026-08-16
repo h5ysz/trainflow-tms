@@ -6,6 +6,7 @@ import { withModuleAction, ok, fail, audit } from "@/lib/auth/api";
 import { recordStatusChange } from "@/lib/auth/audit";
 import { syncFinalTestStatus } from "@/lib/api/enrollment-sync";
 import { trainerDeniedSession } from "@/lib/api/trainer-scope";
+import { notifySessionStarted, notifyAttendanceFinalized, notifySessionCompleted } from "@/lib/notifications/session-events";
 
 const VALID_EVENTS = ["STARTED", "BREAK", "RESUMED", "COMPLETED"];
 
@@ -209,6 +210,27 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
     toStatus: newLifecycleStatus,
     req,
   });
+
+  // ── Session lifecycle event notifications — fired off the ACTUAL event, not
+  //    the scheduled time. Never allowed to fail the lifecycle action. ──
+  if (eventType === "STARTED") {
+    try {
+      await notifySessionStarted(id);
+    } catch (e) {
+      console.error(`SESSION_STARTED failed for session ${session.refNumber}:`, (e as Error).message);
+    }
+  } else if (eventType === "COMPLETED") {
+    try {
+      await notifyAttendanceFinalized(id);
+    } catch (e) {
+      console.error(`ATTENDANCE_FINALIZED failed for session ${session.refNumber}:`, (e as Error).message);
+    }
+    try {
+      await notifySessionCompleted(id);
+    } catch (e) {
+      console.error(`SESSION_COMPLETED failed for session ${session.refNumber}:`, (e as Error).message);
+    }
+  }
 
   return ok({
     event,

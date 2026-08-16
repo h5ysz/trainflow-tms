@@ -5,6 +5,7 @@ import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { trainerDeniedSession } from "@/lib/api/trainer-scope";
 import { validateTrainerAssignment, validationErrorToResponse, findTrainerConflicts } from "@/lib/api/trainer-assignment";
 import { notifySessionScheduleUpdate } from "@/lib/notifications/session-update";
+import { notifyTrainerAssigned } from "@/lib/notifications/session-events";
 
 export const POST = withModuleAction("sessions", "edit", async ({ req, params, user }) => {
   const id = params.id as string;
@@ -63,21 +64,29 @@ export const POST = withModuleAction("sessions", "edit", async ({ req, params, u
     },
   });
 
-  // ── A trainer change on an approved/scheduled session notifies the
-  //    contractors (in-app + Email + WhatsApp + SMS). A notification failure
-  //    never fails the assignment itself. ──
+  // ── Trainer assignment notifications on an approved/scheduled session. A
+  //    notification failure never fails the assignment itself.
+  //    First assignment: TRAINER_ASSIGNED tells the trainer + contractors once
+  //    (SESSION_SCHEDULE_UPDATED would only duplicate it). A trainer CHANGE: the
+  //    contractors learn the new trainer via SESSION_SCHEDULE_UPDATED while
+  //    TRAINER_ASSIGNED tells the new trainer individually — no duplicates. ──
   if (session.status === "SCHEDULED" && previousTrainerId !== trainerId) {
     try {
-      await notifySessionScheduleUpdate(id, {
-        startDate: session.startDate,
-        endDate: session.endDate,
-        location: session.location,
-        venue: session.venue,
-        city: session.city,
-        trainerId: previousTrainerId,
-      });
+      if (previousTrainerId === null) {
+        await notifyTrainerAssigned(id, { notifyContractors: true });
+      } else {
+        await notifySessionScheduleUpdate(id, {
+          startDate: session.startDate,
+          endDate: session.endDate,
+          location: session.location,
+          venue: session.venue,
+          city: session.city,
+          trainerId: previousTrainerId,
+        });
+        await notifyTrainerAssigned(id, { notifyContractors: false });
+      }
     } catch (e) {
-      console.error(`SESSION_SCHEDULE_UPDATED failed for session ${updated.refNumber}:`, (e as Error).message);
+      console.error(`Trainer assignment notification failed for session ${updated.refNumber}:`, (e as Error).message);
     }
   }
 

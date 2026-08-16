@@ -10,6 +10,7 @@ import { withModuleAction, ok, notFound, fail, audit } from "@/lib/auth/api";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { validateTrainerAssignment, validationErrorToResponse } from "@/lib/api/trainer-assignment";
 import { recomputeSessionCounts, upsertEnrollment } from "@/lib/sessions/session-management";
+import { notifySessionScheduled } from "@/lib/notifications/session-events";
 import { randomBytes } from "crypto";
 
 const SHIFT_DURATION_HOURS = 6;
@@ -334,6 +335,18 @@ export const POST = withModuleAction("sessions", "create", async ({ req, params,
           updatedAt: new Date(),
         })),
       });
+    }
+  }
+
+  // ── SESSION_SCHEDULED per generated session: the enrolled company's
+  //    contractor gets channels + in-app. The trainer is already told by the
+  //    aggregated in-app notification above, so `notifyTrainer: false` avoids a
+  //    duplicate trainer message. A notification failure never fails the flow. ──
+  for (const s of created) {
+    try {
+      await notifySessionScheduled(s.id, { notifyTrainer: false });
+    } catch (e) {
+      console.error(`SESSION_SCHEDULED failed for session ${s.refNumber}:`, (e as Error).message);
     }
   }
 

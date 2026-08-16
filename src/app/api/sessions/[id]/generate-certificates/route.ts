@@ -5,6 +5,7 @@ import { checkCertificateEligibility } from "@/lib/api/certificate-eligibility";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { randomBytes } from "crypto";
 import { linkCertificateToPassport } from "@/lib/worker/passport-service";
+import { notifyResultsFinalized } from "@/lib/notifications/session-events";
 
 function genVerificationToken(): string {
   return randomBytes(12).toString("hex");
@@ -192,6 +193,16 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
     req,
     metadata: { generated, skipped, passportsLinked, total: presentTrainees.length },
   });
+
+  // ── RESULTS_FINALIZED: results are confirmed when certificates are issued.
+  //    Told to the contractors + coordinators once per session (deduped). ──
+  if (generated > 0) {
+    try {
+      await notifyResultsFinalized(sessionId, { certificatesCount: generated });
+    } catch (e) {
+      console.error(`RESULTS_FINALIZED failed for session ${session.refNumber}:`, (e as Error).message);
+    }
+  }
 
   return ok({
     sessionRef: session.refNumber,
