@@ -149,7 +149,7 @@ export function CertificatePreviewDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-[min(95vw,1240px)]">
+        <DialogContent className="sm:max-w-[min(95vw,1240px)]">
           <DialogHeader>
             <DialogTitle>{t("certificates.previewTitle")}</DialogTitle>
             <DialogDescription>

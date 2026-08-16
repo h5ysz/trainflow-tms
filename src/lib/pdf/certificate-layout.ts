@@ -22,6 +22,8 @@
 // nothing can ever overflow onto a second page. Fonts only shrink as much as the
 // content actually needs (a 22pt name stays 22pt; only a long one scales down).
 
+import { orderTextForLtr } from "@/lib/pdf/bidi";
+
 // pdfkit ships no bundled types (and @types/pdfkit is not installed), so the
 // document instance is typed `any` here. This module only reads/writes a handful of
 // pdfkit methods and is exercised end-to-end by tests/certificate-pdf.test.ts.
@@ -109,6 +111,9 @@ function centerLine(
   cx: number = PAGE_W / 2,
   charSpacing = 0,
 ) {
+  // pdfkit draws LTR, so hand it the visual-order string (Arabic word order
+  // reordered, embedded LTR runs kept intact). Fontkit re-shapes each word.
+  text = orderTextForLtr(text);
   const size = fitSize(doc, text, font, startSize, minSize, maxWidth, charSpacing);
   doc
     .font(font)
@@ -141,7 +146,15 @@ export function drawCertificateLayout(
   // ── Header ──────────────────────────────────────────────────────────
   let headerTop = 106;
   if (opts.logoPath) {
-    doc.image(opts.logoPath, (PAGE_W - 170) / 2, 58, { fit: [170, 40] });
+    // `fit: [170, 40]` scales the image to fit the box while preserving aspect ratio,
+    // so the drawn width (82.7pt for the 310x150 logo) is smaller than the box. Center
+    // the actual drawn image rather than the 170pt box — the browser template centers
+    // the <img> itself, and centering the box left the logo 44pt off-center.
+    const logo = doc.openImage(opts.logoPath);
+    const logoScale = Math.min(170 / logo.width, 40 / logo.height);
+    const logoW = logo.width * logoScale;
+    const logoH = logo.height * logoScale;
+    doc.image(logo, (PAGE_W - logoW) / 2, 58, { width: logoW, height: logoH });
   }
 
   centerLine(doc, "GCCLAB — Gulf Calibration Laboratory", BOLD, 13, 10.5, BURGUNDY, headerTop, PAGE_W - 120);

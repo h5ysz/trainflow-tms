@@ -89,6 +89,51 @@ describe("certificate PDF layout", () => {
     expect(countPages(await render(data))).toBe(1);
   });
 
+  it("draws Arabic text in visual (right-to-left) word order", async () => {
+    const doc = new PDFDocument({
+      size: "A4",
+      layout: "landscape",
+      margins: { top: 60, bottom: 60, left: 60, right: 60 },
+    });
+    const measured: string[] = [];
+    const origWidth = doc.widthOfString.bind(doc);
+    doc.widthOfString = ((text: string, opts?: any) => {
+      measured.push(text);
+      return origWidth(text, opts);
+    }) as typeof doc.widthOfString;
+
+    const chunks: Buffer[] = [];
+    doc.on("data", (c: Buffer) => chunks.push(c));
+    const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
+
+    if (hasArabicFont) {
+      doc.registerFont("Certificate", ARABIC_FONT);
+      doc.registerFont("Certificate-Bold", ARABIC_BOLD_FONT);
+    }
+    const data: CertificateLayoutData = {
+      ...base,
+      traineeName: "محمد عبدالله القحطاني",
+      courseTitle: "سلامة وصحة مهنية وإدارة السلامة OSHA",
+      companyName: "شركة الخليج للمقاولات ذ.م.م",
+      trainerName: "م. خالد الراشد",
+    };
+    drawCertificateLayout(doc, data, {
+      fontName: hasArabicFont ? "Certificate" : null,
+      fontNameBold: hasArabicFont ? "Certificate-Bold" : null,
+      logoPath: null,
+    });
+    doc.end();
+    await done;
+
+    expect(measured).toContain("الخليجي المختبر");
+    expect(measured).toContain("OSHA السلامة وإدارة مهنية وصحة سلامة");
+    expect(measured).toContain("القحطاني عبدالله محمد");
+    expect(measured).toContain("Company: ذ.م.م للمقاولات الخليج شركة");
+    expect(measured).toContain("Trainer: الراشد خالد م.");
+    expect(measured).not.toContain("المختبر الخليجي");
+    expect(measured).not.toContain("سلامة وصحة مهنية وإدارة السلامة OSHA");
+  });
+
   it("stays on one page when every field is maximally long", async () => {
     const data: CertificateLayoutData = {
       traineeName:
