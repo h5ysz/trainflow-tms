@@ -116,14 +116,6 @@ export function ExamAttemptRoute() {
     return () => window.clearInterval(id);
   }, [exam?.deadline]);
 
-  useEffect(() => {
-    if (remainingMs !== 0 || !exam || graded || busy === "submit" || autoSubmitted.current) return;
-    autoSubmitted.current = true;
-    toast({ title: t("exam.timeUp"), description: t("exam.autoSubmitted") });
-    void submit();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remainingMs, exam, graded, busy]);
-
   const Back = dir === "rtl" ? ArrowRight : ArrowLeft;
 
   const canStart = (a: Attempt) =>
@@ -176,6 +168,13 @@ export function ExamAttemptRoute() {
       setBusy(null);
     }
   };
+
+  useEffect(() => {
+    if (remainingMs !== 0 || !exam || graded || busy === "submit" || autoSubmitted.current) return;
+    autoSubmitted.current = true;
+    toast({ title: t("exam.timeUp"), description: t("exam.autoSubmitted") });
+    void submit();
+  }, [remainingMs, exam, graded, busy]);
 
   const pick = (q: ExamQuestion, index: number) => {
     setAnswers((prev) => {
