@@ -510,7 +510,7 @@ function ClaimFormDialog({
             )}
 
             {preview && !previewLoading && preview.rows.length > 0 && (
-              <div className="max-h-[250px] overflow-y-auto">
+              <div className="max-h-[40vh] overflow-y-auto">
                 <table className="w-full text-xs">
                   <thead className="sticky top-0 bg-muted/70">
                     <tr className="text-left text-muted-foreground">
