@@ -14,9 +14,11 @@
 // the source of truth for what the TRAINER role holds in production — keep it
 // in sync with seed-test-users.ts's ROLE_PERMISSIONS.TRAINER.
 //
-// Idempotent — safe to re-run. Only touches the TRAINER Role row's `permissions`
-// array (mirrors scripts/migrate-ai-dashboard-permissions.ts). Does NOT modify
-// SUPER_ADMIN / COORDINATOR / CONTRACTOR, does not touch any data.
+// Also ensures the COORDINATOR role includes claims permissions.
+//
+// Idempotent — safe to re-run. Only touches the TRAINER and COORDINATOR Role
+// rows' `permissions` arrays. Does NOT modify SUPER_ADMIN / CONTRACTOR, does
+// not touch any data.
 //
 // Usage: npx tsx scripts/migrate-trainer-rbac.ts
 import { PrismaClient } from "@prisma/client";
@@ -36,33 +38,48 @@ const TRAINER_PERMISSIONS = [
   "evaluation.view",
   "workshops.view",
   "notifications.view",
+  "claims.view", "claims.create", "claims.edit",
 ];
 
 async function main() {
+  // ── TRAINER ──
   const trainer = await db.role.findUnique({ where: { code: "TRAINER" } });
   if (!trainer) {
-    console.log("   → TRAINER role not found — skipping (it will be created by seed-test-users with the new set)");
-    return;
+    console.log("   → TRAINER role not found — skipping");
+  } else {
+    const current = trainer.permissions as string[];
+    const sameLength = current.length === TRAINER_PERMISSIONS.length;
+    const sameSet = sameLength && [...TRAINER_PERMISSIONS].every((p) => current.includes(p));
+    if (sameSet) {
+      console.log("   → TRAINER role already has the delivery-only permission set — skipping");
+    } else {
+      await db.role.update({
+        where: { code: "TRAINER" },
+        data: { permissions: TRAINER_PERMISSIONS },
+      });
+      console.log(`   ✓ Replaced TRAINER role permissions (${current.length} → ${TRAINER_PERMISSIONS.length})`);
+    }
   }
 
-  const current = trainer.permissions as string[];
-  const sameLength = current.length === TRAINER_PERMISSIONS.length;
-  const sameSet = sameLength && [...TRAINER_PERMISSIONS].every((p) => current.includes(p));
-  if (sameSet) {
-    console.log("   → TRAINER role already has the delivery-only permission set — skipping");
-    return;
+  // ── COORDINATOR — ensure claims permissions are present ──
+  const COORDINATOR_CLAIMS_PERMS = ["claims.view", "claims.create", "claims.edit", "claims.delete"];
+  const coordinator = await db.role.findUnique({ where: { code: "COORDINATOR" } });
+  if (!coordinator) {
+    console.log("   → COORDINATOR role not found — skipping");
+  } else {
+    const current = coordinator.permissions as string[];
+    const missing = COORDINATOR_CLAIMS_PERMS.filter((p) => !current.includes(p));
+    if (missing.length === 0) {
+      console.log("   → COORDINATOR role already has claims permissions — skipping");
+    } else {
+      const updated = [...current, ...missing];
+      await db.role.update({
+        where: { code: "COORDINATOR" },
+        data: { permissions: updated },
+      });
+      console.log(`   ✓ Added claims permissions to COORDINATOR (+${missing.length}: ${missing.join(", ")})`);
+    }
   }
-
-  await db.role.update({
-    where: { code: "TRAINER" },
-    data: { permissions: TRAINER_PERMISSIONS },
-  });
-  console.log(`   ✓ Replaced TRAINER role permissions (${current.length} → ${TRAINER_PERMISSIONS.length})`);
-  console.log("     Removed: companies/company-contacts/trainers/trainer-qualifications/requests/");
-  console.log("     scheduling/certificates/reports/audit-log/user-approvals/");
-  console.log("     worker-passports/compliance-matrix/executive-dashboard/renewal-dashboard + all `.*` grants.");
-  console.log("     Added: courses.view, trainees.view, qr-code.create, pre-test.edit, final-test.edit,");
-  console.log("     course-materials.view, course-materials.create, course-materials.edit, course-materials.delete.");
 }
 
 main()

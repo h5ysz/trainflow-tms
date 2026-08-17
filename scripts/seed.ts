@@ -100,7 +100,7 @@ async function main() {
   const MODULES_LIST = [
     "dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
     "trainees", "courses", "requests", "sessions", "scheduling", "attendance", "qr-code",
-    "pre-test", "final-test", "evaluation", "certificates", "reports",
+    "pre-test", "final-test", "evaluation", "certificates", "claims", "reports",
     "notifications", "audit-log", "settings",
   ];
   const ACTIONS = ["view", "create", "edit", "delete"];
