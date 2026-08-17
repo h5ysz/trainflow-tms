@@ -143,14 +143,14 @@ export function FormDialog({
       {allowFullscreen && fullscreen && open && (
         <div className="fixed inset-0 z-50 flex flex-col bg-background">
           <div className="flex items-center gap-2 border-b px-5 py-3 shrink-0">
-            <DialogTitle className="flex items-center gap-2 text-base">
+            <h2 className="flex items-center gap-2 text-base font-semibold">
               {Icon && (
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
                   <Icon className="h-4 w-4" />
                 </div>
               )}
               {title}
-            </DialogTitle>
+            </h2>
             <Button
               type="button"
               variant="ghost"
