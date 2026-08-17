@@ -239,7 +239,7 @@ export function ClaimsRoute() {
           <RowActions
             canEdit={canEdit}
             canDelete={canDelete}
-            onView={() => navigate("claims", row.id)}
+            onView={() => navigate("claim-detail", row.id)}
             onEdit={() => void openEdit(row)}
             onDelete={() => setDeleteTarget(row)}
             extraItems={
