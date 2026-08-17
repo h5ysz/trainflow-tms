@@ -426,6 +426,7 @@ function ClaimFormDialog({
       onSubmit={onSubmit}
       isSubmitting={submitting}
       size="lg"
+      allowFullscreen
     >
       <div className="space-y-5">
         <FormGrid>
