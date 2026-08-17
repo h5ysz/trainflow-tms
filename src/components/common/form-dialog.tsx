@@ -73,32 +73,33 @@ export function FormDialog({
   );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={contentClassName}>
-        <DialogHeader className="p-5 border-b shrink-0">
-          <DialogTitle className="flex items-center gap-2 text-base">
-            {Icon && (
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <Icon className="h-4 w-4" />
-              </div>
-            )}
-            {title}
-            {allowFullscreen && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="ms-auto h-7 px-2"
-                onClick={() => setFullscreen((v) => !v)}
-                title={fullscreen ? t("requests.fullscreenExit") : t("requests.fullscreen")}
-                aria-label={fullscreen ? t("requests.fullscreenExit") : t("requests.fullscreen")}
-              >
-                {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-                <span className="hidden sm:inline ms-1">
-                  {fullscreen ? t("requests.fullscreenExit") : t("requests.fullscreen")}
-                </span>
-              </Button>
-            )}
+    <>
+      <Dialog open={open && !fullscreen} onOpenChange={onOpenChange}>
+        <DialogContent className={contentClassName}>
+          <DialogHeader className="p-5 border-b shrink-0">
+            <DialogTitle className="flex items-center gap-2 text-base">
+              {Icon && (
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Icon className="h-4 w-4" />
+                </div>
+              )}
+              {title}
+              {allowFullscreen && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="ms-auto h-7 px-2"
+                  onClick={() => setFullscreen((v) => !v)}
+                  title={t("requests.fullscreenExit")}
+                  aria-label={t("requests.fullscreenExit")}
+                >
+                  <Minimize2 className="h-4 w-4" />
+                  <span className="hidden sm:inline ms-1">
+                    {t("requests.fullscreenExit")}
+                  </span>
+                </Button>
+              )}
           </DialogTitle>
           {description && <DialogDescription className="text-xs">{description}</DialogDescription>}
         </DialogHeader>
@@ -138,6 +139,56 @@ export function FormDialog({
         )}
       </DialogContent>
     </Dialog>
+
+      {allowFullscreen && fullscreen && open && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-background">
+          <div className="flex items-center gap-2 border-b px-5 py-3 shrink-0">
+            <DialogTitle className="flex items-center gap-2 text-base">
+              {Icon && (
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Icon className="h-4 w-4" />
+                </div>
+              )}
+              {title}
+            </DialogTitle>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="ms-auto h-7 px-2"
+              onClick={() => setFullscreen(false)}
+            >
+              <Minimize2 className="h-4 w-4" />
+              <span className="hidden sm:inline ms-1">{t("requests.fullscreenExit")}</span>
+            </Button>
+          </div>
+          {description && <div className="px-5 text-xs text-muted-foreground shrink-0">{description}</div>}
+          <div className="flex-1 min-h-0 overflow-y-auto p-5">
+            {children}
+          </div>
+          {(onSubmit || footerExtra) && (
+            <div className="p-4 border-t bg-muted/30 flex items-center justify-between gap-2 shrink-0">
+              <div className="flex-shrink-0">{footerExtra}</div>
+              <div className="flex items-center gap-2 ms-auto">
+                <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+                  {t("action.cancel")}
+                </Button>
+                {onSubmit && (
+                  <Button onClick={onSubmit} disabled={isSubmitting}>
+                    {isSubmitting ? t("misc.saving") : (submitLabel ?? t("action.save"))}
+                  </Button>
+                )}
+                {onSubmitSecondary && (
+                  <Button variant="default" onClick={onSubmitSecondary} disabled={isSubmitting}>
+                    {isSubmitting ? t("misc.saving") : (submitSecondaryLabel ?? "Submit")}
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </>
   );
 }
 
