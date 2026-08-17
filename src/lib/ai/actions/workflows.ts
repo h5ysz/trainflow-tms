@@ -20,6 +20,7 @@ import { db } from "@/lib/db";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { recomputeSessionCounts, upsertEnrollment, truncateForAudit } from "@/lib/sessions/session-management";
 import { validateTrainerAssignment } from "@/lib/api/trainer-assignment";
+import { computeValidUntil } from "@/lib/certificates/utils";
 import { randomBytes } from "crypto";
 import type { ActionHandler, ExecuteResult } from "./types";
 import { ActionError } from "./types";
@@ -480,8 +481,7 @@ const bulkGenerateCerts: ActionHandler<BulkGenCertsInput> = {
           });
           if (!finalAttempt) continue;
           const refNumber = await nextRefNumber("CERTIFICATE", tx);
-          const validUntil = new Date();
-          validUntil.setMonth(validUntil.getMonth() + session.course.validityMonths);
+          const validUntil = computeValidUntil(session.course.validityMonths);
           await tx.certificate.create({
             data: {
               refNumber,

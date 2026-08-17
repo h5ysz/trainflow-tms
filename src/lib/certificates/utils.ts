@@ -2,6 +2,28 @@
 // Sprint 6: enterprise certificate management helpers.
 import type { Certificate } from "@prisma/client";
 
+/** Far-future date used as a sentinel for "Never Expires" certificates. */
+export const NEVER_EXPIRES_DATE = new Date("9999-12-31T23:59:59.999Z");
+
+/**
+ * Compute the `validUntil` date for a certificate from `validityMonths`.
+ * - `validityMonths = 0` → Never Expires (far-future sentinel).
+ * - `validityMonths > 0` → `now + validityMonths` months.
+ */
+export function computeValidUntil(validityMonths: number, now: Date = new Date()): Date {
+  if (validityMonths <= 0) return new Date(NEVER_EXPIRES_DATE);
+  const d = new Date(now);
+  d.setMonth(d.getMonth() + validityMonths);
+  return d;
+}
+
+/**
+ * Check whether a certificate's `validUntil` represents "Never Expires".
+ */
+export function isNeverExpires(validUntil: Date): boolean {
+  return validUntil.getFullYear() >= 9999;
+}
+
 /**
  * Mask a National ID / Iqama for display on certificates.
  * Shows first 2 + last 2 digits, masks the middle with •.

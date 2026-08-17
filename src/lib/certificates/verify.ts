@@ -4,6 +4,7 @@
 // server-side and the API route answers integrations; if the page called the API, every
 // visit would bump `verificationCount` twice — once for the page, once for the fetch.
 import { db } from "@/lib/db";
+import { isNeverExpires } from "@/lib/certificates/utils";
 
 export type CertificateValidity = "VALID" | "EXPIRED" | "REVOKED" | "NOT_FOUND";
 
@@ -31,7 +32,7 @@ export type LookedUpCertificate = NonNullable<Awaited<ReturnType<typeof lookupCe
 export function computeValidity(cert: LookedUpCertificate | null, now: Date = new Date()): CertificateValidity {
   if (!cert) return "NOT_FOUND";
   if (cert.status === "REVOKED") return "REVOKED";
-  if (cert.validUntil <= now) return "EXPIRED";
+  if (!isNeverExpires(cert.validUntil) && cert.validUntil <= now) return "EXPIRED";
   if (cert.status !== "VALID") return "EXPIRED";
   return "VALID";
 }

@@ -20,6 +20,7 @@ import { db } from "@/lib/db";
 import { withErrorEnvelope, requireRole, ok, fail, notFound, audit } from "@/lib/auth/api";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { randomBytes } from "crypto";
+import { computeValidUntil } from "@/lib/certificates/utils";
 
 export const POST = withErrorEnvelope(async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await requireRole("SUPER_ADMIN", "COORDINATOR");
@@ -64,8 +65,7 @@ export const POST = withErrorEnvelope(async function POST(req: Request, ctx: { p
   // Create new renewal certificate
   const newRefNumber = await nextRefNumber("CERTIFICATE");
   const newVerificationToken = randomBytes(16).toString("hex");
-  const newValidUntil = new Date();
-  newValidUntil.setMonth(newValidUntil.getMonth() + newSession.course.validityMonths);
+  const newValidUntil = computeValidUntil(newSession.course.validityMonths);
 
   const finalScore = newFinalScore ?? oldCert.finalScore;
 

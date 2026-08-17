@@ -39,7 +39,7 @@ interface Course {
 const STATUSES = ["ACTIVE", "INACTIVE", "DRAFT"];
 
 const NEW_COURSE = {
-  durationHours: 8,
+  durationHours: 6,
   validityMonths: 12,
   passScore: 70,
   maxTrainees: 20,
@@ -97,12 +97,16 @@ export function CoursesRoute() {
     },
     {
       key: "validity",
-      header: t("courses.validityMonths"),
-      cell: (r) => (
-        <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-          <Award className="h-3 w-3" />{r.validityMonths}m
-        </div>
-      ),
+      header: t("courses.certificateValidity"),
+      cell: (r) => {
+        const vm = r.validityMonths;
+        const label = vm === 0 ? t("courses.neverExpires") : vm < 12 ? `${vm}m` : `${vm / 12}y`;
+        return (
+          <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+            <Award className="h-3 w-3" />{label}
+          </div>
+        );
+      },
     },
     {
       key: "passScore",
@@ -207,9 +211,36 @@ export function CoursesRoute() {
               <Field label={t("courses.durationHours")} required>
                 <Input type="number" min={1} value={(formData.durationHours as number) ?? 0} onChange={(e) => setField("durationHours", parseInt(e.target.value, 10) || 0)} />
               </Field>
-              <Field label={t("courses.validityMonths")} required>
-                <Input type="number" min={1} value={(formData.validityMonths as number) ?? 0} onChange={(e) => setField("validityMonths", parseInt(e.target.value, 10) || 0)} />
+              <Field label={t("courses.certificateValidity")} required>
+                <Select
+                  value={String(formData.validityMonths ?? 12)}
+                  onValueChange={(v) => {
+                    if (v === "custom") {
+                      setField("validityMonths", 24);
+                      setField("_validityCustom", true);
+                    } else {
+                      setField("validityMonths", parseInt(v, 10));
+                      setField("_validityCustom", false);
+                    }
+                  }}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">{t("courses.neverExpires")}</SelectItem>
+                    <SelectItem value="12">1 {t("courses.years")}</SelectItem>
+                    <SelectItem value="24">2 {t("courses.years")}</SelectItem>
+                    <SelectItem value="36">3 {t("courses.years")}</SelectItem>
+                    <SelectItem value="48">4 {t("courses.years")}</SelectItem>
+                    <SelectItem value="60">5 {t("courses.years")}</SelectItem>
+                    <SelectItem value="custom">{t("courses.customValidity")}</SelectItem>
+                  </SelectContent>
+                </Select>
               </Field>
+              {formData._validityCustom ? (
+                <Field label={t("courses.validityMonths") + " (custom)"}>
+                  <Input type="number" min={1} value={(formData.validityMonths as number) ?? 12} onChange={(e) => setField("validityMonths", parseInt(e.target.value, 10) || 12)} />
+                </Field>
+              ) : null}
               <Field label={t("courses.passScore")} required>
                 <Input type="number" min={0} max={100} value={(formData.passScore as number) ?? 0} onChange={(e) => setField("passScore", parseInt(e.target.value, 10) || 0)} />
               </Field>

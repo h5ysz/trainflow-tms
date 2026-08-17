@@ -19,6 +19,8 @@ import { SessionDetailRoute } from "./session-detail";
 import { SchedulingRoute } from "./scheduling";
 import { AttendanceRoute } from "./attendance";
 import { QrCodeRoute } from "./qr-code";
+import { ClaimsRoute } from "./claims";
+import { ClaimDetailRoute } from "./claim-detail";
 import { PreTestRoute } from "./pre-test";
 import { FinalTestRoute } from "./final-test";
 import { ExamSetsRoute } from "./exam-sets";
@@ -70,6 +72,8 @@ const ROUTES: Partial<Record<RouteKey, React.ComponentType>> = {
   scheduling: SchedulingRoute,
   attendance: AttendanceRoute,
   "qr-code": QrCodeRoute,
+  claims: ClaimsRoute,
+  "claim-detail": ClaimDetailRoute,
   "pre-test": PreTestRoute,
   "final-test": FinalTestRoute,
   "exam-sets": ExamSetsRoute,

@@ -10,6 +10,7 @@
 //   COMPANY          → COM-000001       (continuous)
 //   COURSE           → CRS-000001       (continuous)
 //   SESSION          → SES-000001       (continuous)
+//   CLAIM            → CL-YYYY-000001   (yearly reset)
 
 import { db } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
@@ -32,7 +33,8 @@ export type RefEntityType =
   | "QUOTATION"
   | "PAYMENT"
   | "RECEIPT"
-  | "RETEST";
+  | "RETEST"
+  | "CLAIM";
 
 const PREFIX: Record<RefEntityType, string> = {
   TRAINING_REQUEST: "TR",
@@ -50,6 +52,7 @@ const PREFIX: Record<RefEntityType, string> = {
   PAYMENT: "PAY",
   RECEIPT: "RCP",
   RETEST: "RT",
+  CLAIM: "CL",
 };
 
 const YEARLY: Set<RefEntityType> = new Set([
@@ -61,6 +64,7 @@ const YEARLY: Set<RefEntityType> = new Set([
   "CERTIFICATE",
   "EXAM",
   "WORKER_PASSPORT",
+  "CLAIM",
 ]);
 
 function pad(n: number, width = 6): string {

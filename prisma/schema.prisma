@@ -201,6 +201,7 @@ model User {
   notifications      Notification[]
   loginHistory       LoginHistory[]
   assignedRequests   TrainingRequest[] @relation("AssignedCoordinator")
+  assignedClaims     TrainerClaim[]    @relation("ClaimCoordinator")
 
   @@index([role])
   @@index([companyId])
@@ -243,7 +244,7 @@ model Setting {
 
 model RefNumberCounter {
   id         String   @id @default(uuid())
-  entityType String // "TRAINING_REQUEST" | "CERTIFICATE" | "EXAM" | "TRAINER" | "COMPANY" | "COURSE" | "SESSION"
+  entityType String // "TRAINING_REQUEST" | "CERTIFICATE" | "EXAM" | "TRAINER" | "COMPANY" | "COURSE" | "SESSION" | "CLAIM"
   year       Int? // 0 for non-yearly sequences (TRN, COM, CRS) — never NULL: @@unique cannot match NULL
   sequence   Int      @default(0)
   createdAt  DateTime @default(now())
@@ -404,6 +405,11 @@ model Trainer {
   photoUrl              String?
   status                String    @default("ACTIVE")
   hireDate              DateTime?
+  // Employee (staff) vs Contractor/Collaborator (consultant). Decides which claim
+  // rules apply: employees receive the fixed daily overtime allowance (4h Sun–Thu,
+  // 12h Fri/Sat); contractors get their actual session hours (never labeled OT)
+  // and the contractor daily allowance for business missions.
+  engagementType        String    @default("EMPLOYEE") // EMPLOYEE | CONTRACTOR
   tenantId              String?
   // Derived from the Excel authorization baseline (14 July 2026). Display-only;
   // the authoritative grants live in TrainerCertification + WorkshopTrainerAuthorization.
@@ -422,6 +428,7 @@ model Trainer {
   user                  User?
   sessions              TrainingSession[]
   evaluations           CourseEvaluation[]
+  claims                TrainerClaim[]
 
   @@index([status])
   @@index([tenantId])
@@ -490,7 +497,7 @@ model Course {
   titleAr        String?
   description    String?
   category       String?
-  durationHours  Int       @default(8)
+  durationHours  Int       @default(6)
   language       String    @default("en")
   validityMonths Int       @default(12)
   passScore      Int       @default(70)
@@ -956,6 +963,7 @@ model TrainingSession {
   invoices         Invoice[]
   notificationLogs NotificationLog[]
   examSets        SessionExamSet[]
+  claimItems      TrainerClaimItem[]
 
   @@index([status])
   @@index([trainerId])
@@ -1786,6 +1794,158 @@ model FinancialSettings {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   updatedBy       String?
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TRAINER CLAIMS — Overtime + Business Mission / Daily Allowance
+// ─────────────────────────────────────────────────────────────────────────────
+// Claims are computed from Training Sessions (the single source of truth): no
+// manual re-entry of session data, no duplicate session records. A claim is one
+// trainer × one claim type × one month period, generated from the sessions that
+// fall inside the period, then reviewed/adjusted by the trainer and approved by
+// the coordinator. Approved claims are snapshotted: item values, rates, totals
+// and settings are stored on the claim rows, so a later settings change or a
+// session edit never silently rewrites an approved claim.
+
+// Claim configuration with effective-date history. The current value is the row
+// with the latest effectiveFrom <= now. Every change inserts a NEW row — old rows
+// are never updated — so a claim always records which rate was in force when it
+// was generated/approved.
+model ClaimSetting {
+  id            String   @id @default(uuid())
+  key           String // MAIN_LOCATION | EMPLOYEE_DAILY_ALLOWANCE | CONTRACTOR_DAILY_ALLOWANCE
+  value         String
+  effectiveFrom DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedBy     String?
+  description   String?
+
+  @@index([key, effectiveFrom])
+}
+
+model TrainerClaim {
+  id             String   @id @default(uuid())
+  refNumber      String   @unique // CL-YYYY-000001 (yearly)
+  claimType      String // OVERTIME | BUSINESS_MISSION
+  trainerId      String
+  trainer        Trainer  @relation(fields: [trainerId], references: [id])
+  engagementType String // EMPLOYEE | CONTRACTOR — snapshot at generation, never re-read later
+  periodFrom     DateTime
+  periodTo       DateTime
+  status         String   @default("DRAFT") // DRAFT | GENERATED | SUBMITTED | PENDING_COORDINATOR_APPROVAL | RETURNED | REJECTED | APPROVED | FINAL
+  // Coordinator routing — the trainer nominates the coordinator who assigned them.
+  coordinatorId  String?  // User.id of the nominated/referring coordinator
+  coordinator    User?    @relation("ClaimCoordinator", fields: [coordinatorId], references: [id], onDelete: SetNull)
+  // Configuration snapshot at generation (business mission rates / main location).
+  dailyAllowance Float? // SAR/day used for BUSINESS_MISSION rows (employee or contractor rate)
+  mainLocation   String? // main work location used for BUSINESS_MISSION qualification
+  // Workflow actors + timestamps
+  generatedAt    DateTime?
+  generatedBy    String?
+  submittedAt    DateTime?
+  submittedBy    String?
+  approvedAt     DateTime?
+  approvedBy     String?
+  returnedAt     DateTime?
+  returnedBy     String?
+  returnReason   String?
+  finalizedAt    DateTime?
+  finalizedBy    String?
+  notes          String?
+  // HRD-FO-052 Employee Overtime fields
+  employeeId              String? // Employee ID (HR code)
+  employeeJobTitle        String? // Job Title snapshot
+  employeeDepartment      String? // Department / Company snapshot
+  employeeProject         String? // Project / Work Location snapshot
+  employeeLineManager     String? // Line Manager name snapshot
+  normalWorkingHoursPerDay Float?  // e.g. 8
+  estimatedOtPerDay       Float?  // e.g. 4
+  requestedBy             String? // EMPLOYEE_REQUEST | OPERATIONAL_REQUIREMENT | OTHER
+  reason                  String? // Reason for extended overtime
+  // Employee Acknowledgment
+  acknowledgmentAccepted  Boolean @default(false)
+  acknowledgmentText      String? // The full legal acknowledgment text snapshot
+  // Line Manager Review & Approval (HRD-FO-052 Section 4)
+  lineManagerDecision     String? // APPROVED | APPROVED_WITH_CONDITIONS | NOT_APPROVED
+  lineManagerChecklist    String? // JSON: { workloadReviewed, restPeriods, budgetConfirmed, ... }
+  lineManagerComments     String?
+  lineManagerSignatureBy  String?
+  lineManagerSignatureAt  DateTime?
+  // QHSE Review (HRD-FO-052 Section 5)
+  qhseAssessment          String? // ACCEPTABLE | ACCEPTABLE_WITH_CONTROLS | FURTHER_ASSESSMENT | NOT_RECOMMENDED
+  qhseControls            String?
+  qhseSignatureBy         String?
+  qhseSignatureAt         DateTime?
+  // HR Review (HRD-FO-052 Section 6)
+  hrDecision              String? // APPROVED | APPROVED_WITH_CONDITIONS | NOT_APPROVED
+  hrMaxApprovedOt         Float?
+  hrApprovedPeriodFrom    DateTime?
+  hrApprovedPeriodTo      DateTime?
+  hrSignatureBy           String?
+  hrSignatureAt           DateTime?
+  hrComments              String?
+  // Contractor / Consultant Invoice fields
+  contractorInvoiceNumber String? // Invoice #
+  contractorClient        String? // Client name
+  contractorRatePerDay    Float?  // SAR/day
+  // JSON array of lifecycle events: { at, by, action, detail? }. Kept for the
+  // claim detail view; the global AuditLog stays the authoritative audit source.
+  history        String?
+  // Summaries (recomputed on generate, frozen on approve/finalize)
+  totalHours     Float    @default(0) // OT hours (employee) / regular hours (contractor)
+  totalDays      Int      @default(0) // business mission qualifying days
+  totalAmount    Float    @default(0) // business mission SAR total
+  currency       String   @default("SAR")
+  // Audit
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  createdBy      String?
+  updatedBy      String?
+  deletedAt      DateTime?
+
+  items TrainerClaimItem[]
+
+  @@unique([trainerId, claimType, periodFrom, deletedAt])
+  @@index([trainerId])
+  @@index([coordinatorId])
+  @@index([claimType])
+  @@index([status])
+  @@index([periodFrom])
+}
+
+model TrainerClaimItem {
+  id               String        @id @default(uuid())
+  claimId          String
+  claim            TrainerClaim  @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  sessionId        String
+  session          TrainingSession @relation(fields: [sessionId], references: [id])
+  date             DateTime // the training day this row covers (session.startDate or a day inside a multi-day session)
+  // Snapshots — an approved claim stays readable even if the course/trainer changes later.
+  courseCode       String?
+  courseTitle      String?
+  location         String? // session city/location snapshot (the claim location shown on the sheet)
+  locationFlagged  Boolean       @default(false) // location missing/ambiguous → needs review
+  flagReason       String?
+  shift            String? // MORNING | EVENING (or "M/E" rendered by the export)
+  actualHours      Float         @default(0) // the session's duration for that day
+  // Calculated from the engine (OT daily cap / BM 1 day). Never overwritten after
+  // generation — manual edits live in adjustedValue and preserve this original.
+  originalValue    Float
+  adjustedValue    Float? // manual override by the trainer; final uses this when set
+  adjustmentReason String?
+  adjustedBy       String?
+  adjustedAt       DateTime?
+  finalValue       Float // adjustedValue ?? originalValue — locked once approved
+  unit             String // "HOURS" | "DAYS"
+  rate             Float? // business mission daily allowance snapshot (SAR/day); null for OT
+  amount           Float? // business mission: finalValue × rate; null for OT
+  included         Boolean       @default(true)
+  createdBy        String?
+  updatedAt        DateTime      @updatedAt
+
+  @@index([claimId])
+  @@index([sessionId])
+  @@index([date])
 }
 
 model BankAccount {

@@ -6,6 +6,7 @@ import { nextRefNumber } from "@/lib/api/ref-number";
 import { randomBytes } from "crypto";
 import { linkCertificateToPassport } from "@/lib/worker/passport-service";
 import { notifyResultsFinalized } from "@/lib/notifications/session-events";
+import { computeValidUntil } from "@/lib/certificates/utils";
 
 function genVerificationToken(): string {
   return randomBytes(12).toString("hex");
@@ -91,8 +92,7 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
 
     const refNumber = await nextRefNumber("CERTIFICATE");
     const verificationToken = genVerificationToken();
-    const validUntil = new Date();
-    validUntil.setMonth(validUntil.getMonth() + session.course.validityMonths);
+    const validUntil = computeValidUntil(session.course.validityMonths);
 
     const cert = await db.certificate.create({
       data: {

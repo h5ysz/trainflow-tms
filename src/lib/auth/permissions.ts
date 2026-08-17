@@ -52,7 +52,10 @@ export type RouteKey =
   | "receipts"
   | "bank-accounts"
   | "financial-settings"
-  | "financial-reports";
+  | "financial-reports"
+  // Trainer claims (overtime + business mission / daily allowance)
+  | "claims"
+  | "claim-detail";
 
 export type Action = "view" | "create" | "edit" | "delete";
 
@@ -76,6 +79,7 @@ export const ALL_MODULES: RouteKey[] = [
   "notifications", "audit-log", "settings", "user-approvals", "user-management", "roles",
   "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard", "session-detail", "trainee-detail", "course-detail", "course-materials", "ai-dashboard",
   "exam-sets",
+  "claims", "claim-detail",
 ];
 
 // Module visibility per role
@@ -127,6 +131,8 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "executive-dashboard",
     "renewal-dashboard",
     "ai-dashboard",
+    "claims",
+    "claim-detail",
   ],
   COMPANY_ADMIN: [
     "dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
@@ -177,6 +183,9 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
   // Financial module
   "finance", "invoices", "quotations", "payments", "receipts", "bank-accounts",
   "financial-settings", "financial-reports",
+  // Trainer claims (generate, review, approve, export)
+  "claims",
+  "claim-detail",
   ],
   // Trainer: strictly delivery-scoped. Only the modules a trainer needs to run
   // the sessions they are assigned to. `workshops` stays granted so an
@@ -198,6 +207,9 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "evaluation",
     "workshops",
     "notifications",
+    // Trainer claims: view + adjust/submit their OWN claims only (server-scoped).
+    "claims",
+    "claim-detail",
   ],
   VIEWER: [
     "dashboard",
@@ -233,6 +245,9 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     // Financial module (read-only)
     "finance", "invoices", "quotations", "payments", "receipts", "bank-accounts",
     "financial-settings", "financial-reports",
+    // Trainer claims (read-only)
+    "claims",
+    "claim-detail",
   ],
   CONTRACTOR: [
     "dashboard",
@@ -273,6 +288,9 @@ const OPERATIONAL_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
   // via the dedicated `exam-attempts` grant (see COORDINATOR below).
   evaluation: ["view", "create", "edit", "delete"],
   certificates: ["view", "create", "edit", "delete"],
+  // Trainer claims: full operational control for the coordinator (generate,
+  // review, approve/return, finalize, export, configure claim settings).
+  claims: ["view", "create", "edit", "delete"],
   reports: ["view"],
   notifications: ["view"],
   "audit-log": ["view"],
@@ -291,12 +309,6 @@ const OPERATIONAL_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
 const TRAINER_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
   dashboard: ["view"],
   courses: ["view"],
-  // Course materials: trainers manage the uploaded files (PDF/PowerPoint/Word)
-  // for the courses they run — upload, replace, delete. This is a dedicated
-  // module so trainers get it WITHOUT `courses.edit` (which would let them edit
-  // the course records themselves). Server-side, every material write is scoped
-  // to the trainer's own sessions (ensureTrainerCanAccessCourse in
-  // src/lib/api/course-materials.ts).
   "course-materials": ["view", "create", "edit", "delete"],
   trainees: ["view"],
   sessions: ["view", "edit"],
@@ -307,6 +319,7 @@ const TRAINER_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
   evaluation: ["view"],
   workshops: ["view"],
   notifications: ["view"],
+  claims: ["view", "create", "edit"],
 };
 
 export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action[]>>> = {
@@ -367,6 +380,8 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
     // Financial module (read-only)
     invoices: ["view"], quotations: ["view"], payments: ["view"], receipts: ["view"],
     "bank-accounts": ["view"], "financial-reports": ["view"], "financial-settings": ["view"],
+    // Trainer claims (read-only)
+    claims: ["view"],
   },
   CONTRACTOR: {
     trainees: ["view", "create", "edit"],
@@ -394,6 +409,7 @@ const MODULE_ALIASES: Partial<Record<RouteKey, RouteKey[]>> = {
   "session-detail": ["sessions"],
   "trainee-detail": ["trainees"],
   "course-detail": ["courses"],
+  "claim-detail": ["claims"],
   // The "Exam Results" page lists/opens pre-test + final-test attempts. Trainers
   // and auditors reach it through the pre-test/final-test modules; a results-only
   // role (e.g. coordinator) holds a direct `exam-attempts.view` grant instead.
@@ -450,6 +466,7 @@ export const navItems: NavItem[] = [
   { key: "scheduling", labelKey: "nav.scheduling", icon: "CalendarRange", group: "training" },
   { key: "attendance", labelKey: "nav.attendance", icon: "UserCheck", group: "training" },
   { key: "qr-code", labelKey: "nav.qrCode", icon: "QrCode", group: "training" },
+  { key: "claims", labelKey: "nav.claims", icon: "FileText", group: "training" },
 
   // Assessment
   { key: "pre-test", labelKey: "nav.preTest", icon: "FilePen", group: "assessment" },

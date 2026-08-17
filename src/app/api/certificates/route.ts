@@ -11,6 +11,7 @@ import { list } from "@/lib/api/response";
 import { checkCertificateEligibility } from "@/lib/api/certificate-eligibility";
 import { syncCertificateStatus } from "@/lib/api/enrollment-sync";
 import { randomBytes } from "crypto";
+import { computeValidUntil } from "@/lib/certificates/utils";
 
 const ALLOWED_SORT_FIELDS = ["refNumber", "traineeName", "issuedAt", "validUntil", "status", "finalScore"];
 
@@ -176,8 +177,7 @@ export const POST = withModuleAction("certificates", "create", async ({ req, use
   const refNumber = await nextRefNumber("CERTIFICATE");
   const verificationToken = genVerificationToken();
 
-  const validUntil = new Date();
-  validUntil.setMonth(validUntil.getMonth() + session.course.validityMonths);
+  const validUntil = computeValidUntil(session.course.validityMonths);
 
   const cert = await db.certificate.create({
     data: {

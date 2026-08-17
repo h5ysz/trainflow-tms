@@ -65,7 +65,9 @@ export type AuditEntity =
   | "WORKER_PASSPORT"
   | "COMPLIANCE_RULE"
   | "QR_CODE"
-  | "RETEST";
+  | "RETEST"
+  | "CLAIM"
+  | "CLAIM_SETTING";
 
 export interface AuditEntry {
   userId?: string | null;

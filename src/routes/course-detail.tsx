@@ -75,6 +75,14 @@ function fmtDate(value?: string | null): string {
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
 }
 
+function fmtValidity(validityMonths?: number | null, t?: (key: any) => string): string {
+  if (validityMonths == null) return "—";
+  if (validityMonths === 0) return t ? t("courses.neverExpires") : "Never Expires";
+  if (validityMonths < 12) return `${validityMonths}m`;
+  const years = validityMonths / 12;
+  return Number.isInteger(years) ? `${years}y` : `${years.toFixed(1)}y`;
+}
+
 function MaterialIcon({ type }: { type: string }) {
   if (type === "PDF") return <FileText className="h-4 w-4 text-destructive" />;
   if (type === "POWERPOINT") return <Presentation className="h-4 w-4 text-warning" />;
@@ -225,8 +233,8 @@ export function CourseDetailRoute() {
           />
           <InfoItem label={t("courses.language")} value={course?.language ?? "—"} />
           <InfoItem
-            label={t("courses.validityMonths")}
-            value={course?.validityMonths != null ? `${course.validityMonths}m` : "—"}
+            label={t("courses.certificateValidity")}
+            value={fmtValidity(course?.validityMonths, t)}
           />
           <InfoItem
             label={t("courses.passScore")}

@@ -62,6 +62,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "invoices.*", "quotations.*", "payments.*", "receipts.*",
     "bank-accounts.*", "financial-reports.view",
     "ai-dashboard.view",
+    // Trainer claims: coordinator generates, reviews, approves/returns, finalizes, exports
+    "claims.*",
   ],
   // TRAINER: delivery scoped. No administrative modules, NO certificates
   // (issuance stays with COORDINATOR). The server scopes every
@@ -74,10 +76,6 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   TRAINER: [
     "dashboard.view",
     "courses.view",
-    // Course materials: trainer manages the uploaded files (PDF/PowerPoint/Word)
-    // of the courses they run — upload, replace, delete, view. Granted as a
-    // dedicated module so the trainer does NOT get `courses.edit` (full course
-    // record editing stays with the coordinator).
     "course-materials.view", "course-materials.create", "course-materials.edit", "course-materials.delete",
     "trainees.view",
     "sessions.view", "sessions.edit",
@@ -88,6 +86,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "evaluation.view",
     "workshops.view",
     "notifications.view",
+    "claims.*",
   ],
   AUDITOR: [
     "companies.view", "company-contacts.view", "trainers.view", "trainer-qualifications.view",
@@ -100,6 +99,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "executive-dashboard.view", "renewal-dashboard.view",
     "invoices.view", "quotations.view", "payments.view", "receipts.view",
     "bank-accounts.view", "financial-reports.view", "financial-settings.view",
+    // Trainer claims (read-only)
+    "claims.view",
   ],
   CONTRACTOR: [
     "trainees.view", "trainees.create", "trainees.edit",

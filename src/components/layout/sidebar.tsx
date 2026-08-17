@@ -27,7 +27,7 @@ import { motion } from "framer-motion";
 import {
   LayoutDashboard, Building2, Contact, Users, Award, UserSquare, BookOpen, Wrench,
   ClipboardList, CalendarDays, CalendarRange, CalendarClock, UserCheck, QrCode,
-  FilePen, FileCheck2, Star, BadgeCheck, BarChart3, ScrollText,
+  FilePen, FileCheck2, FileText, Star, BadgeCheck, BarChart3, ScrollText,
   Bell, Settings, UserPlus, ShieldCheck, BookUser, ClipboardCheck, TrendingUp, RefreshCw,
   LogOut, Sparkles, ChevronsLeft, ChevronsRight, ListChecks,
   type LucideIcon,
@@ -36,7 +36,7 @@ import {
 const ICONS: Record<string, LucideIcon> = {
   LayoutDashboard, Building2, Contact, Users, Award, UserSquare, BookOpen, Wrench,
   ClipboardList, CalendarDays, CalendarRange, CalendarClock, UserCheck, QrCode,
-  FilePen, FileCheck2, Star, BadgeCheck, BarChart3, ScrollText,
+  FilePen, FileCheck2, FileText, Star, BadgeCheck, BarChart3, ScrollText,
   Bell, Settings, UserPlus, ShieldCheck, BookUser, ClipboardCheck, TrendingUp, RefreshCw,
   Sparkles, ListChecks,
 };

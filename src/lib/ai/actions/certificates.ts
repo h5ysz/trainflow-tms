@@ -12,6 +12,7 @@ import { randomBytes } from "crypto";
 import type { ActionHandler } from "./types";
 import { ActionError } from "./types";
 import { copilotAudit } from "./audit";
+import { computeValidUntil } from "@/lib/certificates/utils";
 
 function genVerificationToken(): string {
   return randomBytes(12).toString("hex");
@@ -105,8 +106,7 @@ const generateCertificates: ActionHandler<CertGenerateInput> = {
         const finalScore = finalAttempt?.scorePercent ?? 0;
         const refNumber = await nextRefNumber("CERTIFICATE", tx);
         const verificationToken = genVerificationToken();
-        const validUntil = new Date();
-        validUntil.setMonth(validUntil.getMonth() + validityMonths);
+        const validUntil = computeValidUntil(validityMonths);
         const cert = await tx.certificate.create({
           data: {
             refNumber,
