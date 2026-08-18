@@ -31,6 +31,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RowActions } from "@/components/common/row-actions";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { cn } from "@/lib/utils";
+import { BarcodeImage } from "@/components/common/barcode-image";
 import {
   BookUser, Search, AlertCircle, Loader2, ArrowLeft, ArrowRight,
   Building2, Fingerprint, FileText, IdCard,
@@ -655,6 +656,9 @@ export function TraineesRoute() {
                     onDelete={() => setDeleteTarget(tr)}
                   />
                 </div>
+              </div>
+              <div className="mt-2 pt-2 border-t flex justify-center" onClick={(e) => e.stopPropagation()}>
+                <BarcodeImage value={tr.nationalId} height={32} fontSize={8} className="text-muted-foreground w-full max-w-[180px]" />
               </div>
             </Card>
           ))}
