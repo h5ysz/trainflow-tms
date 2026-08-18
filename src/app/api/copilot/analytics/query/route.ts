@@ -1,12 +1,12 @@
 // /api/copilot/analytics/query — natural language analytics query
 // =====================================================================
 // POST { question: string } → NlQueryResult (table/chart/kpi/text)
-import { withModuleAction, ok, fail } from "@/lib/auth/api";
+import { withAuth, ok, fail } from "@/lib/auth/api";
 import { answerNlQuery } from "@/lib/ai/analytics/nl-query";
 import type { AnalyticsScope } from "@/lib/ai/analytics/types";
 import { audit } from "@/lib/auth/api";
 
-export const POST = withModuleAction("copilot", "view", async ({ req, user }) => {
+export const POST = withAuth(async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
   const { question } = body as { question?: string };
   if (!question || typeof question !== "string") {

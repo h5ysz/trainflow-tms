@@ -1,9 +1,9 @@
 // /api/copilot/analytics/risks — risk detection
-import { withModuleAction, ok } from "@/lib/auth/api";
+import { withAuth, ok } from "@/lib/auth/api";
 import { computeRisks } from "@/lib/ai/analytics/risks";
 import type { AnalyticsScope } from "@/lib/ai/analytics/types";
 
-export const GET = withModuleAction("copilot", "view", async ({ user }) => {
+export const GET = withAuth(async ({ user }) => {
   const scope: AnalyticsScope = {
     role: user.role,
     userId: user.id,

@@ -6,13 +6,13 @@
 //
 // This endpoint does NOT require a preview/confirm flow because SUGGEST_*
 // actions are read-only — they produce analysis, not mutations.
-import { withModuleAction, ok, fail } from "@/lib/auth/api";
+import { withAuth, ok, fail } from "@/lib/auth/api";
 import { canPerformAction } from "@/lib/auth/permissions";
 import { getActionHandler, resolveActionPermission } from "@/lib/ai/actions/registry";
 import { ActionError } from "@/lib/ai/actions/types";
 
 // GET — list all SUGGEST_* actions available to the user
-export const GET = withModuleAction("copilot", "view", async ({ user }) => {
+export const GET = withAuth(async ({ user }) => {
   const catalog = [
     "SUGGEST_BEST_TRAINER",
     "SUGGEST_BEST_TIME",
@@ -39,7 +39,7 @@ export const GET = withModuleAction("copilot", "view", async ({ user }) => {
 });
 
 // POST — run a specific SUGGEST_* action and return its result
-export const POST = withModuleAction("copilot", "view", async ({ req, user }) => {
+export const POST = withAuth(async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
   const { suggestionType, params } = body as { suggestionType?: string; params?: Record<string, unknown> };
 

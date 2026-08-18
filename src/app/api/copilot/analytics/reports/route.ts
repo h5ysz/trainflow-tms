@@ -5,7 +5,7 @@
 // Supported formats: pdf, xlsx, docx
 // Supported types: monthly, quarterly, yearly, trainer, contractor,
 //   financial, operational, attendance, exam, certificate
-import { withModuleAction, fail, audit } from "@/lib/auth/api";
+import { withAuth, fail, audit } from "@/lib/auth/api";
 import { generateReport } from "@/lib/ai/analytics/reports";
 import type { AnalyticsScope, ReportFormat, ReportType } from "@/lib/ai/analytics/types";
 
@@ -15,7 +15,7 @@ const VALID_TYPES: ReportType[] = [
   "financial", "operational", "attendance", "exam", "certificate",
 ];
 
-export const POST = withModuleAction("copilot", "view", async ({ req, user }) => {
+export const POST = withAuth(async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
   const { type, format, range, entityId } = body as {
     type?: ReportType;
