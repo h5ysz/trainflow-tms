@@ -63,6 +63,20 @@ export const GET = withModuleAction("trainees", "view", async ({ req, user }) =>
     db.trainee.count({ where }),
   ]);
 
+  // Batch-lookup worker passport qrTokens for all trainees in this page.
+  // Each passport is scoped to (nationalId, companyId) — look up by both.
+  const passportLookups = rows.map((t) => ({ nationalId: t.nationalId, companyId: t.companyId }));
+  const passports = passportLookups.length
+    ? await db.workerPassport.findMany({
+        where: {
+          OR: passportLookups.map((lk) => ({ nationalId: lk.nationalId, companyId: lk.companyId })),
+          deletedAt: null,
+        },
+        select: { nationalId: true, companyId: true, qrToken: true },
+      })
+    : [];
+  const qrTokenByKey = new Map(passports.map((p) => [`${p.nationalId}:${p.companyId}`, p.qrToken]));
+
   return list(
     rows.map((t) => ({
       id: t.id,
@@ -82,6 +96,7 @@ export const GET = withModuleAction("trainees", "view", async ({ req, user }) =>
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
       requestsCount: t._count.requestCourses,
+      qrToken: qrTokenByKey.get(`${t.nationalId}:${t.companyId}`) ?? null,
     })),
     buildListMeta(total, q)
   );

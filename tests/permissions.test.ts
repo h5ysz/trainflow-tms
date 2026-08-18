@@ -194,3 +194,40 @@ describe("nav/module registry consistency", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 });
+
+describe("CONTRACTOR trainee delete permission", () => {
+  const contractorPermissions = [
+    "dashboard.view",
+    "trainees.view",
+    "trainees.create",
+    "trainees.edit",
+    "trainees.delete",
+    "requests.view",
+    "requests.create",
+    "certificates.view",
+    "notifications.view",
+    "copilot.view",
+  ];
+
+  it("grants trainees.delete to the CONTRACTOR role", () => {
+    expect(canPerformAction(contractorPermissions, "trainees", "delete")).toBe(true);
+  });
+
+  it("grants trainees.view, create, edit to the CONTRACTOR role", () => {
+    expect(canPerformAction(contractorPermissions, "trainees", "view")).toBe(true);
+    expect(canPerformAction(contractorPermissions, "trainees", "create")).toBe(true);
+    expect(canPerformAction(contractorPermissions, "trainees", "edit")).toBe(true);
+  });
+
+  it("does NOT grant trainees actions to roles without the permission", () => {
+    const viewerPermissions = ["dashboard.view", "trainees.view"];
+    expect(canPerformAction(viewerPermissions, "trainees", "delete")).toBe(false);
+    expect(canPerformAction(viewerPermissions, "trainees", "create")).toBe(false);
+    expect(canPerformAction(viewerPermissions, "trainees", "edit")).toBe(false);
+  });
+
+  it("does NOT leak trainees.delete into other modules", () => {
+    expect(canPerformAction(contractorPermissions, "companies", "delete")).toBe(false);
+    expect(canPerformAction(contractorPermissions, "certificates", "delete")).toBe(false);
+  });
+});

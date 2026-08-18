@@ -51,6 +51,7 @@ const { fakeDb } = vi.hoisted(() => {
       course: { findUnique: m(), findMany: m(), count: m() },
       refNumberCounter: { upsert: m() },
       auditLog: { create: m() },
+      workerPassport: { findMany: m(), findFirst: m(), findUnique: m() },
     },
   };
 });
@@ -350,6 +351,7 @@ describe("TRAINER API protection", () => {
     };
     fakeDb.trainee.findMany.mockImplementation((args: any) => Promise.resolve(scoped(args?.where ?? {})));
     fakeDb.trainee.count.mockImplementation((args: any) => Promise.resolve(scoped(args?.where ?? {}).length));
+    fakeDb.workerPassport.findMany.mockResolvedValue([]);
 
     const res = await getTrainees(new Request("http://localhost/api/trainees"));
     expect(res.status).toBe(200);
@@ -803,6 +805,7 @@ describe("QA Test Trainer — test-wide scope", () => {
     ];
     fakeDb.trainee.findMany.mockResolvedValue(trainees as any);
     fakeDb.trainee.count.mockResolvedValue(trainees.length);
+    fakeDb.workerPassport.findMany.mockResolvedValue([]);
 
     const res = await getTrainees(new Request("http://localhost/api/trainees"));
     expect(res.status).toBe(200);

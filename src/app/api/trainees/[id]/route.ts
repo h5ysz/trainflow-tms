@@ -101,6 +101,11 @@ export const DELETE = withModuleAction("trainees", "delete", async ({ params, us
   const existing = await db.trainee.findUnique({ where: { id } });
   if (!existing || existing.deletedAt) return notFound("Trainee not found");
 
+  // Contractors may only delete trainees belonging to their own company.
+  if (user.role === "CONTRACTOR" && existing.companyId !== user.companyId) {
+    return fail("Forbidden — cannot delete trainee from another company", 403);
+  }
+
   await db.trainee.update({
     where: { id },
     data: { deletedAt: new Date(), updatedBy: user.id },

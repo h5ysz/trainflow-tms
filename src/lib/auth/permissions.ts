@@ -400,7 +400,7 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
     copilot: ["view"],
   },
   CONTRACTOR: {
-    trainees: ["view", "create", "edit"],
+    trainees: ["view", "create", "edit", "delete"],
     requests: ["view", "create"],
     certificates: ["view"],
     notifications: ["view"],

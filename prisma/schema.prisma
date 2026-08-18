@@ -1308,10 +1308,10 @@ model CertificateVerification {
 model WorkerPassport {
   id             String    @id @default(uuid())
   passportNumber String    @unique // WP-YYYY-NNNNNN
-  nationalId     String    @unique // National ID or Iqama (unique key)
+  nationalId     String    // National ID / Iqama
   fullName       String
-  companyId      String?
-  company        Company?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  companyId      String
+  company        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   jobTitle       String?
   mobile         String?
   email          String?
@@ -1328,6 +1328,7 @@ model WorkerPassport {
   // Relations
   certificates Certificate[] @relation("WorkerPassportCertificates")
 
+  @@unique([nationalId, companyId])
   @@index([nationalId])
   @@index([companyId])
   @@index([qrToken])

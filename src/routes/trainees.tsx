@@ -31,7 +31,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RowActions } from "@/components/common/row-actions";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { cn } from "@/lib/utils";
-import { BarcodeImage } from "@/components/common/barcode-image";
+import { WorkerQRCode } from "@/components/common/barcode-image";
 import {
   BookUser, Search, AlertCircle, Loader2, ArrowLeft, ArrowRight,
   Building2, Fingerprint, FileText, IdCard,
@@ -64,6 +64,7 @@ interface TraineeCard {
   companyId: string;
   companyName?: string | null;
   documents?: string | null;
+  qrToken?: string | null;
 }
 
 interface UploadIdResponse {
@@ -657,9 +658,29 @@ export function TraineesRoute() {
                   />
                 </div>
               </div>
-              <div className="mt-2 pt-2 border-t flex justify-center" onClick={(e) => e.stopPropagation()}>
-                <BarcodeImage value={tr.nationalId} height={32} fontSize={8} className="text-muted-foreground w-full max-w-[180px]" />
-              </div>
+              {tr.qrToken && (
+                <div className="mt-2 pt-2 border-t flex justify-center" onClick={(e) => e.stopPropagation()}>
+                  <WorkerQRCode
+                    value={`${typeof window !== "undefined" ? window.location.origin : ""}/worker/${tr.qrToken}`}
+                    size={120}
+                    level="M"
+                    className="text-muted-foreground"
+                  />
+                </div>
+              )}
+              {canDelete && tr.status === "INACTIVE" && (
+                <div className="mt-2 pt-2 border-t" onClick={(e) => e.stopPropagation()}>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setDeleteTarget(tr)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 me-1.5" />
+                    {locale === "en" ? "Remove Worker" : "حذف العامل"}
+                  </Button>
+                </div>
+              )}
             </Card>
           ))}
         </div>
