@@ -110,6 +110,14 @@ export const POST = withModuleAction("claims", "create", async ({ req, user }) =
     return fail("periodFrom and periodTo are required", 422, "VALIDATION_ERROR");
   }
 
+  const existingClaim = await db.trainerClaim.findFirst({
+    where: { trainerId, periodFrom: new Date(periodFrom), periodTo: new Date(periodTo), deletedAt: null },
+    select: { refNumber: true, status: true },
+  });
+  if (existingClaim) {
+    return fail(`يوجد مطالبة مسبقاً لهذا المدرب بنفس التواريخ (${existingClaim.refNumber} — ${existingClaim.status})`, 409, "DUPLICATE");
+  }
+
   const claim = await createClaim({ claimType, trainerId, coordinatorId, engagementType, periodFrom, periodTo, notes }, { id: user.id, fullName: user.fullName });
 
   await audit({

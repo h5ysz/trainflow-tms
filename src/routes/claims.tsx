@@ -235,9 +235,10 @@ export function ClaimsRoute() {
       className: "text-end",
       cell: (row) => {
         const canSubmitRow = canEdit && (row.status === "DRAFT" || row.status === "GENERATED" || row.status === "RETURNED");
+        const canEditRow = canEdit && canSubmitRow;
         return (
           <RowActions
-            canEdit={canEdit}
+            canEdit={canEditRow}
             canDelete={canDelete}
             onView={() => navigate("claim-detail", row.id)}
             onEdit={() => void openEdit(row)}
@@ -256,14 +257,31 @@ export function ClaimsRoute() {
     },
   ];
 
-  const handleSubmit = () =>
-    void submit(requireFields({
+  const handleSubmit = () => {
+    const invalid = requireFields({
       [t("claims.new.type")]: "claimType",
       [t("claims.new.trainer")]: "trainerId",
       [t("claims.new.coordinator")]: "coordinatorId",
       [t("claims.new.periodFrom")]: "periodFrom",
       [t("claims.new.periodTo")]: "periodTo",
-    }));
+    })();
+    if (invalid) {
+      toast({ title: t("misc.error"), description: invalid, variant: "destructive" });
+      return;
+    }
+
+    const dup = data.find(
+      (r) => r.trainer?.id === formData.trainerId
+        && String(r.periodFrom).slice(0, 10) === String(formData.periodFrom).slice(0, 10)
+        && String(r.periodTo).slice(0, 10) === String(formData.periodTo).slice(0, 10)
+    );
+    if (dup) {
+      toast({ title: t("misc.warning") || "تنبيه", description: `يوجد مطالبة مسبقاً لهذا المدرب بنفس التواريخ (${dup.refNumber})`, variant: "default" });
+      return;
+    }
+
+    void submit();
+  };
 
   return (
     <div className="space-y-5">

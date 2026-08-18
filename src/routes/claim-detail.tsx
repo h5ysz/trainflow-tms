@@ -120,7 +120,7 @@ const STATUS_STYLES: Record<string, string> = {
 export function ClaimDetailRoute() {
   const { t, locale } = useI18n();
   const { toast } = useToast();
-  const { navigate, routeParam } = useAppStore();
+  const { navigate, routeParam, user } = useAppStore();
   const claimId = routeParam;
 
   const [claim, setClaim] = useState<ClaimDetail | null>(null);
@@ -300,13 +300,14 @@ export function ClaimDetailRoute() {
   }
 
   const status = claim.status;
+  const isCoordinator = user?.role === "COORDINATOR" || user?.role === "SUPER_ADMIN";
   const canSubmit = status === "DRAFT" || status === "GENERATED" || status === "RETURNED";
-  const canApprove = status === "SUBMITTED" || status === "PENDING_COORDINATOR_APPROVAL" || status === "HR_REVIEW";
-  const canFinalize = status === "APPROVED";
-  const canReturn = status === "SUBMITTED" || status === "PENDING_COORDINATOR_APPROVAL";
-  const canReject = status === "SUBMITTED" || status === "PENDING_COORDINATOR_APPROVAL";
+  const canApprove = isCoordinator && (status === "SUBMITTED" || status === "PENDING_COORDINATOR_APPROVAL" || status === "HR_REVIEW");
+  const canFinalize = isCoordinator && status === "APPROVED";
+  const canReturn = isCoordinator && (status === "SUBMITTED" || status === "PENDING_COORDINATOR_APPROVAL");
+  const canReject = isCoordinator && (status === "SUBMITTED" || status === "PENDING_COORDINATOR_APPROVAL");
   const canAdjust = status === "DRAFT" || status === "GENERATED" || status === "RETURNED";
-  const canDelete = status === "DRAFT";
+  const canDelete = isCoordinator && status === "DRAFT";
   const canRegenerate = status === "DRAFT" || status === "GENERATED" || status === "RETURNED";
 
   const statusLabel = (s: string) => t(`claims.status.${s}` as never);
@@ -869,6 +870,7 @@ export function ClaimDetailRoute() {
         description={t("claims.actions.submitConfirm")}
         onConfirm={() => void runAction("submit")}
         loading={actionLoading}
+        confirmLabel={t("claims.actions.submit")}
       />
       <ConfirmDialog
         open={confirmAction === "approve"}
@@ -877,6 +879,7 @@ export function ClaimDetailRoute() {
         description={t("claims.actions.approveConfirm")}
         onConfirm={() => void runAction("approve")}
         loading={actionLoading}
+        confirmLabel={t("claims.actions.approve")}
       />
       <ConfirmDialog
         open={confirmAction === "finalize"}
@@ -885,6 +888,7 @@ export function ClaimDetailRoute() {
         description={t("claims.actions.finalizeConfirm")}
         onConfirm={() => void runAction("finalize")}
         loading={actionLoading}
+        confirmLabel={t("claims.actions.finalize")}
       />
       <ConfirmDialog
         open={confirmAction === "delete"}
