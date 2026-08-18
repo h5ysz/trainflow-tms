@@ -78,7 +78,7 @@ function buildActionPromptSection(userRole: UserRole): string {
   return lines.join("\n");
 }
 
-export const POST = withModuleAction("ai-dashboard", "view", async ({ req, user }) => {
+export const POST = withModuleAction("copilot", "view", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
   const { message, history, locale } = body as { message?: string; history?: ChatMessage[]; locale?: string };
 

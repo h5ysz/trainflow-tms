@@ -6,7 +6,7 @@ import { withModuleAction, ok, fail } from "@/lib/auth/api";
 import { computeKpis } from "@/lib/ai/analytics/kpis";
 import { rangeFromPreset, type RangePreset, type AnalyticsScope } from "@/lib/ai/analytics/types";
 
-export const GET = withModuleAction("ai-dashboard", "view", async ({ req, user }) => {
+export const GET = withModuleAction("copilot", "view", async ({ req, user }) => {
   const url = new URL(req.url);
   const rangeParam = (url.searchParams.get("range") ?? "30d") as RangePreset;
   const validRanges: RangePreset[] = ["7d", "30d", "90d", "ytd", "12m", "all"];

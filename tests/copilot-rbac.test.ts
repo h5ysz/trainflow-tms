@@ -1,16 +1,16 @@
-// Copilot RBAC — every /api/copilot/* endpoint must require ai-dashboard.view
+// Copilot RBAC — every /api/copilot/* endpoint must require copilot.view
 // =====================================================================
-// The AI dashboard and its underlying APIs are NOT for delivery-only trainers:
-// a TRAINER must get 403 from every Copilot endpoint even when calling the URL
-// directly (defense in depth — the sidebar only hides the nav item).
+// The Floating AI Copilot is available to ALL authenticated users via the
+// dedicated `copilot.view` permission, independent of the AI Dashboard.
 //
 // Expected statuses mirror the LIVE permissions stored in the DB (checked via
 // db.role.permissions):
-//   SUPER_ADMIN ["*"]                       -> 200
-//   COORDINATOR (has ai-dashboard.view)     -> 200
-//   TRAINER    (delivery-only, no ai-dash)  -> 403
-//   AUDITOR    (no ai-dashboard.view)       -> 403
-//   CONTRACTOR (no ai-dashboard.view)       -> 403
+//   SUPER_ADMIN ["*"]                          -> 200
+//   COORDINATOR (has copilot.view)             -> 200
+//   TRAINER     (has copilot.view)             -> 200
+//   AUDITOR     (has copilot.view)             -> 200
+//   CONTRACTOR  (has copilot.view)             -> 200
+//   A role WITHOUT copilot.view                -> 403
 // =====================================================================
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { canAccessModule, canPerformAction } from "@/lib/auth/permissions";
@@ -84,7 +84,7 @@ vi.mock("@/lib/ai/actions/registry", () => ({
     preparePreview: async () => ({ hydratedParams: {} }),
     execute: async () => ({ ok: true }),
   }),
-  resolveActionPermission: () => ({ module: "ai-dashboard", action: "view" }),
+  resolveActionPermission: () => ({ module: "copilot", action: "view" }),
 }));
 vi.mock("@/lib/ai/actions/preview-token", () => ({
   signPreviewToken: async () => "signed-preview-token",
@@ -113,11 +113,12 @@ import { POST as postExecute } from "@/app/api/copilot/actions/execute/route";
 import { verifyToken } from "@/lib/auth/jwt";
 
 // ── Role fixtures: permission strings mirror the live DB Role rows ──────
+// All roles now include "copilot.view" (the dedicated copilot permission).
 const TRAINER_PERMS = [
   "dashboard.view", "sessions.view", "sessions.edit", "attendance.view",
   "attendance.create", "attendance.edit", "qr-code.view", "pre-test.view",
   "pre-test.create", "final-test.view", "final-test.create", "evaluation.view",
-  "workshops.view", "notifications.view",
+  "workshops.view", "notifications.view", "copilot.view",
 ];
 
 const AUDITOR_PERMS = [
@@ -128,18 +129,24 @@ const AUDITOR_PERMS = [
   "worker-passports.view", "compliance-matrix.view", "executive-dashboard.view",
   "renewal-dashboard.view", "invoices.view", "quotations.view", "payments.view",
   "receipts.view", "bank-accounts.view", "financial-reports.view", "financial-settings.view",
+  "copilot.view",
 ];
 
 const CONTRACTOR_PERMS = [
   "trainees.view", "trainees.create", "trainees.edit", "requests.view",
   "requests.create", "courses.view", "certificates.view", "notifications.view",
-  "worker-passports.view", "renewal-dashboard.view",
+  "worker-passports.view", "renewal-dashboard.view", "copilot.view",
 ];
 
 const COORDINATOR_PERMS = [
   ...TRAINER_PERMS,
   "companies.view", "trainees.view", "requests.view", "scheduling.view",
   "certificates.view", "reports.view", "ai-dashboard.view",
+];
+
+// A minimal role with NO copilot access — for testing denial.
+const VIEWER_WITHOUT_COPILOT = [
+  "dashboard.view", "companies.view",
 ];
 
 function dbUserFor(role: string, permissions: string[]) {
@@ -171,6 +178,8 @@ async function json(res: Response) {
 interface Endpoint {
   name: string;
   run: () => Promise<Response>;
+  /** Alternate run for CONTRACTOR role (restricted report types). */
+  contractorRun?: () => Promise<Response>;
 }
 
 const GET = (handler: any, path: string) => () => handler(new Request(`http://localhost${path}`));
@@ -184,7 +193,7 @@ const ENDPOINTS: Endpoint[] = [
   { name: "analytics/risks (GET)", run: GET(getRisks, "/api/copilot/analytics/risks") },
   { name: "analytics/forecast (GET)", run: GET(getForecast, "/api/copilot/analytics/forecast") },
   { name: "analytics/query (POST)", run: POST(postQuery, "/api/copilot/analytics/query", { question: "how many sessions?" }) },
-  { name: "analytics/reports (POST)", run: POST(postReports, "/api/copilot/analytics/reports", { type: "monthly", format: "pdf" }) },
+  { name: "analytics/reports (POST)", run: POST(postReports, "/api/copilot/analytics/reports", { type: "monthly", format: "pdf" }), contractorRun: POST(postReports, "/api/copilot/analytics/reports", { type: "contractor", format: "pdf" }) },
   { name: "chat (POST)", run: POST(postChat, "/api/copilot/chat", { message: "hello" }) },
   { name: "suggestions (GET)", run: GET(getSuggestions, "/api/copilot/suggestions") },
   { name: "suggestions (POST)", run: POST(postSuggestions, "/api/copilot/suggestions", { suggestionType: "SUGGEST_BEST_TRAINER" }) },
@@ -199,65 +208,70 @@ beforeEach(() => {
 
 // ── Pure permission-matrix assertions ────────────────────────────────────
 describe("Copilot module permission matrix", () => {
-  it("TRAINER has no ai-dashboard access in its permission strings", () => {
+  it("TRAINER has copilot.view in its permission strings", () => {
+    expect(canAccessModule(TRAINER_PERMS, "copilot")).toBe(true);
+    expect(canPerformAction(TRAINER_PERMS, "copilot", "view")).toBe(true);
+  });
+
+  it("AUDITOR has copilot.view in its actual DB permission strings", () => {
+    expect(canAccessModule(AUDITOR_PERMS, "copilot")).toBe(true);
+  });
+
+  it("CONTRACTOR has copilot.view", () => {
+    expect(canAccessModule(CONTRACTOR_PERMS, "copilot")).toBe(true);
+  });
+
+  it("COORDINATOR has copilot.view", () => {
+    expect(canAccessModule(COORDINATOR_PERMS, "copilot")).toBe(true);
+    expect(canPerformAction(COORDINATOR_PERMS, "copilot", "view")).toBe(true);
+  });
+
+  it("SUPER_ADMIN wildcard covers copilot", () => {
+    expect(canAccessModule(["*"], "copilot")).toBe(true);
+  });
+
+  it("a role without copilot.view cannot access the copilot module", () => {
+    expect(canAccessModule(VIEWER_WITHOUT_COPILOT, "copilot")).toBe(false);
+    expect(canPerformAction(VIEWER_WITHOUT_COPILOT, "copilot", "view")).toBe(false);
+  });
+
+  it("copilot is independent of ai-dashboard", () => {
+    // Having copilot.view does NOT grant ai-dashboard access
     expect(canAccessModule(TRAINER_PERMS, "ai-dashboard")).toBe(false);
     expect(canPerformAction(TRAINER_PERMS, "ai-dashboard", "view")).toBe(false);
-  });
-
-  it("AUDITOR has no ai-dashboard access in its actual DB permission strings", () => {
-    expect(canAccessModule(AUDITOR_PERMS, "ai-dashboard")).toBe(false);
-  });
-
-  it("CONTRACTOR has no ai-dashboard access", () => {
-    expect(canAccessModule(CONTRACTOR_PERMS, "ai-dashboard")).toBe(false);
-  });
-
-  it("COORDINATOR has ai-dashboard.view", () => {
-    expect(canAccessModule(COORDINATOR_PERMS, "ai-dashboard")).toBe(true);
-    expect(canPerformAction(COORDINATOR_PERMS, "ai-dashboard", "view")).toBe(true);
-  });
-
-  it("SUPER_ADMIN wildcard covers ai-dashboard", () => {
-    expect(canAccessModule(["*"], "ai-dashboard")).toBe(true);
+    // Having ai-dashboard.view does NOT grant copilot access (must have copilot.view too)
+    const aiDashOnly = ["ai-dashboard.view"];
+    expect(canAccessModule(aiDashOnly, "copilot")).toBe(false);
   });
 });
 
 // ── Live guard-chain assertions (withModuleAction -> requireModuleAction) ─
-describe("Copilot API endpoints reject roles without ai-dashboard.view", () => {
-  const denied = [
-    { role: "TRAINER", perms: TRAINER_PERMS },
-    { role: "AUDITOR", perms: AUDITOR_PERMS },
-    { role: "CONTRACTOR", perms: CONTRACTOR_PERMS },
-  ];
+describe("Copilot API endpoints reject roles without copilot.view", () => {
+  it("a role without copilot.view returns 403 on every endpoint", async () => {
+    vi.mocked(verifyToken).mockReturnValue({
+      sub: "user-1",
+      role: "VIEWER",
+      tokenVersion: 0,
+      email: "viewer@gcclab.com",
+    } as any);
+    fakeDb.user.findUnique.mockResolvedValue(dbUserFor("VIEWER", VIEWER_WITHOUT_COPILOT) as any);
 
-  for (const { role, perms } of denied) {
-    describe(`${role} → 403 on every Copilot endpoint`, () => {
-      beforeEach(() => {
-        vi.mocked(verifyToken).mockReturnValue({
-          sub: "user-1",
-          role,
-          tokenVersion: 0,
-          email: `${role.toLowerCase()}@gcclab.com`,
-        } as any);
-        fakeDb.user.findUnique.mockResolvedValue(dbUserFor(role, perms) as any);
-      });
-
-      for (const ep of ENDPOINTS) {
-        it(`${ep.name} returns 403`, async () => {
-          const res = await ep.run();
-          expect(res.status).toBe(403);
-          const body = await json(res);
-          expect(body.error).toBeTruthy();
-        });
-      }
-    });
-  }
+    for (const ep of ENDPOINTS) {
+      const res = await ep.run();
+      expect(res.status).toBe(403);
+      const body = await json(res);
+      expect(body.error).toBeTruthy();
+    }
+  });
 });
 
-describe("Copilot API endpoints allow roles with ai-dashboard.view", () => {
+describe("Copilot API endpoints allow roles with copilot.view", () => {
   const allowed = [
     { role: "SUPER_ADMIN", perms: ["*"] },
     { role: "COORDINATOR", perms: COORDINATOR_PERMS },
+    { role: "TRAINER", perms: TRAINER_PERMS },
+    { role: "AUDITOR", perms: AUDITOR_PERMS },
+    { role: "CONTRACTOR", perms: CONTRACTOR_PERMS },
   ];
 
   for (const { role, perms } of allowed) {
@@ -274,7 +288,8 @@ describe("Copilot API endpoints allow roles with ai-dashboard.view", () => {
 
       for (const ep of ENDPOINTS) {
         it(`${ep.name} returns 200`, async () => {
-          const res = await ep.run();
+          const run = role === "CONTRACTOR" && ep.contractorRun ? ep.contractorRun : ep.run;
+          const res = await run();
           expect(res.status).toBe(200);
         });
       }

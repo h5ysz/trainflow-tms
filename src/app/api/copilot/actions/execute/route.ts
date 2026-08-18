@@ -13,7 +13,7 @@ import { getActionHandler, resolveActionPermission } from "@/lib/ai/actions/regi
 import { ActionError } from "@/lib/ai/actions/types";
 import { verifyPreviewToken } from "@/lib/ai/actions/preview-token";
 
-export const POST = withModuleAction("ai-dashboard", "view", async ({ req, user }) => {
+export const POST = withModuleAction("copilot", "view", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
   const { previewToken } = body as { previewToken?: string };
 

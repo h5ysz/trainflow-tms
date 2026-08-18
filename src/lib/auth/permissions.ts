@@ -44,6 +44,8 @@ export type RouteKey =
   | "executive-dashboard"
   | "renewal-dashboard"
   | "ai-dashboard"
+  // Floating AI Copilot (independent of ai-dashboard)
+  | "copilot"
   // Financial module
   | "finance"
   | "invoices"
@@ -77,7 +79,7 @@ export const ALL_MODULES: RouteKey[] = [
   "trainees", "courses", "workshops", "requests", "sessions", "scheduling", "attendance", "qr-code",
   "pre-test", "final-test", "exam-attempts", "evaluation", "certificates", "reports", "report-schedules",
   "notifications", "audit-log", "settings", "user-approvals", "user-management", "roles",
-  "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard", "session-detail", "trainee-detail", "course-detail", "course-materials", "ai-dashboard",
+  "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard",   "session-detail", "trainee-detail", "course-detail", "course-materials", "ai-dashboard", "copilot",
   "exam-sets",
   "claims", "claim-detail",
 ];
@@ -131,6 +133,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "executive-dashboard",
     "renewal-dashboard",
     "ai-dashboard",
+    "copilot",
     "claims",
     "claim-detail",
   ],
@@ -140,6 +143,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "scheduling", "attendance", "certificates", "reports", "report-schedules",
     "notifications", "audit-log", "user-approvals", "user-management",
     "worker-passports", "compliance-matrix", "executive-dashboard", "renewal-dashboard",
+    "copilot",
   ],
   // Coordinator: request review + scheduling + execution oversight.
   // The session barcode (QR), Pre-Test, Final-Test, and Exam Questions are
@@ -180,6 +184,8 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
   // AI dashboard (added to the COORDINATOR role's DB permissions via
   // scripts/migrate-ai-dashboard-permissions.ts / seed-test-users.ts).
   "ai-dashboard",
+  // Floating AI Copilot (independent of ai-dashboard)
+  "copilot",
   // Financial module
   "finance", "invoices", "quotations", "payments", "receipts", "bank-accounts",
   "financial-settings", "financial-reports",
@@ -210,6 +216,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     // Trainer claims: view + adjust/submit their OWN claims only (server-scoped).
     "claims",
     "claim-detail",
+    "copilot",
   ],
   VIEWER: [
     "dashboard",
@@ -235,6 +242,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "reports",
     "notifications",
     "audit-log",
+    "copilot",
   ],
   AUDITOR: [
     "dashboard", "companies", "company-contacts", "trainers", "trainer-qualifications",
@@ -248,6 +256,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     // Trainer claims (read-only)
     "claims",
     "claim-detail",
+    "copilot",
   ],
   CONTRACTOR: [
     "dashboard",
@@ -257,6 +266,7 @@ export const moduleAccess: Record<UserRole, RouteKey[]> = {
     "notifications",
     "worker-passports",
     "renewal-dashboard",
+    "copilot",
   ],
 };
 
@@ -325,6 +335,7 @@ const TRAINER_PERMISSIONS: Partial<Record<RouteKey, Action[]>> = {
 export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action[]>>> = {
   SUPER_ADMIN: {
     // Super admin can do everything — including Settings (exclusive)
+    copilot: ["view"],
   },
   COMPANY_ADMIN: {
     companies: ["view", "edit"], "company-contacts": ["view", "create", "edit", "delete"],
@@ -335,6 +346,7 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
     notifications: ["view"], "audit-log": ["view"], "user-approvals": ["view", "create", "edit"],
     "user-management": ["view"], "worker-passports": ["view"], "compliance-matrix": ["view"],
     "executive-dashboard": ["view"], "renewal-dashboard": ["view"],
+    copilot: ["view"],
   },
   COORDINATOR: {
     ...OPERATIONAL_PERMISSIONS,
@@ -345,9 +357,11 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
     "user-approvals": ["view", "create", "edit"],
     "report-schedules": ["view", "create", "edit", "delete"],
     "ai-dashboard": ["view"],
+    copilot: ["view"],
   },
   TRAINER: {
     ...TRAINER_PERMISSIONS,
+    copilot: ["view"],
   },
   VIEWER: {
     companies: ["view"],
@@ -368,6 +382,7 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
     reports: ["view"],
     notifications: ["view"],
     "audit-log": ["view"],
+    copilot: ["view"],
   },
   AUDITOR: {
     companies: ["view"], "company-contacts": ["view"], trainers: ["view"],
@@ -382,12 +397,14 @@ export const actionPermissions: Record<UserRole, Partial<Record<RouteKey, Action
     "bank-accounts": ["view"], "financial-reports": ["view"], "financial-settings": ["view"],
     // Trainer claims (read-only)
     claims: ["view"],
+    copilot: ["view"],
   },
   CONTRACTOR: {
     trainees: ["view", "create", "edit"],
     requests: ["view", "create"],
     certificates: ["view"],
     notifications: ["view"],
+    copilot: ["view"],
   },
 };
 

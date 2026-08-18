@@ -12,7 +12,7 @@ import { getActionHandler, resolveActionPermission } from "@/lib/ai/actions/regi
 import { ActionError } from "@/lib/ai/actions/types";
 
 // GET — list all SUGGEST_* actions available to the user
-export const GET = withModuleAction("ai-dashboard", "view", async ({ user }) => {
+export const GET = withModuleAction("copilot", "view", async ({ user }) => {
   const catalog = [
     "SUGGEST_BEST_TRAINER",
     "SUGGEST_BEST_TIME",
@@ -39,7 +39,7 @@ export const GET = withModuleAction("ai-dashboard", "view", async ({ user }) => 
 });
 
 // POST — run a specific SUGGEST_* action and return its result
-export const POST = withModuleAction("ai-dashboard", "view", async ({ req, user }) => {
+export const POST = withModuleAction("copilot", "view", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
   const { suggestionType, params } = body as { suggestionType?: string; params?: Record<string, unknown> };
 

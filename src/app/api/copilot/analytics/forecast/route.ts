@@ -3,7 +3,7 @@ import { withModuleAction, ok } from "@/lib/auth/api";
 import { computeForecast } from "@/lib/ai/analytics/forecasting";
 import type { AnalyticsScope } from "@/lib/ai/analytics/types";
 
-export const GET = withModuleAction("ai-dashboard", "view", async ({ user }) => {
+export const GET = withModuleAction("copilot", "view", async ({ user }) => {
   const scope: AnalyticsScope = {
     role: user.role,
     userId: user.id,

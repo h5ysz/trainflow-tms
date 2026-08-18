@@ -6,7 +6,7 @@ import { answerNlQuery } from "@/lib/ai/analytics/nl-query";
 import type { AnalyticsScope } from "@/lib/ai/analytics/types";
 import { audit } from "@/lib/auth/api";
 
-export const POST = withModuleAction("ai-dashboard", "view", async ({ req, user }) => {
+export const POST = withModuleAction("copilot", "view", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
   const { question } = body as { question?: string };
   if (!question || typeof question !== "string") {

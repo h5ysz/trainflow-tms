@@ -15,7 +15,7 @@ const VALID_TYPES: ReportType[] = [
   "financial", "operational", "attendance", "exam", "certificate",
 ];
 
-export const POST = withModuleAction("ai-dashboard", "view", async ({ req, user }) => {
+export const POST = withModuleAction("copilot", "view", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
   const { type, format, range, entityId } = body as {
     type?: ReportType;

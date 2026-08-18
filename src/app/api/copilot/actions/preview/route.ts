@@ -12,7 +12,7 @@ import { getActionHandler, resolveActionPermission } from "@/lib/ai/actions/regi
 import { ActionError } from "@/lib/ai/actions/types";
 import { signPreviewToken } from "@/lib/ai/actions/preview-token";
 
-export const POST = withModuleAction("ai-dashboard", "view", async ({ req, user }) => {
+export const POST = withModuleAction("copilot", "view", async ({ req, user }) => {
   const body = await req.json().catch(() => ({}));
   const { actionType, params } = body as { actionType?: string; params?: Record<string, unknown> };
 

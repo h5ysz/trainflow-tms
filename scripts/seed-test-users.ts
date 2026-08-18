@@ -43,6 +43,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "user-management.view",
     "worker-passports.view", "compliance-matrix.view",
     "executive-dashboard.view", "renewal-dashboard.view",
+    "copilot.view",
   ],
   COORDINATOR: [
     "companies.*", "company-contacts.*", "trainers.*", "trainer-qualifications.*",
@@ -62,6 +63,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "invoices.*", "quotations.*", "payments.*", "receipts.*",
     "bank-accounts.*", "financial-reports.view",
     "ai-dashboard.view",
+    "copilot.view",
     // Trainer claims: coordinator generates, reviews, approves/returns, finalizes, exports
     "claims.*",
   ],
@@ -87,6 +89,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "workshops.view",
     "notifications.view",
     "claims.*",
+    "copilot.view",
   ],
   AUDITOR: [
     "companies.view", "company-contacts.view", "trainers.view", "trainer-qualifications.view",
@@ -101,6 +104,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "bank-accounts.view", "financial-reports.view", "financial-settings.view",
     // Trainer claims (read-only)
     "claims.view",
+    "copilot.view",
   ],
   CONTRACTOR: [
     "trainees.view", "trainees.create", "trainees.edit",
@@ -110,6 +114,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "notifications.view",
     "worker-passports.view",
     "renewal-dashboard.view",
+    "copilot.view",
   ],
 };
 

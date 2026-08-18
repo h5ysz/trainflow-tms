@@ -3,7 +3,7 @@ import { withModuleAction, ok } from "@/lib/auth/api";
 import { computeRecommendations } from "@/lib/ai/analytics/recommendations";
 import { rangeFromPreset, type RangePreset, type AnalyticsScope } from "@/lib/ai/analytics/types";
 
-export const GET = withModuleAction("ai-dashboard", "view", async ({ req, user }) => {
+export const GET = withModuleAction("copilot", "view", async ({ req, user }) => {
   const url = new URL(req.url);
   const rangeParam = (url.searchParams.get("range") ?? "30d") as RangePreset;
   const scope: AnalyticsScope = {
