@@ -62,8 +62,22 @@ export const GET = withModuleAction("sessions", "view", async ({ req, params, us
     orderBy: { traineeCount: "desc" },
   });
 
+  // Parse the JSON-encoded `documents` string on each trainee so the
+  // client receives an array instead of a raw JSON string.
+  const parsed = rows.map((r) => ({
+    ...r,
+    trainee: r.trainee
+      ? {
+          ...r.trainee,
+          documents: r.trainee.documents
+            ? (() => { try { return JSON.parse(r.trainee.documents); } catch { return null; } })()
+            : null,
+        }
+      : null,
+  }));
+
   return ok({
-    enrollments: rows,
+    enrollments: parsed,
     companies: companySummary.map((sc) => ({
       companyId: sc.companyId,
       companyName: sc.company?.name ?? null,
