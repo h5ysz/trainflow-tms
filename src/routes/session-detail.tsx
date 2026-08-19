@@ -43,7 +43,7 @@ interface Session {
   startDate: string;
   endDate: string;
   trainerId?: string | null;
-  qrToken?: string | null;
+  qrCodeToken?: string | null;
   preTestQrToken?: string | null;
   finalTestQrToken?: string | null;
   evaluationQrToken?: string | null;
@@ -414,7 +414,7 @@ export function SessionDetailRoute() {
   const doActivateQr = (from?: string, to?: string) =>
     run("qr", async () => {
       // Ensure a scannable token exists (sessions created without a token).
-      if (!session?.qrToken) {
+      if (!session?.qrCodeToken) {
         await api.post(`/sessions/${sessionId}/qr`, {});
       }
       await api.post(`/sessions/${sessionId}/qr-activate`, {
@@ -766,17 +766,17 @@ export function SessionDetailRoute() {
                   <p className="text-xs text-muted-foreground">Trainees scan this to check in to the session</p>
                 </div>
                 <div className="text-center">
-                {session?.qrToken ? (
+                {session?.qrCodeToken ? (
                   <>
                     <QrImage
-                      value={buildCheckInUrl(typeof window === "undefined" ? "" : window.location.origin, session.qrToken)}
+                      value={buildCheckInUrl(typeof window === "undefined" ? "" : window.location.origin, session.qrCodeToken)}
                       size={168}
                       className="mx-auto border"
                       label={t("qr.title")}
                     />
                     <Input
                       readOnly
-                      value={buildCheckInUrl(typeof window === "undefined" ? "" : window.location.origin, session.qrToken)}
+                      value={buildCheckInUrl(typeof window === "undefined" ? "" : window.location.origin, session.qrCodeToken)}
                       onFocus={(e) => e.target.select()}
                       className="font-mono text-xs mt-3"
                     />
