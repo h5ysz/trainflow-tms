@@ -413,9 +413,9 @@ export function SessionDetailRoute() {
 
   const doActivateQr = (from?: string, to?: string) =>
     run("qr", async () => {
-      // Ensure a scannable token exists (sessions created without a token).
       if (!session?.qrCodeToken) {
-        await api.post(`/sessions/${sessionId}/qr`, {});
+        const qrRes = await api.post<{ qrCodeToken: string }>(`/sessions/${sessionId}/qr`, {});
+        setSession((prev) => prev ? { ...prev, qrCodeToken: qrRes.qrCodeToken } : prev);
       }
       await api.post(`/sessions/${sessionId}/qr-activate`, {
         qrActiveFrom: from ? new Date(from).toISOString() : undefined,
@@ -443,7 +443,18 @@ export function SessionDetailRoute() {
 
   const regenerateQr = (tokenType: string) =>
     run(`qr-${tokenType}`, async () => {
-      await api.post(`/sessions/${sessionId}/qr`, { tokenType });
+      const res = await api.post<{ qrCodeToken?: string; preTestQrToken?: string; finalTestQrToken?: string; evaluationQrToken?: string }>(
+        `/sessions/${sessionId}/qr`, { tokenType },
+      );
+      setSession((prev) => {
+        if (!prev) return prev;
+        const patch: Record<string, string | null> = {};
+        if (res.qrCodeToken) patch.qrCodeToken = res.qrCodeToken;
+        if (res.preTestQrToken) patch.preTestQrToken = res.preTestQrToken;
+        if (res.finalTestQrToken) patch.finalTestQrToken = res.finalTestQrToken;
+        if (res.evaluationQrToken) patch.evaluationQrToken = res.evaluationQrToken;
+        return { ...prev, ...patch };
+      });
       toast({ title: t("misc.success"), description: `QR token regenerated` });
       await load();
     });
