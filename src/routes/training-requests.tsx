@@ -365,7 +365,7 @@ export function TrainingRequestsRoute() {
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState<Record<string, unknown>>({
     priority: "NORMAL",
-    traineeCount: 1,
+    traineeCount: 0,
     preferredLanguage: locale,
     status: "DRAFT",
   });
@@ -693,11 +693,13 @@ export function TrainingRequestsRoute() {
         // request (the rejected one is closed). If the business rule changes to
         // allow resubmission from REJECTED, add REJECTED to this list.
         const contractorEditableStatuses = ["DRAFT", "REQUIRES_MODIFICATION"];
+        const coordinatorEditableStatuses = [
+          "DRAFT", "SUBMITTED", "UNDER_REVIEW", "REQUIRES_MODIFICATION",
+          "REJECTED", "APPROVED",
+        ];
         const canEditRequest = canCreate && (
-          // Contractors (and any role without requests.edit): only DRAFT + REQUIRES_MODIFICATION
           !canEdit ? contractorEditableStatuses.includes(r.status)
-          // Coordinators/admins (with requests.edit): can edit DRAFT + REQUIRES_MODIFICATION + REJECTED
-          : ["DRAFT", "REQUIRES_MODIFICATION", "REJECTED"].includes(r.status)
+          : coordinatorEditableStatuses.includes(r.status)
         );
         return (
           <div className="flex justify-end items-center gap-1 flex-wrap">
@@ -715,6 +717,17 @@ export function TrainingRequestsRoute() {
             {isCoordinator ? (
               <>
                 {/* ── Coordinator simplified actions ── */}
+                {canEditRequest && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => handleEditRequest(r)}
+                    title={t("action.edit") || "Edit"}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                )}
                 {/* SUBMITTED: Start Review */}
                 {r.status === "SUBMITTED" && (
                   <Button
@@ -859,7 +872,7 @@ export function TrainingRequestsRoute() {
       });
       toast({ title: t("misc.success"), description: locale === "ar" ? "تم حفظ الطلب" : t("misc.createSuccess") });
       setDialogOpen(false);
-      setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: locale, status: "DRAFT" });
+      setFormData({ priority: "NORMAL", traineeCount: 0, preferredLanguage: locale, status: "DRAFT" });
       setTrainees([]);
       setAdditionalDocs([]);
       refetch();
@@ -904,7 +917,7 @@ export function TrainingRequestsRoute() {
       });
       toast({ title: t("misc.success"), description: locale === "ar" ? "تم إرسال الطلب للمراجعة" : t("misc.createSuccess") });
       setDialogOpen(false);
-      setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: locale, status: "DRAFT" });
+      setFormData({ priority: "NORMAL", traineeCount: 0, preferredLanguage: locale, status: "DRAFT" });
       setTrainees([]);
       setAdditionalDocs([]);
       refetch();
@@ -1080,7 +1093,7 @@ export function TrainingRequestsRoute() {
       toast({ title: t("misc.success"), description: t("misc.updateSuccess") });
       setDialogOpen(false);
       setEditTarget(null);
-      setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: locale, status: "DRAFT" });
+      setFormData({ priority: "NORMAL", traineeCount: 0, preferredLanguage: locale, status: "DRAFT" });
       setTrainees([]);
       setAdditionalDocs([]);
       refetch();
@@ -1272,7 +1285,7 @@ export function TrainingRequestsRoute() {
           if (!open) {
             // Reset all form state when the dialog closes — avoids stale
             // trainees/docs leaking into the next "New" click.
-            setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: locale, status: "DRAFT" });
+            setFormData({ priority: "NORMAL", traineeCount: 0, preferredLanguage: locale, status: "DRAFT" });
             setTrainees([]);
             setAdditionalDocs([]);
           }
