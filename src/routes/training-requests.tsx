@@ -693,11 +693,13 @@ export function TrainingRequestsRoute() {
         // request (the rejected one is closed). If the business rule changes to
         // allow resubmission from REJECTED, add REJECTED to this list.
         const contractorEditableStatuses = ["DRAFT", "REQUIRES_MODIFICATION"];
+        const coordinatorEditableStatuses = [
+          "DRAFT", "SUBMITTED", "UNDER_REVIEW", "REQUIRES_MODIFICATION",
+          "REJECTED", "APPROVED",
+        ];
         const canEditRequest = canCreate && (
-          // Contractors (and any role without requests.edit): only DRAFT + REQUIRES_MODIFICATION
           !canEdit ? contractorEditableStatuses.includes(r.status)
-          // Coordinators/admins (with requests.edit): can edit DRAFT + REQUIRES_MODIFICATION + REJECTED
-          : ["DRAFT", "REQUIRES_MODIFICATION", "REJECTED"].includes(r.status)
+          : coordinatorEditableStatuses.includes(r.status)
         );
         return (
           <div className="flex justify-end items-center gap-1 flex-wrap">
@@ -715,6 +717,17 @@ export function TrainingRequestsRoute() {
             {isCoordinator ? (
               <>
                 {/* ── Coordinator simplified actions ── */}
+                {canEditRequest && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => handleEditRequest(r)}
+                    title={t("action.edit") || "Edit"}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                )}
                 {/* SUBMITTED: Start Review */}
                 {r.status === "SUBMITTED" && (
                   <Button
