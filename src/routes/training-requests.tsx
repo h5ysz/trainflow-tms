@@ -365,7 +365,7 @@ export function TrainingRequestsRoute() {
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState<Record<string, unknown>>({
     priority: "NORMAL",
-    traineeCount: 1,
+    traineeCount: 0,
     preferredLanguage: locale,
     status: "DRAFT",
   });
@@ -872,7 +872,7 @@ export function TrainingRequestsRoute() {
       });
       toast({ title: t("misc.success"), description: locale === "ar" ? "تم حفظ الطلب" : t("misc.createSuccess") });
       setDialogOpen(false);
-      setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: locale, status: "DRAFT" });
+      setFormData({ priority: "NORMAL", traineeCount: 0, preferredLanguage: locale, status: "DRAFT" });
       setTrainees([]);
       setAdditionalDocs([]);
       refetch();
@@ -917,7 +917,7 @@ export function TrainingRequestsRoute() {
       });
       toast({ title: t("misc.success"), description: locale === "ar" ? "تم إرسال الطلب للمراجعة" : t("misc.createSuccess") });
       setDialogOpen(false);
-      setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: locale, status: "DRAFT" });
+      setFormData({ priority: "NORMAL", traineeCount: 0, preferredLanguage: locale, status: "DRAFT" });
       setTrainees([]);
       setAdditionalDocs([]);
       refetch();
@@ -1093,7 +1093,7 @@ export function TrainingRequestsRoute() {
       toast({ title: t("misc.success"), description: t("misc.updateSuccess") });
       setDialogOpen(false);
       setEditTarget(null);
-      setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: locale, status: "DRAFT" });
+      setFormData({ priority: "NORMAL", traineeCount: 0, preferredLanguage: locale, status: "DRAFT" });
       setTrainees([]);
       setAdditionalDocs([]);
       refetch();
@@ -1285,7 +1285,7 @@ export function TrainingRequestsRoute() {
           if (!open) {
             // Reset all form state when the dialog closes — avoids stale
             // trainees/docs leaking into the next "New" click.
-            setFormData({ priority: "NORMAL", traineeCount: 1, preferredLanguage: locale, status: "DRAFT" });
+            setFormData({ priority: "NORMAL", traineeCount: 0, preferredLanguage: locale, status: "DRAFT" });
             setTrainees([]);
             setAdditionalDocs([]);
           }

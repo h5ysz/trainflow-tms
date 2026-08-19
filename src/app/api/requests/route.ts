@@ -234,7 +234,7 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
     idAttachmentUrl?: string | null;
     documents?: unknown[];
   }> = Array.isArray(trainees) ? trainees : [];
-  const effectiveTraineeCount = submittedTrainees.length > 0 ? submittedTrainees.length : (traineeCount ?? 1);
+  const effectiveTraineeCount = submittedTrainees.length > 0 ? submittedTrainees.length : (traineeCount ?? 0);
 
   const now = new Date();
   const request = await db.trainingRequest.create({
