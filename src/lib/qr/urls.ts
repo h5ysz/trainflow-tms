@@ -37,3 +37,15 @@ export function buildCheckInUrl(origin: string, token: string): string {
 export function buildVerifyUrl(origin: string, token: string): string {
   return `${origin.replace(/\/+$/, "")}/verify/${encodeURIComponent(token)}`;
 }
+
+export function buildPreTestUrl(origin: string, token: string): string {
+  return `${origin.replace(/\/+$/, "")}/pre-test?token=${encodeURIComponent(token)}`;
+}
+
+export function buildFinalTestUrl(origin: string, token: string): string {
+  return `${origin.replace(/\/+$/, "")}/final-test?token=${encodeURIComponent(token)}`;
+}
+
+export function buildEvaluationUrl(origin: string, token: string): string {
+  return `${origin.replace(/\/+$/, "")}/evaluation?token=${encodeURIComponent(token)}`;
+}

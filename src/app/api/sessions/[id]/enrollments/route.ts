@@ -43,6 +43,7 @@ export const GET = withModuleAction("sessions", "view", async ({ req, params, us
           select: {
             id: true, refNumber: true, fullName: true, nationalId: true,
             nationality: true, jobTitle: true, mobile: true, email: true,
+            documents: true,
           },
         },
         company: { select: { id: true, name: true, refNumber: true } },

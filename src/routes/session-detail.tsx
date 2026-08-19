@@ -29,7 +29,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/lib/store/app-store";
 import { canPerformAction } from "@/lib/auth/permissions";
 import { QrImage } from "@/components/common/qr-image";
-import { buildCheckInUrl } from "@/lib/qr/urls";
+import { buildCheckInUrl, buildPreTestUrl, buildFinalTestUrl, buildEvaluationUrl } from "@/lib/qr/urls";
 import { trainerName } from "@/lib/i18n/trainer-name";
 
 interface TrainerOption { id: string; nameEn: string; nameAr?: string | null; }
@@ -44,6 +44,9 @@ interface Session {
   endDate: string;
   trainerId?: string | null;
   qrToken?: string | null;
+  preTestQrToken?: string | null;
+  finalTestQrToken?: string | null;
+  evaluationQrToken?: string | null;
   courseId?: string | null;
   courseTitle?: string | null;
 }
@@ -60,6 +63,7 @@ interface Enrollment {
     jobTitle?: string | null;
     mobile?: string | null;
     email?: string | null;
+    documents?: Array<{ url: string; filename: string; type: string; uploadedAt: string }> | null;
   } | null;
   company?: { id: string; name: string } | null;
   attendanceStatus?: string | null;
@@ -437,6 +441,13 @@ export function SessionDetailRoute() {
     void doActivateQr(from, to);
   };
 
+  const regenerateQr = (tokenType: string) =>
+    run(`qr-${tokenType}`, async () => {
+      await api.post(`/sessions/${sessionId}/qr`, { tokenType });
+      toast({ title: t("misc.success"), description: `QR token regenerated` });
+      await load();
+    });
+
   const markManualAttendance = () =>
     run("manual", async () => {
       if (!manualTarget) return;
@@ -504,6 +515,32 @@ export function SessionDetailRoute() {
         </div>
       ),
     },
+    { key: "mobile", header: t("trainees.mobile") || "Mobile", cell: (r) => (
+      <div className="text-xs text-muted-foreground">{r.trainee?.mobile ?? "—"}</div>
+    ) },
+    { key: "email", header: t("trainees.email") || "Email", cell: (r) => (
+      <div className="text-xs text-muted-foreground">{r.trainee?.email ?? "—"}</div>
+    ) },
+    { key: "documents", header: t("trainees.documents") || "Documents", cell: (r) => {
+      const docs = r.trainee?.documents;
+      if (!docs || docs.length === 0) return <div className="text-xs text-muted-foreground">—</div>;
+      return (
+        <div className="flex gap-1 flex-wrap">
+          {docs.map((doc, i) => (
+            <a
+              key={i}
+              href={doc.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] text-primary underline hover:no-underline"
+              title={doc.filename}
+            >
+              {doc.type}
+            </a>
+          ))}
+        </div>
+      );
+    } },
     { key: "attendance", header: t("nav.attendance"), cell: (r) => <StatusBadge status={r.attendanceStatus ?? "PENDING"} /> },
     { key: "preTest", header: t("nav.preTest"), cell: (r) => <StatusBadge status={r.preTestStatus ?? "PENDING"} /> },
     { key: "finalTest", header: t("nav.finalTest"), cell: (r) => <StatusBadge status={r.finalTestStatus ?? "PENDING"} /> },
@@ -721,63 +758,178 @@ export function SessionDetailRoute() {
           </TabsContent>
 
           {canViewQr && (
-            <TabsContent value="qr" className="mt-4">
-              <Card className="p-6 space-y-4 max-w-xl text-center">
-              {session?.qrToken ? (
-                <>
-                  <QrImage
-                    value={buildCheckInUrl(typeof window === "undefined" ? "" : window.location.origin, session.qrToken)}
-                    size={168}
-                    className="mx-auto border"
-                    label={t("qr.title")}
-                  />
-                  <Input
-                    readOnly
-                    value={buildCheckInUrl(typeof window === "undefined" ? "" : window.location.origin, session.qrToken)}
-                    onFocus={(e) => e.target.select()}
-                    className="font-mono text-xs"
-                  />
-                </>
-              ) : (
-                <div className="flex h-36 w-36 mx-auto items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 bg-muted/20">
-                  <QrCode className="h-10 w-10 text-muted-foreground/40" />
+            <TabsContent value="qr" className="mt-4 space-y-4">
+              {/* ── Attendance QR ── */}
+              <Card className="p-6 space-y-4 max-w-xl">
+                <div className="text-center space-y-1">
+                  <p className="text-sm font-semibold">{t("qr.title") || "Attendance QR"}</p>
+                  <p className="text-xs text-muted-foreground">Trainees scan this to check in to the session</p>
                 </div>
-              )}
+                <div className="text-center">
+                {session?.qrToken ? (
+                  <>
+                    <QrImage
+                      value={buildCheckInUrl(typeof window === "undefined" ? "" : window.location.origin, session.qrToken)}
+                      size={168}
+                      className="mx-auto border"
+                      label={t("qr.title")}
+                    />
+                    <Input
+                      readOnly
+                      value={buildCheckInUrl(typeof window === "undefined" ? "" : window.location.origin, session.qrToken)}
+                      onFocus={(e) => e.target.select()}
+                      className="font-mono text-xs mt-3"
+                    />
+                  </>
+                ) : (
+                  <div className="flex h-36 w-36 mx-auto items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 bg-muted/20">
+                    <QrCode className="h-10 w-10 text-muted-foreground/40" />
+                  </div>
+                )}
+                </div>
 
-              <div className="grid grid-cols-2 gap-3 text-start">
-                <Field label={t("qr.validFrom") || "Active from"}>
-                  <Input
-                    type="datetime-local"
-                    value={qrFrom}
-                    onChange={(e) => setQrFrom(e.target.value)}
-                    disabled={!canEdit || busy === "qr"}
-                  />
-                </Field>
-                <Field label={t("qr.validTo") || "Active until"}>
-                  <Input
-                    type="datetime-local"
-                    value={qrTo}
-                    onChange={(e) => setQrTo(e.target.value)}
-                    disabled={!canEdit || busy === "qr"}
-                  />
-                </Field>
-              </div>
+                <div className="grid grid-cols-2 gap-3 text-start">
+                  <Field label={t("qr.validFrom") || "Active from"}>
+                    <Input
+                      type="datetime-local"
+                      value={qrFrom}
+                      onChange={(e) => setQrFrom(e.target.value)}
+                      disabled={!canEdit || busy === "qr"}
+                    />
+                  </Field>
+                  <Field label={t("qr.validTo") || "Active until"}>
+                    <Input
+                      type="datetime-local"
+                      value={qrTo}
+                      onChange={(e) => setQrTo(e.target.value)}
+                      disabled={!canEdit || busy === "qr"}
+                    />
+                  </Field>
+                </div>
 
-              <p className="text-xs text-muted-foreground">
-                {t("qr.anytimeHint") || "The QR is only scannable within this window — set it to activate the barcode at any moment, even mid-session."}
-              </p>
+                <p className="text-xs text-muted-foreground text-center">
+                  {t("qr.anytimeHint") || "The QR is only scannable within this window."}
+                </p>
 
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                <Button disabled={!canEdit || busy === "qr"} onClick={() => void activateQrNow()}>
-                  {busy === "qr" ? <Loader2 className="h-4 w-4 me-1.5 animate-spin" /> : <Play className="h-4 w-4 me-1.5" />}
-                  {t("qr.activateNow")}
-                </Button>
-                <Button variant="outline" disabled={!canEdit || busy === "qr"} onClick={() => void activateQr()}>
-                  <QrCode className="h-4 w-4 me-1.5" />
-                  {t("session.activateQr")}
-                </Button>
-              </div>
-            </Card>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <Button disabled={!canEdit || busy === "qr"} onClick={() => void activateQrNow()}>
+                    {busy === "qr" ? <Loader2 className="h-4 w-4 me-1.5 animate-spin" /> : <Play className="h-4 w-4 me-1.5" />}
+                    {t("qr.activateNow")}
+                  </Button>
+                  <Button variant="outline" disabled={!canEdit || busy === "qr"} onClick={() => void activateQr()}>
+                    <QrCode className="h-4 w-4 me-1.5" />
+                    {t("session.activateQr")}
+                  </Button>
+                </div>
+              </Card>
+
+              {/* ── Pre-Test QR ── */}
+              <Card className="p-6 space-y-4 max-w-xl">
+                <div className="text-center space-y-1">
+                  <p className="text-sm font-semibold">{t("preTest.title") || "Pre-Test QR"}</p>
+                  <p className="text-xs text-muted-foreground">Trainees scan this to access the pre-test exam</p>
+                </div>
+                <div className="text-center">
+                {session?.preTestQrToken ? (
+                  <>
+                    <QrImage
+                      value={buildPreTestUrl(typeof window === "undefined" ? "" : window.location.origin, session.preTestQrToken)}
+                      size={168}
+                      className="mx-auto border"
+                      label={t("preTest.title") || "Pre-Test"}
+                    />
+                    <Input
+                      readOnly
+                      value={buildPreTestUrl(typeof window === "undefined" ? "" : window.location.origin, session.preTestQrToken)}
+                      onFocus={(e) => e.target.select()}
+                      className="font-mono text-xs mt-3"
+                    />
+                  </>
+                ) : (
+                  <div className="flex h-36 w-36 mx-auto items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 bg-muted/20">
+                    <QrCode className="h-10 w-10 text-muted-foreground/40" />
+                  </div>
+                )}
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <Button variant="outline" disabled={!canEdit || busy === "qr-preTest"} onClick={() => void regenerateQr("preTest")}>
+                    {busy === "qr-preTest" ? <Loader2 className="h-4 w-4 me-1.5 animate-spin" /> : <RefreshCw className="h-4 w-4 me-1.5" />}
+                    {t("qr.regenerate") || "Regenerate"}
+                  </Button>
+                </div>
+              </Card>
+
+              {/* ── Final-Test QR ── */}
+              <Card className="p-6 space-y-4 max-w-xl">
+                <div className="text-center space-y-1">
+                  <p className="text-sm font-semibold">{t("finalTest.title") || "Final-Test QR"}</p>
+                  <p className="text-xs text-muted-foreground">Trainees scan this to access the final test exam</p>
+                </div>
+                <div className="text-center">
+                {session?.finalTestQrToken ? (
+                  <>
+                    <QrImage
+                      value={buildFinalTestUrl(typeof window === "undefined" ? "" : window.location.origin, session.finalTestQrToken)}
+                      size={168}
+                      className="mx-auto border"
+                      label={t("finalTest.title") || "Final-Test"}
+                    />
+                    <Input
+                      readOnly
+                      value={buildFinalTestUrl(typeof window === "undefined" ? "" : window.location.origin, session.finalTestQrToken)}
+                      onFocus={(e) => e.target.select()}
+                      className="font-mono text-xs mt-3"
+                    />
+                  </>
+                ) : (
+                  <div className="flex h-36 w-36 mx-auto items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 bg-muted/20">
+                    <QrCode className="h-10 w-10 text-muted-foreground/40" />
+                  </div>
+                )}
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <Button variant="outline" disabled={!canEdit || busy === "qr-finalTest"} onClick={() => void regenerateQr("finalTest")}>
+                    {busy === "qr-finalTest" ? <Loader2 className="h-4 w-4 me-1.5 animate-spin" /> : <RefreshCw className="h-4 w-4 me-1.5" />}
+                    {t("qr.regenerate") || "Regenerate"}
+                  </Button>
+                </div>
+              </Card>
+
+              {/* ── Evaluation QR ── */}
+              <Card className="p-6 space-y-4 max-w-xl">
+                <div className="text-center space-y-1">
+                  <p className="text-sm font-semibold">{t("nav.evaluation") || "Evaluation QR"}</p>
+                  <p className="text-xs text-muted-foreground">Trainees scan this to submit a course evaluation</p>
+                </div>
+                <div className="text-center">
+                {session?.evaluationQrToken ? (
+                  <>
+                    <QrImage
+                      value={buildEvaluationUrl(typeof window === "undefined" ? "" : window.location.origin, session.evaluationQrToken)}
+                      size={168}
+                      className="mx-auto border"
+                      label={t("nav.evaluation") || "Evaluation"}
+                    />
+                    <Input
+                      readOnly
+                      value={buildEvaluationUrl(typeof window === "undefined" ? "" : window.location.origin, session.evaluationQrToken)}
+                      onFocus={(e) => e.target.select()}
+                      className="font-mono text-xs mt-3"
+                    />
+                  </>
+                ) : (
+                  <div className="flex h-36 w-36 mx-auto items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 bg-muted/20">
+                    <QrCode className="h-10 w-10 text-muted-foreground/40" />
+                  </div>
+                )}
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <Button variant="outline" disabled={!canEdit || busy === "qr-evaluation"} onClick={() => void regenerateQr("evaluation")}>
+                    {busy === "qr-evaluation" ? <Loader2 className="h-4 w-4 me-1.5 animate-spin" /> : <RefreshCw className="h-4 w-4 me-1.5" />}
+                    {t("qr.regenerate") || "Regenerate"}
+                  </Button>
+                </div>
+              </Card>
             </TabsContent>
           )}
 

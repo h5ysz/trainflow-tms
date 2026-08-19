@@ -24,6 +24,8 @@ import { ensureTrainerCanAccessCourse } from "@/lib/api/course-materials";
 import { extractMaterialsText, MaterialExtractionError } from "@/lib/ai/material-extractor";
 import {
   extractMaterialImages,
+  attachMaterialImages,
+  validateImageRelevance,
   type ExtractedMaterialImage,
 } from "@/lib/ai/material-images";
 import {
@@ -264,19 +266,25 @@ export const POST = withModuleAction("course-materials", "create", async ({ user
 
       const { questions, model: m } = await generateBilingualQuestions(genOpts);
       if (m) model = m;
-      // Resolve the model-selected figure (imageRef) to its URL. No heuristic
-      // fallback: a question without a genuine figure stays image-less.
+      // Resolve the model-selected figure (imageRef) to its URL, validating
+      // relevance. For questions without a validated model image, apply the
+      // word-overlap heuristic fallback.
       const images = imagesByMaterial.get(mat.id) ?? [];
-      const attached =
+      const withModelImages =
         imageMode === "without_images"
           ? questions
           : questions.map((q) => {
               if (q.imageRef !== undefined) {
                 const img = images[q.imageRef - 1];
-                if (img) return { ...q, imageUrl: img.url };
+                if (img && validateImageRelevance(q.text, img)) {
+                  return { ...q, imageUrl: img.url };
+                }
               }
               return q;
             });
+      const attached = imageMode === "without_images"
+        ? withModelImages
+        : attachMaterialImages(withModelImages, images);
       rememberDraftStems(courseId, questions.map((q) => q.text));
       for (const q of attached) {
         batches.push({ ...q, materialId: mat.id });

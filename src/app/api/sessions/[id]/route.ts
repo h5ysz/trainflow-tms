@@ -30,10 +30,18 @@ export const GET = withModuleAction("sessions", "view", async ({ params, user })
   // The session barcode belongs to the "qr-code" module (trainer delivery tool):
   // strip it from the response for users without qr-code.view, so the
   // coordinator never receives the session's QR token even by direct-URL GET.
+  // The same guard applies to the new pre-test / final-test / evaluation tokens.
   if (!canPerformAction(user.permissions, "qr-code", "view")) {
-    const { qrCodeToken, qrCodeGeneratedAt, ...rest } = session;
+    const {
+      qrCodeToken, qrCodeGeneratedAt,
+      preTestQrToken, finalTestQrToken, evaluationQrToken,
+      ...rest
+    } = session;
     void qrCodeToken;
     void qrCodeGeneratedAt;
+    void preTestQrToken;
+    void finalTestQrToken;
+    void evaluationQrToken;
     return ok(rest);
   }
 

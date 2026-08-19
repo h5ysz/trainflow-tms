@@ -926,6 +926,10 @@ model TrainingSession {
   // QR attendance window — QR is only active during this period
   qrActiveFrom      DateTime?
   qrActiveTo        DateTime?
+  // ── Session-specific QR tokens for public exam/evaluation pages ──
+  preTestQrToken       String?  @unique
+  finalTestQrToken     String?  @unique
+  evaluationQrToken    String?  @unique
   // Session lifecycle tracking
   lifecycleStatus   String                 @default("NOT_STARTED") // NOT_STARTED | STARTED | ON_BREAK | COMPLETED
   startedAt         DateTime?

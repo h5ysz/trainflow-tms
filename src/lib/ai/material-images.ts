@@ -150,6 +150,50 @@ export function bestImageForQuestion(stem: string, images: readonly ExtractedMat
   return best && best.score >= 0.6 ? best.img : null;
 }
 
+/**
+ * Validate whether the AI model's selected image (imageRef) is genuinely
+ * relevant to the question. Uses a stricter threshold than the heuristic
+ * fallback and additionally checks caption/surround-text overlap to avoid
+ * false positives where the model picks an image from the same page but
+ * a different topic.
+ *
+ * Returns `true` when the image is relevant; `false` when it should be
+ * dropped so the heuristic fallback can try instead.
+ */
+export function validateImageRelevance(
+  stem: string,
+  image: ExtractedMaterialImage,
+): boolean {
+  const stemWords = significantWords(stem);
+  if (stemWords.length < 3) return false;
+
+  // Primary: page-text overlap (stricter than the 0.6 heuristic threshold)
+  const pageWords = new Set(significantWords(image.pageText));
+  let pageHits = 0;
+  for (const w of stemWords) {
+    if (pageWords.has(w)) pageHits++;
+  }
+  const pageScore = pageHits / stemWords.length;
+
+  // Secondary: caption or surround-text overlap (bonus signal)
+  let contextScore = 0;
+  const contextText = [image.caption, image.surroundText].filter(Boolean).join(" ");
+  if (contextText.length > 10) {
+    const ctxWords = new Set(significantWords(contextText));
+    let ctxHits = 0;
+    for (const w of stemWords) {
+      if (ctxWords.has(w)) ctxHits++;
+    }
+    contextScore = ctxHits / stemWords.length;
+  }
+
+  // Accept if page overlap is strong (≥0.75) or moderate (≥0.55) with
+  // context support (≥0.25), which eliminates random same-page picks.
+  if (pageScore >= 0.75) return true;
+  if (pageScore >= 0.55 && contextScore >= 0.25) return true;
+  return false;
+}
+
 /** Attach a relevant extracted image to each question that has a strong page match. */
 export function attachMaterialImages(
   questions: GeneratedQuestion[],
