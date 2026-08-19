@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import { PageHeader } from "@/components/common/page-header";
 import { Card } from "@/components/ui/card";
@@ -51,13 +51,9 @@ export function QrCodeRoute() {
   const [copied, setCopied] = useState(false);
   const [qrTab, setQrTab] = useState<QrType>("checkIn");
 
-  const currentTab = useMemo(() => QR_TABS.find((tab) => tab.value === qrTab)!, [qrTab]);
+  const currentTab = QR_TABS.find((tab) => tab.value === qrTab)!;
   const currentToken = selected ? (selected as unknown as Record<string, string | null | undefined>)[currentTab.tokenKey] : null;
-
-  const qrUrl = useMemo(() => {
-    if (!currentToken || typeof window === "undefined") return "";
-    return currentTab.build(window.location.origin, currentToken);
-  }, [currentToken, currentTab]);
+  const qrUrl = currentToken && typeof window !== "undefined" ? currentTab.build(window.location.origin, currentToken) : "";
 
   const copyLink = async () => {
     if (!qrUrl) return;
