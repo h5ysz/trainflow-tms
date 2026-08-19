@@ -347,7 +347,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, companyId
   // the `onAdd` passed to CompanyRecordsTab) always merge against the
   // up-to-date list rather than a stale render closure.
   const traineesRef = React.useRef(trainees);
-  traineesRef.current = trainees;
+  React.useEffect(() => { traineesRef.current = trainees; });
 
   // ── BUG-009/011 fix: force re-render after mount ─────────────────────
   // The virtualization calculates visibleSlice from scrollTop (0) and

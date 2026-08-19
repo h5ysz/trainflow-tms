@@ -117,64 +117,6 @@ export function PublicExamForm({ testType }: { testType: "PRE_TEST" | "FINAL_TES
     return () => { cancelled = true; };
   }, [token, testType]);
 
-  // Timer
-  useEffect(() => {
-    if (phase !== "exam" || !deadlineRef.current) return;
-    const tick = () => {
-      const ms = deadlineRef.current!.getTime() - Date.now();
-      if (ms <= 0) {
-        setRemaining("00:00");
-        void handleSubmit(true);
-        return;
-      }
-      setRemaining(formatRemaining(ms));
-    };
-    tick();
-    timerRef.current = setInterval(tick, 1000);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [phase]);
-
-  const identifyAndStart = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!fullName.trim()) {
-      setSubmitError(t("publicExam.nameRequired"));
-      return;
-    }
-    setPhase("loading");
-    setSubmitError(null);
-    try {
-      const endpoint = testType === "PRE_TEST" ? "/public/pre-test" : "/public/final-test";
-      const res = await api.post<{ attemptId: string; status: string; scorePercent?: number; passed?: boolean }>(
-        endpoint,
-        { token, traineeName: fullName.trim(), traineeIdNational: nationalId.trim() || undefined }
-      );
-
-      if (res.status === "GRADED") {
-        // Already completed
-        setGraded({
-          refNumber: "",
-          testType,
-          scorePercent: res.scorePercent ?? 0,
-          passed: res.passed ?? false,
-          passScore: 70,
-          totalPoints: 0,
-          earnedPoints: 0,
-        });
-        setPhase("result");
-        return;
-      }
-
-      // Start the exam
-      const examRes = await api.post<StartedExam>(`/public/exam/${res.attemptId}/start`, {});
-      setExam(examRes);
-      if (examRes.deadline) deadlineRef.current = new Date(examRes.deadline);
-      setPhase("exam");
-    } catch (err) {
-      setSubmitError((err as Error).message);
-      setPhase("identify");
-    }
-  };
-
   const setAnswer = useCallback((questionId: string, indices: number[]) => {
     setAnswers((prev) => ({ ...prev, [questionId]: indices }));
   }, []);
@@ -196,7 +138,63 @@ export function PublicExamForm({ testType }: { testType: "PRE_TEST" | "FINAL_TES
       setSubmitError(t("publicExam.submitFailed"));
       setPhase("exam");
     }
-  }, [exam, answers]);
+  }, [exam, answers, t]);
+
+  // Timer
+  useEffect(() => {
+    if (phase !== "exam" || !deadlineRef.current) return;
+    const tick = () => {
+      const ms = deadlineRef.current!.getTime() - Date.now();
+      if (ms <= 0) {
+        setRemaining("00:00");
+        void handleSubmit(true);
+        return;
+      }
+      setRemaining(formatRemaining(ms));
+    };
+    tick();
+    timerRef.current = setInterval(tick, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [phase, handleSubmit]);
+
+  const identifyAndStart = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fullName.trim()) {
+      setSubmitError(t("publicExam.nameRequired"));
+      return;
+    }
+    setPhase("loading");
+    setSubmitError(null);
+    try {
+      const endpoint = testType === "PRE_TEST" ? "/public/pre-test" : "/public/final-test";
+      const res = await api.post<{ attemptId: string; status: string; scorePercent?: number; passed?: boolean }>(
+        endpoint,
+        { token, traineeName: fullName.trim(), traineeIdNational: nationalId.trim() || undefined }
+      );
+
+      if (res.status === "GRADED") {
+        setGraded({
+          refNumber: "",
+          testType,
+          scorePercent: res.scorePercent ?? 0,
+          passed: res.passed ?? false,
+          passScore: 70,
+          totalPoints: 0,
+          earnedPoints: 0,
+        });
+        setPhase("result");
+        return;
+      }
+
+      const examRes = await api.post<StartedExam>(`/public/exam/${res.attemptId}/start`, {});
+      setExam(examRes);
+      if (examRes.deadline) deadlineRef.current = new Date(examRes.deadline);
+      setPhase("exam");
+    } catch (err) {
+      setSubmitError((err as Error).message);
+      setPhase("identify");
+    }
+  };
 
   const missingToken = !token;
 
