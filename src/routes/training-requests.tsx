@@ -84,6 +84,7 @@ interface RequestTrainee {
   email?: string | null;
   idAttachmentUrl?: string | null;
   documents?: string | null; // JSON-encoded array of { url, filename, type, uploadedAt }
+  qrToken?: string | null;
 }
 interface RequestCourseDetail {
   id: string;
@@ -317,6 +318,7 @@ export function TrainingRequestsRoute() {
           mobile: t.trainee.mobile ?? null,
           email: t.trainee.email ?? null,
           documents: t.trainee.documents ?? null,
+          qrToken: t.trainee.qrToken ?? null,
         },
       })),
     }));
@@ -852,11 +854,15 @@ export function TrainingRequestsRoute() {
       toast({ title: t("misc.error"), description: t("requests.course") + " — " + t("misc.required"), variant: "destructive" });
       return;
     }
-    // "Save" always saves as DRAFT — no trainees required, no coordinator notification.
+    const validTrainees = trainees.filter((tr) => tr.fullName && tr.nationalId);
+    if (validTrainees.length === 0) {
+      const confirmed = window.confirm(t("requests.errors.noTraineesOnSave"));
+      if (!confirmed) return;
+    }
+    // "Save" always saves as DRAFT — no coordinator notification.
     setSubmitting(true);
     try {
-      const payloadTrainees = trainees
-        .filter((tr) => tr.fullName && tr.nationalId)
+      const payloadTrainees = validTrainees
         .map((tr) => ({
           fullName: tr.fullName,
           nationalId: tr.nationalId,
@@ -1858,7 +1864,7 @@ export function TrainingRequestsRoute() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="ms-auto h-6 gap-1 px-2 text-[10px]"
+                    className="h-6 gap-1 px-2 text-[10px]"
                     onClick={() => openCourseFullscreen()}
                     disabled={drawerLoading || !drawerDetail?.requestCourses?.length}
                   >

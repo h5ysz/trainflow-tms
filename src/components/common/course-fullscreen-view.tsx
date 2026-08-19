@@ -43,6 +43,7 @@ export interface FullScreenCourse {
       mobile?: string | null;
       email?: string | null;
       documents?: string | null; // JSON-encoded array of { url, filename, type }
+      qrToken?: string | null;
     };
   }>;
 }

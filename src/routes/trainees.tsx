@@ -36,13 +36,14 @@ import {
   BookUser, Search, AlertCircle, Loader2, ArrowLeft, ArrowRight,
   Building2, Fingerprint, FileText, IdCard,
   ChevronRight, ChevronLeft, X, ExternalLink,
-  UserSquare, Plus, Trash2,
+  UserSquare, Plus, Trash2, QrCode as QrCodeIcon,
 } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/lib/store/app-store";
 import { useEntityActions } from "@/hooks/use-entity-actions";
 import { canAccessModule } from "@/lib/auth/permissions";
+import { qrPngDataUrl } from "@/components/common/qr-image";
 
 interface CompanyCard {
   id: string;
@@ -281,6 +282,96 @@ export function TraineesRoute() {
       setTraineesLoading(false);
     }
   }, []);
+
+  // Print all company trainee barcodes on a single page.
+  const printAllBarcodes = async () => {
+    if (!selectedCompanyId) return;
+    const printing = toast({ title: locale === "ar" ? "جاري تجهيز الباركودات..." : "Preparing barcodes...", duration: 10000 });
+    try {
+      // Fetch ALL trainees for this company (large page size)
+      const res = await api.getList<TraineeCard>("/trainees", {
+        companyId: selectedCompanyId,
+        pageSize: 500,
+        page: 1,
+      });
+      const all = res.rows;
+      if (!all.length) {
+        toast({ title: locale === "ar" ? "لا يوجد متدربون" : "No trainees found", variant: "destructive" });
+        return;
+      }
+
+      const win = window.open("", "_blank", "width=900,height=1100");
+      if (!win) {
+        toast({ title: t("misc.error"), description: t("qr.popupBlocked") || "Popup blocked", variant: "destructive" });
+        return;
+      }
+
+      // Generate all QR PNG data URLs concurrently
+      const qrImages = await Promise.all(
+        all.map((tr) =>
+          tr.qrToken
+            ? qrPngDataUrl(`${window.location.origin}/worker/${tr.qrToken}`, 256)
+            : Promise.resolve(""),
+        ),
+      );
+
+      const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      const dir = locale === "ar" ? "rtl" : "ltr";
+      const companyName = selectedCompanyName ?? "";
+
+      const cards = all
+        .map(
+          (tr, i) => `
+          <div class="card">
+            <div class="qr-wrap">${qrImages[i] ? `<img src="${qrImages[i]}" alt="QR">` : `<div class="no-qr">—</div>`}</div>
+            <div class="info">
+              <div class="name">${esc(tr.fullName)}</div>
+              <div class="ref">${esc(tr.refNumber)}</div>
+              <div class="meta">${esc(tr.nationalId)}${tr.nationality ? ` · ${esc(tr.nationality)}` : ""}</div>
+              ${tr.jobTitle ? `<div class="meta">${esc(tr.jobTitle)}</div>` : ""}
+            </div>
+          </div>`,
+        )
+        .join("\n");
+
+      win.document.write(`<!doctype html>
+<html dir="${dir}" lang="${dir === "rtl" ? "ar" : "en"}">
+<head>
+<meta charset="utf-8">
+<title>${esc(companyName)} — ${locale === "ar" ? "باركودات المتدربين" : "Trainee Barcodes"}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; padding: 16px; }
+  h1 { font-size: 16px; text-align: center; margin-bottom: 4px; }
+  .subtitle { font-size: 11px; text-align: center; color: #888; margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 10px; text-align: center; page-break-inside: avoid; }
+  .qr-wrap { display: flex; justify-content: center; margin-bottom: 6px; }
+  .qr-wrap img { width: 120px; height: 120px; }
+  .no-qr { width: 120px; height: 120px; border: 2px dashed #ccc; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #ccc; }
+  .name { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+  .ref { font-size: 10px; font-family: ui-monospace, monospace; color: #555; margin-bottom: 2px; }
+  .meta { font-size: 10px; color: #888; }
+  @media print {
+    body { padding: 8px; }
+    .grid { gap: 8px; }
+    .card { border-color: #999; }
+  }
+</style>
+</head>
+<body>
+  <h1>${esc(companyName)}</h1>
+  <div class="subtitle">${all.length} ${locale === "ar" ? "متدرب" : "Trainees"}</div>
+  <div class="grid">${cards}</div>
+</body>
+</html>`);
+      win.document.close();
+      win.focus();
+      win.print();
+    } catch {
+      toast({ title: locale === "ar" ? "خطأ في تحميل البيانات" : "Error loading data", variant: "destructive" });
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -588,6 +679,12 @@ export function TraineesRoute() {
             <Search className="h-4 w-4 me-1.5" />
             {locale === "en" ? "Search" : "بحث"}
           </Button>
+          {total > 0 && (
+            <Button onClick={() => void printAllBarcodes()} variant="outline" size="sm">
+              <QrCodeIcon className="h-4 w-4 me-1.5" />
+              {locale === "ar" ? "طباعة الباركودات" : "Print Barcodes"}
+            </Button>
+          )}
           {canCreate && (
             <Button onClick={handleOpenCreate} size="sm">
               <Plus className="h-4 w-4 me-1.5" />

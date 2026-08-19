@@ -343,6 +343,12 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, companyId
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = React.useState(0);
 
+  // Keep a ref to the latest `trainees` prop so that inline callbacks (e.g.
+  // the `onAdd` passed to CompanyRecordsTab) always merge against the
+  // up-to-date list rather than a stale render closure.
+  const traineesRef = React.useRef(trainees);
+  traineesRef.current = trainees;
+
   // ── BUG-009/011 fix: force re-render after mount ─────────────────────
   // The virtualization calculates visibleSlice from scrollTop (0) and
   // currentTableHeight (constant). On first render inside a Dialog, the
@@ -1195,7 +1201,7 @@ export function TraineeEntrySection({ trainees, onChange, onSaveDraft, companyId
           <CompanyRecordsTab
             companyId={companyId ?? null}
             trainees={trainees}
-            onAdd={(next) => updateTrainees([...trainees, ...next])}
+            onAdd={(next) => updateTrainees([...traineesRef.current, ...next])}
           />
         </TabsContent>
       </Tabs>

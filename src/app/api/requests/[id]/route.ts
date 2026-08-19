@@ -31,6 +31,7 @@ export const GET = withModuleAction("requests", "view", async ({ params, user })
                   nationality: true, jobTitle: true, mobile: true, email: true,
                   idAttachmentUrl: true,
                   documents: true,
+                  companyId: true,
                   company: { select: { id: true, name: true } },
                 },
               },
@@ -50,6 +51,30 @@ export const GET = withModuleAction("requests", "view", async ({ params, user })
   // RBAC: contractor sees only their own
   if (user.role === "CONTRACTOR" && user.companyId !== request.companyId) {
     return fail("Forbidden", 403);
+  }
+
+  // Batch-lookup worker passport qrTokens for all trainees in this request.
+  const allTrainees = (request.requestCourses ?? []).flatMap((rc) =>
+    (rc.trainees ?? []).map((rt) => rt.trainee),
+  );
+  const passportLookups = allTrainees.map((t) => ({ nationalId: t.nationalId, companyId: t.companyId }));
+  const passports = passportLookups.length
+    ? await db.workerPassport.findMany({
+        where: {
+          OR: passportLookups.map((lk) => ({ nationalId: lk.nationalId, companyId: lk.companyId })),
+          deletedAt: null,
+        },
+        select: { nationalId: true, companyId: true, qrToken: true },
+      })
+    : [];
+  const qrTokenByKey = new Map(passports.map((p) => [`${p.nationalId}:${p.companyId}`, p.qrToken]));
+
+  // Attach qrToken to each trainee in the response
+  for (const rc of request.requestCourses ?? []) {
+    for (const rt of rc.trainees ?? []) {
+      (rt.trainee as Record<string, unknown>).qrToken =
+        qrTokenByKey.get(`${rt.trainee.nationalId}:${rt.trainee.companyId}`) ?? null;
+    }
   }
 
   return ok(request);
