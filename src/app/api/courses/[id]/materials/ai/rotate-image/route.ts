@@ -11,11 +11,11 @@ const PUBLIC_PREFIX = "/api/uploads/question-images";
 
 function resolveDiskPath(url: string): string | null {
   const clean = url.split("?")[0];
+  if (clean.startsWith("/question-images/")) {
+    return path.join(process.cwd(), "public", "question-images", clean.slice("/question-images/".length));
+  }
   if (clean.startsWith("/api/uploads/question-images/")) {
     return path.join(process.cwd(), "public", "uploads", "question-images", clean.slice("/api/uploads/question-images/".length));
-  }
-  if (clean.startsWith("/question-images/")) {
-    return path.join(process.cwd(), "public", "uploads", "question-images", clean.slice("/question-images/".length));
   }
   return null;
 }

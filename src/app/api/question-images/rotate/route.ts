@@ -7,13 +7,13 @@ import { withModuleAction, ok, fail } from "@/lib/auth/api";
 
 function resolveDiskPath(url: string): string | null {
   const clean = url.split("?")[0];
+  // /question-images/cscc08/figure.png → public/question-images/cscc08/figure.png
+  if (clean.startsWith("/question-images/")) {
+    return path.join(process.cwd(), "public", "question-images", clean.slice("/question-images/".length));
+  }
   // /api/uploads/question-images/... → public/uploads/question-images/...
   if (clean.startsWith("/api/uploads/question-images/")) {
     return path.join(process.cwd(), "public", "uploads", "question-images", clean.slice("/api/uploads/question-images/".length));
-  }
-  // /question-images/... → public/uploads/question-images/...
-  if (clean.startsWith("/question-images/")) {
-    return path.join(process.cwd(), "public", "uploads", "question-images", clean.slice("/question-images/".length));
   }
   return null;
 }
