@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -353,10 +353,13 @@ export function PublicExamForm({ testType }: { testType: "PRE_TEST" | "FINAL_TES
                   <label
                     key={i}
                     className={`flex items-start gap-3 rounded-md border p-3 text-sm cursor-pointer transition-colors ${selected ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`}
+                    onClick={() => setAnswer(q.id, [i])}
                   >
-                    <RadioGroup value={selected ? String(i) : ""} className="mt-0.5">
-                      <RadioGroupItem value={String(i)} />
-                    </RadioGroup>
+                    <div className="mt-0.5">
+                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${selected ? "border-primary" : "border-muted-foreground/50"}`}>
+                        {selected && <div className="w-2 h-2 rounded-full bg-primary" />}
+                      </div>
+                    </div>
                     <span className="flex-1">{optText}</span>
                   </label>
                 );

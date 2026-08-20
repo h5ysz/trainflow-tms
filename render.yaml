@@ -81,22 +81,11 @@ services:
         value: https://trainflow-tms.onrender.com
 
       # ─── AI Provider ───
-      # If no API key is set, the AI assistant returns a graceful
-      # "not configured" message instead of crashing.
       # Provider selection is automatic (priority: Gemini → OpenAI → NoOp).
-      # The app routes all AI through OpenRouter's FREE tier (OpenAI-compatible):
-      # zero cost, no credit card required.
-      #
-      # ─── OpenAI-compatible — OpenRouter FREE ───
-      # OPENAI_MODEL is pinned to the largest capable FREE model currently on
-      # OpenRouter. The free roster rotates over time — if this model leaves the
-      # free tier, pick the next best from https://openrouter.ai/models?q=:free.
-      # (openrouter/free auto-router was abandoned: it kept routing question
-      # generation to nvidia/nemotron-3.5-content-safety, a safety classifier
-      # that cannot produce questions.)
-      # IMPORTANT: OPENAI_API_KEY in the Render dashboard MUST be an OpenRouter
-      # key (sk-or-v1-...) from https://openrouter.ai/keys — a normal OpenAI key
-      # returns 401 against this base URL.
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash
       - key: OPENAI_BASE_URL
         value: https://openrouter.ai/api/v1
       - key: OPENAI_MODEL

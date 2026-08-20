@@ -282,7 +282,7 @@ function figureContext(
   }
   if (cur.length) lines.push(cur.join(" "));
   const surroundText = (lines.join(" ").trim() || pageText).slice(0, 500);
-  const capLine = lines.find((l) => /^(figure|fig\.?|diagram|chart|table|photo|image|لوحة|شكل|صورة|مخطط)\b/i.test(l));
+  const capLine = lines.find((l) => /^(figure|fig\.?|diagram|chart|table|photo|image|لوحة|شكل|صورة|مخطط)(?![A-Za-z])/i.test(l));
   return { caption: capLine ? capLine.slice(0, 200) : undefined, surroundText };
 }
 
@@ -425,8 +425,8 @@ export async function extractMaterialImages(material: {
         try {
           await fs.mkdir(dir, { recursive: true });
           await fs.writeFile(path.join(dir, file), png, { flag: "wx" });
-        } catch {
-          continue;
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") continue;
         }
         const ctx = figureContext(textItems, pageText, cand.x, cand.y, cand.dh);
         collected.push({ url, page: p, width: img.width, height: img.height, pageText, caption: ctx.caption, surroundText: ctx.surroundText });

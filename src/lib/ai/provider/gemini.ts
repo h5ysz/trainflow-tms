@@ -78,12 +78,12 @@ export class GeminiProvider implements AIProvider {
       );
     }
     this.apiKey = apiKey;
-    this.model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+    this.model = process.env.GEMINI_MODEL || "gemini-3.5-flash";
     this.baseUrl = "https://generativelanguage.googleapis.com/v1beta";
   }
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
-    const url = `${this.baseUrl}/models/${this.model}:generateContent?key=${this.apiKey}`;
+    const url = `${this.baseUrl}/models/${request.model ?? this.model}:generateContent`;
 
     // Map our ChatMessage[] → Gemini's expected shape.
     // Gemini uses "user" and "model" roles (not "assistant").
@@ -106,7 +106,7 @@ export class GeminiProvider implements AIProvider {
       contents,
       generationConfig: {
         temperature: request.temperature ?? 0.5,
-        maxOutputTokens: request.maxTokens ?? 2000,
+        maxOutputTokens: (request.maxTokens ?? 2000) * 5,
         ...(request.topP !== undefined && { topP: request.topP }),
         ...(request.stop !== undefined && { stopSequences: Array.isArray(request.stop) ? request.stop : [request.stop] }),
       },
@@ -123,7 +123,7 @@ export class GeminiProvider implements AIProvider {
     try {
       response = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-goog-api-key": this.apiKey },
         body: JSON.stringify(body),
       });
     } catch (err) {
@@ -138,7 +138,7 @@ export class GeminiProvider implements AIProvider {
     if (!response.ok) {
       const errorBody = await response.text().catch(() => "(no response body)");
 
-      if (response.status === 400 || response.status === 403) {
+      if (response.status === 401 || response.status === 403) {
         throw new AIProviderError(
           `Gemini API authentication/permission failed (${response.status}): ${errorBody}`,
           "AUTH_FAILED",

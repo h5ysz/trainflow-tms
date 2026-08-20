@@ -33,12 +33,17 @@ import { DO_NOT_REPEAT_TEXT_BEGIN, DO_NOT_REPEAT_TEXT_END, FIGURES_BEGIN, FIGURE
  * finally the auto-router. Whichever model actually answers is reported back
  * in the response `model` field.
  */
-const QUESTION_GENERATOR_MODELS = [
-  process.env.OPENAI_GENERATOR_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free",
-  "nvidia/nemotron-3-super-120b-a12b:free",
-  "google/gemma-4-31b-it:free",
-  "openrouter/free",
-].filter(Boolean) as string[];
+function getGeneratorModels(providerName: string): string[] {
+  if (providerName === "gemini") {
+    return [process.env.GEMINI_GENERATOR_MODEL || "gemini-3.5-flash"];
+  }
+  return [
+    process.env.OPENAI_GENERATOR_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    "google/gemma-4-31b-it:free",
+    "openrouter/free",
+  ].filter(Boolean) as string[];
+}
 
 export const QUESTION_TYPES = ["SINGLE_CHOICE", "MULTIPLE_CHOICE", "TRUE_FALSE", "SHORT_ANSWER"] as const;
 export type GeneratedQuestionType = (typeof QUESTION_TYPES)[number];
@@ -1195,14 +1200,15 @@ function makeRunGeneration(provider: ReturnType<typeof getAIProvider>, opts: Gen
       // exist, not that they say the same thing. The repair pass is best-effort
       // (it can never throw) and is skipped for mock/noop providers.
       if (provider.name !== "mock" && provider.name !== "noop") {
-        questions = await repairBilingualConsistency(provider, questions, model);
+        questions = await repairBilingualConsistency(provider, questions, provider.name === "gemini" ? undefined : model);
       }
 
       return { questions, model };
     };
 
     let lastError: unknown;
-    for (const model of QUESTION_GENERATOR_MODELS) {
+    const models = getGeneratorModels(provider.name);
+    for (const model of models) {
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
           return await generateOnce(model);

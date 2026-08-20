@@ -209,16 +209,19 @@ export const POST = withModuleAction("course-materials", "create", async ({ user
   // Extract REAL images from every selected material in parallel with text
   // extraction. This is best-effort decoration: a PDF with no extractable
   // images just yields no imageUrl — it never fails or blocks generation.
-  const imageResults = await Promise.all(
-    materials.map(async (m) => {
-      try {
-        return { id: m.id, images: await extractMaterialImages(m) };
-      } catch (e) {
-        console.error(`[ai-generate] image extraction failed for material "${m.id}"`, e);
-        return { id: m.id, images: [] as ExtractedMaterialImage[] };
-      }
-    }),
-  );
+  const imageResults =
+    imageMode === "without_images"
+      ? []
+      : await Promise.all(
+          materials.map(async (m) => {
+            try {
+              return { id: m.id, images: await extractMaterialImages(m) };
+            } catch (e) {
+              console.error(`[ai-generate] image extraction failed for material "${m.id}"`, e);
+              return { id: m.id, images: [] as ExtractedMaterialImage[] };
+            }
+          }),
+        );
   const imagesByMaterial = new Map<string, ExtractedMaterialImage[]>(
     imageResults.map((r) => [r.id, r.images]),
   );
