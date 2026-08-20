@@ -273,7 +273,6 @@ export function SessionExamSets({ sessionId, canManage }: { sessionId: string; c
     await api.post<{ url: string }>("/question-images/rotate", { url: cleanUrl, degrees });
     setRotatedCache((prev) => ({ ...prev, [cleanUrl]: Date.now() }));
     toast({ title: t("courses.aiRotateSuccess") });
-    await load();
   };
 
   if (loading) {
