@@ -18,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sparkles, Loader2, Trash2, Plus, RotateCcw, Upload } from "lucide-react";
+import { Sparkles, Loader2, Trash2, Plus, RotateCcw, RotateCw, Upload } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -98,6 +98,7 @@ export function QuestionGeneratorDialog({
   const [generating, setGenerating] = useState(false);
   const [approving, setApproving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState<number | null>(null);
+  const [rotatingImage, setRotatingImage] = useState<number | null>(null);
 
   const reset = () => {
     setSelected([]);
@@ -113,6 +114,7 @@ export function QuestionGeneratorDialog({
     setAiModel(null);
     setAiPrompt(null);
     setUploadingImage(null);
+    setRotatingImage(null);
   };
 
   const close = () => {
@@ -185,6 +187,23 @@ export function QuestionGeneratorDialog({
       toast({ title: t("courses.aiUploadImageError"), description: (e as Error).message, variant: "destructive" });
     } finally {
       setUploadingImage(null);
+    }
+  };
+
+  const handleRotateImage = async (index: number, degrees: number) => {
+    const rawUrl = draft[index]?.imageUrl;
+    if (!rawUrl) return;
+    const url = rawUrl.split("?")[0];
+    setRotatingImage(index);
+    try {
+      await api.post(`/courses/${courseId}/materials/ai/rotate-image`, { url, degrees });
+      const bustUrl = `${url}?t=${Date.now()}`;
+      updateQuestion(index, { imageUrl: bustUrl });
+      toast({ title: t("courses.aiRotateSuccess") });
+    } catch (e) {
+      toast({ title: t("courses.aiRotateError"), description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setRotatingImage(null);
     }
   };
 
@@ -490,14 +509,34 @@ export function QuestionGeneratorDialog({
                   <img src={q.imageUrl} alt={t("courses.aiQuestionImage")} className="max-h-64 w-full object-contain" />
                   <div className="flex items-center justify-between gap-2 border-t px-3 py-1.5 text-xs text-muted-foreground">
                     <span>{t("courses.aiQuestionImage")}</span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive"
-                      onClick={() => updateQuestion(qi, { imageUrl: undefined })}
-                    >
-                      {t("courses.aiRemoveImage")}
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={rotatingImage !== null}
+                        onClick={() => void handleRotateImage(qi, -90)}
+                        title="Rotate left"
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={rotatingImage !== null}
+                        onClick={() => void handleRotateImage(qi, 90)}
+                        title="Rotate right"
+                      >
+                        <RotateCw className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive"
+                        onClick={() => updateQuestion(qi, { imageUrl: undefined })}
+                      >
+                        {t("courses.aiRemoveImage")}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}
