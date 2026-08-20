@@ -41,6 +41,21 @@ import {
 
 const MAX_COUNT = 25;
 
+function shuffleOptions(q: AIQuestionDraft): AIQuestionDraft {
+  if (q.type === "SHORT_ANSWER" || q.options.length <= 1) return q;
+  const pairs = q.options.map((en, i) => ({ en, ar: q.optionsAr[i] ?? en, wasCorrect: q.correctAnswers.includes(i) }));
+  for (let i = pairs.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
+  }
+  return {
+    ...q,
+    options: pairs.map((p) => p.en),
+    optionsAr: pairs.map((p) => p.ar),
+    correctAnswers: pairs.map((p, i) => (p.wasCorrect ? i : -1)).filter((i) => i >= 0),
+  };
+}
+
 function isIdArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "string");
 }
@@ -301,6 +316,8 @@ export const POST = withModuleAction("course-materials", "create", async ({ user
     return fail("The AI returned no questions. Please try again.", 503, "AI_ERROR");
   }
 
+  const shuffled = batches.map(shuffleOptions);
+
   const providerModel = model;
   const aiPrompt = JSON.stringify({
     count: count ?? null,
@@ -326,8 +343,8 @@ export const POST = withModuleAction("course-materials", "create", async ({ user
   });
 
   return ok({
-    questions: batches,
-    count: batches.length,
+    questions: shuffled,
+    count: shuffled.length,
     aiModel: providerModel ?? null,
     aiPrompt,
     testType,

@@ -32,6 +32,8 @@ import {
   Eye,
   EyeOff,
   ImageIcon,
+  RotateCcw,
+  RotateCw,
 } from "lucide-react";
 
 type TestType = "PRE_TEST" | "FINAL_TEST";
@@ -74,8 +76,19 @@ function fmtDate(d?: string | null): string {
  * its image (if any), and the correct answers highlighted beside the options —
  * the trainer decides, the system only proposes.
  */
-function QuestionList({ questions }: { questions: ExamSetQuestion[] }) {
+function QuestionList({ questions, onRotateImage }: { questions: ExamSetQuestion[]; onRotateImage?: (url: string, degrees: number) => Promise<void> }) {
   const { t } = useI18n();
+  const [rotating, setRotating] = useState<string | null>(null);
+
+  const handleRotate = async (url: string, degrees: number) => {
+    setRotating(url);
+    try {
+      await onRotateImage?.(url, degrees);
+    } finally {
+      setRotating(null);
+    }
+  };
+
   return (
     <div className="space-y-3">
       {questions.map((q, i) => (
@@ -99,10 +112,20 @@ function QuestionList({ questions }: { questions: ExamSetQuestion[] }) {
           {q.imageUrl ? (
             <div className="ps-8">
               <img
-                src={q.imageUrl}
+                src={rotating === q.imageUrl ? `${q.imageUrl.split("?")[0]}?t=${Date.now()}` : q.imageUrl}
                 alt={q.textAr || q.text}
                 className="max-h-56 w-auto max-w-full rounded-md border border-border bg-muted/30 object-contain"
               />
+              {onRotateImage && (
+                <div className="mt-1 flex gap-1">
+                  <Button variant="ghost" size="sm" className="h-7 px-2" disabled={rotating !== null} onClick={() => void handleRotate(q.imageUrl!, -90)}>
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-7 px-2" disabled={rotating !== null} onClick={() => void handleRotate(q.imageUrl!, 90)}>
+                    <RotateCw className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
             </div>
           ) : null}
 
@@ -238,6 +261,13 @@ export function SessionExamSets({ sessionId, canManage }: { sessionId: string; c
       await load();
     });
 
+  const handleRotateImage = async (url: string, degrees: number) => {
+    const cleanUrl = url.split("?")[0];
+    await api.post<{ url: string }>("/question-images/rotate", { url: cleanUrl, degrees });
+    toast({ title: t("courses.aiRotateSuccess") });
+    await load();
+  };
+
   if (loading) {
     return <div className="rounded-lg border bg-card p-8 text-center text-sm text-muted-foreground">{t("table.loading")}</div>;
   }
@@ -300,7 +330,7 @@ export function SessionExamSets({ sessionId, canManage }: { sessionId: string; c
                     </Button>
                     {expanded === active.id && (
                       <div className="mt-3">
-                        <QuestionList questions={active.questions} />
+                        <QuestionList questions={active.questions} onRotateImage={handleRotateImage} />
                       </div>
                     )}
                   </div>
@@ -348,7 +378,7 @@ export function SessionExamSets({ sessionId, canManage }: { sessionId: string; c
                   </div>
                   {expanded === draft.id && (
                     <div className="mt-3">
-                      <QuestionList questions={draft.questions} />
+                      <QuestionList questions={draft.questions} onRotateImage={handleRotateImage} />
                     </div>
                   )}
                 </div>
@@ -401,7 +431,7 @@ export function SessionExamSets({ sessionId, canManage }: { sessionId: string; c
                   </span>
                 </div>
                 <div className="max-h-[50vh] overflow-y-auto rounded-md border bg-background p-3">
-                  <QuestionList questions={current.questions} />
+                  <QuestionList questions={current.questions} onRotateImage={handleRotateImage} />
                 </div>
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <ImageIcon className="h-3.5 w-3.5 shrink-0" />
