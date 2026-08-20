@@ -1420,7 +1420,7 @@ export function TrainingRequestsRoute() {
             <TraineeEntrySection
               trainees={trainees}
               onChange={setTrainees}
-              companyId={(formData.companyId as string) || null}
+              companyId={(formData.companyId as string) || (user?.companyId ?? null)}
             />
           </div>
 
