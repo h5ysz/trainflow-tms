@@ -106,8 +106,8 @@ export const POST = withModuleAction("trainees", "create", async ({ req, user })
   const body = await req.json().catch(() => ({}));
   const { fullName, nationalId, nationality, jobTitle, mobile, email, companyId, status, notes, documents, dateOfBirth, idExpiry } = body;
 
-  if (!fullName || !nationalId || !companyId) {
-    return fail("fullName, nationalId, and companyId are required", 422, "VALIDATION_ERROR");
+  if (!fullName || !nationalId) {
+    return fail("fullName and nationalId are required", 422, "VALIDATION_ERROR");
   }
 
   // ── RBAC: company scope for the trainee file ──
@@ -117,6 +117,9 @@ export const POST = withModuleAction("trainees", "create", async ({ req, user })
   let finalCompanyId = companyId;
   if (user.role === "CONTRACTOR" && user.companyId) {
     finalCompanyId = user.companyId;
+  }
+  if (!finalCompanyId) {
+    return fail("companyId is required", 422, "VALIDATION_ERROR");
   }
   const scope = coordinatorRegionScope(user);
   if (scope) {
