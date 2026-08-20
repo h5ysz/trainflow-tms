@@ -10,8 +10,12 @@ import { ensureTrainerCanAccessCourse } from "@/lib/api/course-materials";
 const PUBLIC_PREFIX = "/api/uploads/question-images";
 
 function resolveDiskPath(url: string): string | null {
-  if (url.startsWith(PUBLIC_PREFIX + "/")) {
-    return path.join(process.cwd(), "public", "uploads", "question-images", url.slice(PUBLIC_PREFIX.length + 1));
+  const clean = url.split("?")[0];
+  if (clean.startsWith("/api/uploads/question-images/")) {
+    return path.join(process.cwd(), "public", "uploads", "question-images", clean.slice("/api/uploads/question-images/".length));
+  }
+  if (clean.startsWith("/question-images/")) {
+    return path.join(process.cwd(), "public", "uploads", "question-images", clean.slice("/question-images/".length));
   }
   return null;
 }

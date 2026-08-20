@@ -1,16 +1,19 @@
 // /api/question-images/rotate — rotate a question image on disk (any authenticated user).
-// POST { url: "/api/uploads/question-images/...", degrees: 90 | -90 | 180 }
+// POST { url: "/question-images/..." | "/api/uploads/question-images/...", degrees: 90 | -90 | 180 }
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
 import { withModuleAction, ok, fail } from "@/lib/auth/api";
 
-const PUBLIC_PREFIX = "/api/uploads/question-images";
-
 function resolveDiskPath(url: string): string | null {
   const clean = url.split("?")[0];
-  if (clean.startsWith(PUBLIC_PREFIX + "/")) {
-    return path.join(process.cwd(), "public", "uploads", "question-images", clean.slice(PUBLIC_PREFIX.length + 1));
+  // /api/uploads/question-images/... → public/uploads/question-images/...
+  if (clean.startsWith("/api/uploads/question-images/")) {
+    return path.join(process.cwd(), "public", "uploads", "question-images", clean.slice("/api/uploads/question-images/".length));
+  }
+  // /question-images/... → public/uploads/question-images/...
+  if (clean.startsWith("/question-images/")) {
+    return path.join(process.cwd(), "public", "uploads", "question-images", clean.slice("/question-images/".length));
   }
   return null;
 }
