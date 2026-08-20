@@ -905,6 +905,170 @@ export async function repairBilingualConsistency(
   }
 }
 
+// ─── Deterministic post-generation validation ────────────────────────────────
+// These checks run AFTER the AI generates a batch and BEFORE it reaches the
+// trainer. They catch structural / semantic issues that prompt instructions
+// alone cannot enforce — every check is pure logic, no AI calls.
+
+/**
+ * Check that the question's key content words overlap with the material text.
+ * Returns true when the question is reasonably grounded; false when it may
+ * contain hallucinated information not supported by the source material.
+ *
+ * Uses a relaxed threshold (≥30% overlap) because questions rephrase facts
+ * in their own words — only completely fabricated questions will fail.
+ */
+export function validateQuestionGrounding(stem: string, correctAnswer: string, materialText: string): boolean {
+  const materialWords = new Set(
+    materialText
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length >= 3),
+  );
+  if (materialWords.size === 0) return true;
+
+  const stemWords = new Set(
+    (stem + " " + correctAnswer)
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length >= 3 && !STOP_WORDS.has(w)),
+  );
+  if (stemWords.size === 0) return true;
+
+  let hits = 0;
+  for (const w of stemWords) {
+    if (materialWords.has(w)) hits++;
+  }
+  return hits / stemWords.size >= 0.30;
+}
+
+/**
+ * Verify structural correctness of correctAnswers for the given question type.
+ * Returns null when valid, or a human-readable rejection reason.
+ */
+export function validateCorrectAnswerStructural(q: GeneratedQuestion): string | null {
+  switch (q.type) {
+    case "SINGLE_CHOICE":
+      if (q.correctAnswers.length !== 1) return "SINGLE_CHOICE must have exactly one correct answer.";
+      break;
+    case "TRUE_FALSE":
+      if (q.correctAnswers.length !== 1) return "TRUE_FALSE must have exactly one correct answer.";
+      if (q.options.length !== 2) return "TRUE_FALSE must have exactly 2 options.";
+      break;
+    case "MULTIPLE_CHOICE":
+      if (q.correctAnswers.length < 1) return "MULTIPLE_CHOICE must have at least one correct answer.";
+      if (q.correctAnswers.length >= q.options.length) return "MULTIPLE_CHOICE must have at least one distractor.";
+      break;
+    case "SHORT_ANSWER":
+      break;
+  }
+  for (const idx of q.correctAnswers) {
+    if (idx < 0 || idx >= q.options.length) return `Correct answer index ${idx} is out of range.`;
+  }
+  return null;
+}
+
+/**
+ * Check distractor quality: no empty options, no duplicate options (by content),
+ * no distractor identical to the correct answer.
+ * Returns null when valid, or a human-readable rejection reason.
+ */
+export function validateDistractors(q: GeneratedQuestion): string | null {
+  if (q.type === "SHORT_ANSWER") return null;
+  if (q.options.length < 2) return "Question must have at least 2 options.";
+
+  const seen = new Map<string, number>();
+  for (let i = 0; i < q.options.length; i++) {
+    const opt = q.options[i]?.trim().toLowerCase();
+    if (!opt) return `Option ${i + 1} (English) is empty.`;
+    if (seen.has(opt)) return `Options ${seen.get(opt)! + 1} and ${i + 1} are duplicate.`;
+    seen.set(opt, i);
+  }
+
+  const correctText = q.correctAnswers.map((i) => q.options[i]?.trim().toLowerCase() ?? "").join("|");
+  for (let i = 0; i < q.options.length; i++) {
+    if (q.correctAnswers.includes(i)) continue;
+    if (q.options[i]?.trim().toLowerCase() === correctText) {
+      return `Distractor at index ${i} is identical to the correct answer.`;
+    }
+  }
+  return null;
+}
+
+/** Simple complexity score for difficulty differentiation checks. */
+function questionComplexity(q: GeneratedQuestion): number {
+  let score = 0;
+  score += q.text.split(/\s+/).length;
+  score += (q.text.match(/[;,:(]/g) ?? []).length * 3;
+  score += (q.text.match(/\b(because|whereas|however|therefore|unless|although|must not|shall|required|ensure|prevents?)\b/gi) ?? []).length * 4;
+  if (q.type === "MULTIPLE_CHOICE") score += 2;
+  if (q.correctAnswers.length > 1) score += 3;
+  return score;
+}
+
+/**
+ * When a batch mixes difficulty levels, verify that HARD questions are
+ * genuinely more complex than EASY ones. Returns null on pass, or a warning
+ * string. This is a soft check — it logs a warning but never rejects, because
+ * the mock provider assigns difficulty by content complexity already and real
+ * providers mostly follow the prompt.
+ */
+export function validateDifficultyDifferentiation(questions: GeneratedQuestion[]): string | null {
+  const easy = questions.filter((q) => q.difficulty === "EASY");
+  const hard = questions.filter((q) => q.difficulty === "HARD");
+  if (easy.length === 0 || hard.length === 0) return null;
+
+  const avgEasy = easy.reduce((s, q) => s + questionComplexity(q), 0) / easy.length;
+  const avgHard = hard.reduce((s, q) => s + questionComplexity(q), 0) / hard.length;
+
+  if (avgHard < avgEasy * 0.8) {
+    return `HARD questions (avg complexity ${avgHard.toFixed(1)}) are not more complex than EASY (avg ${avgEasy.toFixed(1)}).`;
+  }
+  return null;
+}
+
+/**
+ * Run all deterministic post-generation validations on a batch.
+ * Returns { valid: GeneratedQuestion[], rejected: Array<{ question, reason }> }.
+ * Never throws — always returns a result.
+ */
+export function runPostGenerationValidation(
+  questions: GeneratedQuestion[],
+  materialText: string,
+): { valid: GeneratedQuestion[]; rejected: Array<{ question: GeneratedQuestion; reason: string }> } {
+  const valid: GeneratedQuestion[] = [];
+  const rejected: Array<{ question: GeneratedQuestion; reason: string }> = [];
+
+  for (const q of questions) {
+    // 1. Correct answer structural validation
+    const answerIssue = validateCorrectAnswerStructural(q);
+    if (answerIssue) {
+      rejected.push({ question: q, reason: `Incorrect answer: ${answerIssue}` });
+      continue;
+    }
+
+    // 2. Distractor quality
+    const distractorIssue = validateDistractors(q);
+    if (distractorIssue) {
+      rejected.push({ question: q, reason: `Distractor issue: ${distractorIssue}` });
+      continue;
+    }
+
+    // 3. Grounding in material
+    const correctText = q.correctAnswers.length > 0 ? (q.options[q.correctAnswers[0]] ?? "") : "";
+    if (!validateQuestionGrounding(q.text, correctText, materialText)) {
+      rejected.push({ question: q, reason: "Question may be hallucinated — insufficient overlap with course material." });
+      continue;
+    }
+
+    valid.push(q);
+  }
+
+  return { valid, rejected };
+}
+
 // ─── Main entry ──────────────────────────────────────────────────────────────
 
 function cleanExcludes(excludes?: string[]): string[] {
@@ -1149,8 +1313,22 @@ async function generateExactPerType(opts: GenerationOptions): Promise<{ question
 export async function generateBilingualQuestions(opts: GenerationOptions): Promise<{ questions: GeneratedQuestion[]; model?: string }> {
   const hasExactCounts =
     opts.counts !== undefined && QUESTION_TYPES.some((t) => (opts.counts?.[t] ?? 0) > 0);
-  if (hasExactCounts) return generateExactPerType(opts);
-  return generateBalanced(opts);
+  const result = hasExactCounts ? await generateExactPerType(opts) : await generateBalanced(opts);
+
+  // Deterministic post-generation validation: catch hallucinated content,
+  // structural answer issues, duplicate distractors, etc.
+  if (result.questions.length > 0 && opts.materialText) {
+    const { valid, rejected } = runPostGenerationValidation(result.questions, opts.materialText);
+    if (rejected.length > 0) {
+      console.log(
+        `[ai-generate] post-validation rejected ${rejected.length}/${result.questions.length} question(s): ` +
+          rejected.map((r) => r.reason).join("; "),
+      );
+    }
+    result.questions = valid;
+  }
+
+  return result;
 }
 
 // ─── Draft → persisted question mapping (used by the approve route) ─────────

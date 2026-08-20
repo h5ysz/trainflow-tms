@@ -109,8 +109,8 @@ describe("generateBilingualQuestions (via provider)", () => {
     mockResponse([
       validQuestion({
         type: "TRUE_FALSE",
-        text: "Are mock providers allowed to simulate API failures?",
-        textAr: "هل يُسمح للموفرات الوهمية بمحاكاة فشل الواجهات؟",
+        text: "Is every training session linked to a trainer and a room?",
+        textAr: "هل كل جلسة تدريبية مرتبطة بمدرب وغرفة؟",
         options: ["True", "False"],
         optionsAr: ["صحيح", "خطأ"],
         correctAnswers: [0],
