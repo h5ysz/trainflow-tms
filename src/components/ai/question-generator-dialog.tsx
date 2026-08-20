@@ -130,7 +130,7 @@ export function QuestionGeneratorDialog({
     setTypes((prev) => (prev.includes(type) ? prev.filter((x) => x !== type) : [...prev, type]));
   };
 
-  const handleGenerate = async (excludeTexts?: string[]) => {
+  const handleGenerate = async (excludeTexts?: string[], regenerate?: boolean) => {
     if (selected.length === 0) {
       toast({ title: t("courses.aiSelectMaterial"), variant: "destructive" });
       return;
@@ -146,6 +146,7 @@ export function QuestionGeneratorDialog({
         testType,
         imageMode,
         excludeTexts,
+        regenerate: regenerate || undefined,
       });
       setDraft(res.questions);
       setAiModel(res.aiModel);
@@ -161,7 +162,7 @@ export function QuestionGeneratorDialog({
   const handleRegenerate = async () => {
     const current = draft.map((q) => q.text).filter((t): t is string => Boolean(t));
     setDraft([]);
-    await handleGenerate(current);
+    await handleGenerate(current, true);
   };
 
   const handleUploadImage = async (index: number, file: File | undefined) => {

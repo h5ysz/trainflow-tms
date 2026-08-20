@@ -35,3 +35,8 @@ export function rememberDraftStems(courseId: string, stems: string[]): void {
 export function _resetDraftMemory(): void {
   recentDraftStems.clear();
 }
+
+/** Clear session memory for a specific course (used on regenerate). */
+export function clearDraftStems(courseId: string): void {
+  recentDraftStems.delete(courseId);
+}

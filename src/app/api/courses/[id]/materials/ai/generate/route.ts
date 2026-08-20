@@ -122,7 +122,7 @@ function parseImageMode(v: unknown): ImageMode | undefined {
 
 export type AIQuestionDraft = GeneratedQuestion & { materialId: string };
 
-import { sessionDraftStems, rememberDraftStems } from "@/lib/ai/draft-memory";
+import { sessionDraftStems, rememberDraftStems, clearDraftStems } from "@/lib/ai/draft-memory";
 
 function dedupeStems(stems: string[]): string[] {
   const seen = new Set<string>();
@@ -169,6 +169,8 @@ export const POST = withModuleAction("course-materials", "create", async ({ user
   const clientExcludeTexts = Array.isArray(body.excludeTexts)
     ? body.excludeTexts.filter((x): x is string => typeof x === "string")
     : [];
+  const isRegenerate = body.regenerate === true;
+  if (isRegenerate) clearDraftStems(courseId);
 
   const materials = await db.courseResource.findMany({
     where: { id: { in: materialIds }, courseId, deletedAt: null, isActive: true },
