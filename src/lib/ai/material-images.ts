@@ -83,7 +83,7 @@ const MAX_PAGES = 45;
 const MAX_UNIQUE_IMAGES = 24;
 const MAX_SCAN_MS = 90_000;
 const RESOLVE_TIMEOUT_MS = 1_500;
-const MANIFEST_VERSION = 2;
+const MANIFEST_VERSION = 3;
 
 // Size filters — drop icons/watermarks (tiny) and thin decorative banners.
 const MIN_WIDTH = 100;
@@ -242,11 +242,14 @@ async function resolvePageImage(
   return img;
 }
 
-async function convertToPng(img: { width: number; height: number; kind: number; data: Uint8Array }): Promise<Buffer | null> {
+async function convertToPng(img: { width: number; height: number; kind: number; data: Uint8Array }, flipH = false, flipV = false): Promise<Buffer | null> {
   const channels = img.kind === 3 ? 4 : img.kind === 2 ? 3 : 1;
   const raw = img.data instanceof Uint8Array ? Buffer.from(img.data.buffer, img.data.byteOffset, img.data.byteLength) : Buffer.from(img.data);
   try {
-    return await sharp(raw, { raw: { width: img.width, height: img.height, channels } }).png().toBuffer();
+    let pipeline = sharp(raw, { raw: { width: img.width, height: img.height, channels } });
+    if (flipH) pipeline = pipeline.flop();
+    if (flipV) pipeline = pipeline.flip();
+    return await pipeline.png().toBuffer();
   } catch {
     return null;
   }
@@ -373,7 +376,7 @@ export async function extractMaterialImages(material: {
       }
 
       const list = await page.getOperatorList();
-      const candidates: Array<{ ref: string | null; inline: unknown; dw: number; dh: number; x: number; y: number }> = [];
+      const candidates: Array<{ ref: string | null; inline: unknown; dw: number; dh: number; x: number; y: number; flipH: boolean; flipV: boolean }> = [];
       let ctm = [1, 0, 0, 1, 0, 0];
       for (let i = 0; i < list.fnArray.length; i++) {
         const fn = list.fnArray[i];
@@ -387,10 +390,14 @@ export async function extractMaterialImages(material: {
         const dw = Number(args[3]) || 0;
         const dh = Number(args[4]) || 0;
         if (dw > 0 && dh > 0 && (dw < 40 || dh < 25)) continue; // icons / watermark
+        // Detect horizontal / vertical flips from the accumulated CTM.
+        // ctm = [a, b, c, d, e, f] — negative a → horizontal flip, negative d → vertical flip.
+        const flipH = ctm[0] < 0;
+        const flipV = ctm[3] < 0;
         if (fn === OPS.paintImageXObject) {
-          if (typeof args[0] === "string") candidates.push({ ref: String(args[0]), inline: null, dw, dh, x: ctm[4], y: ctm[5] });
+          if (typeof args[0] === "string") candidates.push({ ref: String(args[0]), inline: null, dw, dh, x: ctm[4], y: ctm[5], flipH, flipV });
         } else {
-          candidates.push({ ref: null, inline: args[0], dw, dh, x: ctm[4], y: ctm[5] });
+          candidates.push({ ref: null, inline: args[0], dw, dh, x: ctm[4], y: ctm[5], flipH, flipV });
         }
       }
 
@@ -405,7 +412,8 @@ export async function extractMaterialImages(material: {
         if (!img) continue;
         if (img.width < MIN_WIDTH || img.height < MIN_HEIGHT) continue;
         if (img.height < 90 && img.width / img.height > MAX_ASPECT_BANNER) continue; // thin banners
-        const png = await convertToPng(img);
+        const cand = candidates[ci];
+        const png = await convertToPng(img, cand.flipH, cand.flipV);
         if (!png) continue;
         const hash = crypto.createHash("sha256").update(png).digest("hex").slice(0, 24);
         if (seen.has(hash)) continue;
@@ -420,7 +428,6 @@ export async function extractMaterialImages(material: {
         } catch {
           continue;
         }
-        const cand = candidates[ci];
         const ctx = figureContext(textItems, pageText, cand.x, cand.y, cand.dh);
         collected.push({ url, page: p, width: img.width, height: img.height, pageText, caption: ctx.caption, surroundText: ctx.surroundText });
       }
