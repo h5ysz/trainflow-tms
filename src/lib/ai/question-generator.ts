@@ -128,6 +128,9 @@ export interface GenerationOptions {
    * the tested fact (imageRef), instead of images being guessed afterwards.
    */
   figures?: QuestionFigure[];
+  /** When true, the model is told to explore DIFFERENT facts/aspects and the
+   *  temperature is raised to increase output diversity. */
+  regenerate?: boolean;
 }
 
 export class QuestionGenerationError extends Error {
@@ -411,6 +414,15 @@ function buildUserPrompt(opts: GenerationOptions): string {
     buildImageModeDirective(opts.imageMode),
     "",
     `Generate exactly ${opts.count} questions. All questions must be bilingual (Arabic + English).`,
+    ...(opts.regenerate
+      ? [
+          "",
+          "IMPORTANT: This is a REGENERATION request. The trainer already saw the previous batch and wants DIFFERENT questions.",
+          "Do NOT rephrase or reword the excluded questions — that counts as the SAME question.",
+          "Instead, test COMPLETELY DIFFERENT facts, concepts, or scenarios from the source material.",
+          "Vary the question types (mix true/false with multiple-choice, etc.) and target different sections of the material.",
+        ]
+      : []),
   ].join("\n");
 }
 
@@ -1120,6 +1132,7 @@ function isTransientError(e: unknown): boolean {
  * falling back to smaller models automatically.
  */
 function makeRunGeneration(provider: ReturnType<typeof getAIProvider>, opts: GenerationOptions, excludeTexts: string[]) {
+  const temp = opts.regenerate ? 0.8 : 0.4;
   return async (params: {
     count: number;
     types?: GeneratedQuestionType[];
@@ -1145,7 +1158,7 @@ function makeRunGeneration(provider: ReturnType<typeof getAIProvider>, opts: Gen
               }),
             },
           ],
-          temperature: 0.4,
+          temperature: temp,
           maxTokens: 4000,
           model,
         });

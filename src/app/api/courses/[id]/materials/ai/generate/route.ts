@@ -270,6 +270,7 @@ export const POST = withModuleAction("course-materials", "create", async ({ user
         excludeTexts,
         figures: imageMode === "without_images" ? undefined : materialFigures,
         imageMode,
+        regenerate: isRegenerate || undefined,
       };
 
       if (counts) {
