@@ -76,7 +76,7 @@ function fmtDate(d?: string | null): string {
  * its image (if any), and the correct answers highlighted beside the options —
  * the trainer decides, the system only proposes.
  */
-function QuestionList({ questions, onRotateImage, rotatedCache }: { questions: ExamSetQuestion[]; onRotateImage?: (url: string, degrees: number) => Promise<void>; rotatedCache?: Record<string, number> }) {
+function QuestionList({ questions, onRotateImage, imageVersion }: { questions: ExamSetQuestion[]; onRotateImage?: (url: string, degrees: number) => Promise<void>; imageVersion?: number }) {
   const { t } = useI18n();
   const [rotating, setRotating] = useState<string | null>(null);
 
@@ -91,8 +91,7 @@ function QuestionList({ questions, onRotateImage, rotatedCache }: { questions: E
 
   const getImageUrl = (url: string) => {
     const clean = url.split("?")[0];
-    const ts = rotatedCache?.[clean];
-    return ts ? `${clean}?t=${ts}` : url;
+    return imageVersion ? `${clean}?v=${imageVersion}` : clean;
   };
 
   return (
@@ -176,7 +175,7 @@ export function SessionExamSets({ sessionId, canManage }: { sessionId: string; c
   const [current, setCurrent] = useState<ExamSetDto | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [rotatedCache, setRotatedCache] = useState<Record<string, number>>({});
+  const [imageVersion, setImageVersion] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -271,7 +270,7 @@ export function SessionExamSets({ sessionId, canManage }: { sessionId: string; c
   const handleRotateImage = async (url: string, degrees: number) => {
     const cleanUrl = url.split("?")[0];
     await api.post<{ url: string }>("/question-images/rotate", { url: cleanUrl, degrees });
-    setRotatedCache((prev) => ({ ...prev, [cleanUrl]: Date.now() }));
+    setImageVersion((v) => v + 1);
     toast({ title: t("courses.aiRotateSuccess") });
   };
 
@@ -337,7 +336,7 @@ export function SessionExamSets({ sessionId, canManage }: { sessionId: string; c
                     </Button>
                     {expanded === active.id && (
                       <div className="mt-3">
-                        <QuestionList questions={active.questions} onRotateImage={handleRotateImage} rotatedCache={rotatedCache} />
+                        <QuestionList questions={active.questions} onRotateImage={handleRotateImage} imageVersion={imageVersion} />
                       </div>
                     )}
                   </div>
@@ -385,7 +384,7 @@ export function SessionExamSets({ sessionId, canManage }: { sessionId: string; c
                   </div>
                   {expanded === draft.id && (
                     <div className="mt-3">
-                      <QuestionList questions={draft.questions} onRotateImage={handleRotateImage} rotatedCache={rotatedCache} />
+                      <QuestionList questions={draft.questions} onRotateImage={handleRotateImage} imageVersion={imageVersion} />
                     </div>
                   )}
                 </div>
@@ -438,7 +437,7 @@ export function SessionExamSets({ sessionId, canManage }: { sessionId: string; c
                   </span>
                 </div>
                 <div className="max-h-[50vh] overflow-y-auto rounded-md border bg-background p-3">
-                  <QuestionList questions={current.questions} onRotateImage={handleRotateImage} rotatedCache={rotatedCache} />
+                  <QuestionList questions={current.questions} onRotateImage={handleRotateImage} imageVersion={imageVersion} />
                 </div>
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <ImageIcon className="h-3.5 w-3.5 shrink-0" />
