@@ -161,7 +161,6 @@ export function QuestionGeneratorDialog({
 
   const handleRegenerate = async () => {
     const current = draft.map((q) => q.text).filter((t): t is string => Boolean(t));
-    setDraft([]);
     await handleGenerate(current, true);
   };
 

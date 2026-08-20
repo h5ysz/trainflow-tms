@@ -657,7 +657,7 @@ export function validateGeneratedQuestion(raw: unknown, index: number): Generate
       if (/[\u0000-\u001F\u007F\r\n]/.test(rawUrl) || !(rawUrl.startsWith("/") || rawUrl.startsWith("http://") || rawUrl.startsWith("https://"))) {
         fail('"imageUrl" must be a URL (e.g. /api/uploads/question-images/...) or an absolute http(s) link.');
       }
-      imageUrl = rawUrl;
+      imageUrl = rawUrl.split("?")[0];
     }
   }
   let imageRef: number | undefined;

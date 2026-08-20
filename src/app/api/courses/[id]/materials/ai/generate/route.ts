@@ -170,7 +170,10 @@ export const POST = withModuleAction("course-materials", "create", async ({ user
     ? body.excludeTexts.filter((x): x is string => typeof x === "string")
     : [];
   const isRegenerate = body.regenerate === true;
-  if (isRegenerate) clearDraftStems(courseId);
+  if (isRegenerate) {
+    clearDraftStems(courseId);
+    rememberDraftStems(courseId, clientExcludeTexts.filter((s) => s.length > 0));
+  }
 
   const materials = await db.courseResource.findMany({
     where: { id: { in: materialIds }, courseId, deletedAt: null, isActive: true },

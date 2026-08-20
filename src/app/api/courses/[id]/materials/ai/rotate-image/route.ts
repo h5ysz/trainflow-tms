@@ -42,8 +42,14 @@ export const POST = withModuleAction("course-materials", "create", async ({ req,
 
   try {
     const input = await fs.readFile(diskPath);
-    const rotated = await sharp(input).rotate(degrees).png().toBuffer();
-    await fs.writeFile(diskPath, rotated);
+    const ext = path.extname(diskPath).toLowerCase();
+    const rotated = sharp(input).rotate(degrees);
+    const buffer = ext === ".jpg" || ext === ".jpeg"
+      ? await rotated.jpeg().toBuffer()
+      : ext === ".webp"
+        ? await rotated.webp().toBuffer()
+        : await rotated.png().toBuffer();
+    await fs.writeFile(diskPath, buffer);
     return ok({ url: body.url });
   } catch (e) {
     console.error("[rotate-image]", e);
