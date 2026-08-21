@@ -27,6 +27,11 @@ export async function POST(
   const body = await req.json().catch(() => ({}));
   const answers = Array.isArray(body.answers) ? body.answers : [];
 
+  // Server-side deadline enforcement
+  const clientTimedOut = body.timedOut === true;
+  const serverTimedOut = !clientTimedOut && !!attempt.deadline && new Date() > new Date(attempt.deadline);
+  const timedOut = clientTimedOut || serverTimedOut;
+
   try {
     const result = await gradeExamAttempt({
       attemptId,
@@ -36,10 +41,10 @@ export async function POST(
       })),
     });
 
-    // Update the attempt with results
-    const timedOut = body.timedOut === true;
-    await db.examAttempt.update({
-      where: { id: attemptId },
+    // Atomic update — only grade if still IN_PROGRESS. This prevents
+    // concurrent submissions from double-grading the same attempt.
+    const updated = await db.examAttempt.updateMany({
+      where: { id: attemptId, status: "IN_PROGRESS" },
       data: {
         status: "GRADED",
         scorePercent: result.scorePercent,
@@ -49,6 +54,11 @@ export async function POST(
         timedOut,
       },
     });
+
+    if (updated.count === 0) {
+      // Another concurrent request already graded this attempt
+      return fail("This exam has already been graded", 400, "ALREADY_GRADED");
+    }
 
     // Sync enrollment status
     if (attempt.testType === "PRE_TEST") {
@@ -82,6 +92,7 @@ export async function POST(
       timedOut,
     });
   } catch (e) {
-    return fail((e as Error).message || "Failed to grade exam", 500, "GRADING_ERROR");
+    console.error(`[exam-submit] Failed to grade attempt ${attemptId}:`, e);
+    return fail("Failed to grade exam", 500, "GRADING_ERROR");
   }
 }

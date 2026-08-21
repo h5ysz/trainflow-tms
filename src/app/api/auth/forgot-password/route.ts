@@ -41,9 +41,12 @@ export const POST = async (req: Request) => {
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
   // Store token hash + expiry in registrationData JSON (no migration needed)
-  const existingData = user.registrationData
-    ? JSON.parse(user.registrationData)
-    : {};
+  let existingData: Record<string, unknown> = {};
+  try {
+    existingData = user.registrationData ? JSON.parse(user.registrationData) : {};
+  } catch {
+    existingData = {};
+  }
   existingData.passwordReset = { tokenHash, expiresAt: expiresAt.toISOString() };
 
   await db.user.update({
@@ -64,8 +67,6 @@ export const POST = async (req: Request) => {
 
   // Try to send the email — if SMTP isn't configured, the reset link is
   // logged to the server console so the admin can share it manually.
-  // Also always log the link so it's visible in dev/Render logs.
-  console.log(`[forgot-password] Reset link for ${user.email}: ${resetLink}`);
   try {
     await sendReportEmail({
       to: [user.email],
@@ -85,7 +86,11 @@ export const POST = async (req: Request) => {
       attachments: [],
     });
   } catch (err) {
-    // SMTP error — the link was already logged above
+    // SMTP not configured — log the link so the admin can share it manually.
+    // Only log when SMTP is unavailable, never in production with working email.
+    if (process.env.NODE_ENV !== "production" || !process.env.SMTP_HOST) {
+      console.log(`[forgot-password] SMTP unavailable — reset link for ${user.email}: ${resetLink}`);
+    }
   }
 
   return ok({ success: true });

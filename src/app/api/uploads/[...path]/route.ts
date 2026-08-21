@@ -35,28 +35,33 @@ const MIME: Record<string, string> = {
 };
 
 export const GET = async (req: Request, ctx: { params: Promise<{ path: string[] }> | { path: string[] } }) => {
-  // Require authentication — only logged-in users can view attachments
-  let user: AuthUser;
-  try {
-    user = await requireAuth();
-  } catch {
-    return fail("Unauthorized", 401);
-  }
-
   const params = ctx.params instanceof Promise ? await ctx.params : ctx.params;
   const relPath = (params.path as string[]).join("/");
   const fullPath = path.join(UPLOADS_ROOT, relPath);
-
-  // Curriculum files are trainer-only: block them for anyone without
-  // course-materials.view (contractors, coordinators, auditors, viewers...).
-  if (relPath.startsWith("course-materials/") && !canPerformAction(user.permissions, "course-materials", "view")) {
-    return fail("Forbidden", 403);
-  }
 
   // Prevent path traversal — resolve and check it's still under UPLOADS_ROOT
   const resolved = path.resolve(fullPath);
   if (!resolved.startsWith(UPLOADS_ROOT + path.sep)) {
     return fail("Forbidden", 403);
+  }
+
+  // Question images used in public exams (pre-test / final-test) must be
+  // accessible without authentication so anonymous trainees can see them.
+  // All other uploads require authentication.
+  const isPublicQuestionImage = relPath.startsWith("question-images/");
+  if (!isPublicQuestionImage) {
+    let user: AuthUser;
+    try {
+      user = await requireAuth();
+    } catch {
+      return fail("Unauthorized", 401);
+    }
+
+    // Curriculum files are trainer-only: block them for anyone without
+    // course-materials.view (contractors, coordinators, auditors, viewers...).
+    if (relPath.startsWith("course-materials/") && !canPerformAction(user.permissions, "course-materials", "view")) {
+      return fail("Forbidden", 403);
+    }
   }
 
   try {

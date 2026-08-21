@@ -17,6 +17,11 @@ export const POST = withErrorEnvelope(async function POST(req: Request, ctx: { p
   const target = await db.user.findUnique({ where: { id } });
   if (!target || target.deletedAt) return notFound("User not found");
 
+  const ROLE_RANK: Record<string, number> = { SUPER_ADMIN: 4, ADMIN: 3, COORDINATOR: 2, TRAINER: 1, TRAINEE: 0, CONTRACTOR: 0 };
+  if (ROLE_RANK[target.role] > ROLE_RANK[admin.role]) {
+    return fail("Cannot lock a higher-privileged user", 403, "FORBIDDEN");
+  }
+
   if (lock) {
     await db.user.update({
       where: { id },

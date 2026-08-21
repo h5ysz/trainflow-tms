@@ -165,6 +165,19 @@ export const POST = withAuth(async ({ req, user }) => {
     } satisfies ChatResponse);
   } catch (err) {
     console.error("[copilot] LLM error:", err);
+    const msg = (err as Error).message ?? "";
+    if (msg.includes("429") || msg.includes("rate limit") || msg.includes("RATE_LIMITED")) {
+      return fail("AI service is temporarily busy. Please wait a moment and try again.", 429, "RATE_LIMITED");
+    }
+    if (msg.includes("401") || msg.includes("403") || msg.includes("AUTH_FAILED")) {
+      return fail("AI service authentication failed. Please contact your administrator.", 503, "AI_ERROR");
+    }
+    if (msg.includes("TIMEOUT") || msg.includes("timed out") || msg.includes("timeout")) {
+      return fail("AI service timed out. Please try again with a shorter message.", 504, "AI_ERROR");
+    }
+    if (msg.includes("503") || msg.includes("unavailable") || msg.includes("overloaded")) {
+      return fail("AI service is temporarily unavailable. Please try again later.", 503, "AI_ERROR");
+    }
     return fail("AI service temporarily unavailable. Please try again.", 503, "AI_ERROR");
   }
 });

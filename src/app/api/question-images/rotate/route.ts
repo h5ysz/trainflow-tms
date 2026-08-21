@@ -7,13 +7,18 @@ import { withModuleAction, ok, fail } from "@/lib/auth/api";
 
 function resolveDiskPath(url: string): string | null {
   const clean = url.split("?")[0];
+  const cwd = process.cwd();
   // /question-images/cscc08/figure.png → public/question-images/cscc08/figure.png
   if (clean.startsWith("/question-images/")) {
-    return path.join(process.cwd(), "public", "question-images", clean.slice("/question-images/".length));
+    const resolved = path.join(cwd, "public", "question-images", clean.slice("/question-images/".length));
+    if (!resolved.startsWith(path.join(cwd, "public", "question-images") + path.sep) && resolved !== path.join(cwd, "public", "question-images")) return null;
+    return resolved;
   }
   // /api/uploads/question-images/... → public/uploads/question-images/...
   if (clean.startsWith("/api/uploads/question-images/")) {
-    return path.join(process.cwd(), "public", "uploads", "question-images", clean.slice("/api/uploads/question-images/".length));
+    const resolved = path.join(cwd, "public", "uploads", "question-images", clean.slice("/api/uploads/question-images/".length));
+    if (!resolved.startsWith(path.join(cwd, "public", "uploads", "question-images") + path.sep) && resolved !== path.join(cwd, "public", "uploads", "question-images")) return null;
+    return resolved;
   }
   return null;
 }

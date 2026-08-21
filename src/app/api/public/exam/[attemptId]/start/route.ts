@@ -20,9 +20,10 @@ export async function POST(
   }
 
   // If ASSIGNED, transition to IN_PROGRESS
+  let currentAttempt = attempt;
   if (attempt.status === "ASSIGNED") {
     const deadline = examDeadlineFrom(new Date());
-    await db.examAttempt.update({
+    currentAttempt = await db.examAttempt.update({
       where: { id: attemptId },
       data: { status: "IN_PROGRESS", startedAt: new Date(), deadline },
     });
@@ -34,10 +35,10 @@ export async function POST(
 
   return ok({
     attemptId,
-    refNumber: attempt.refNumber,
-    testType: attempt.testType,
-    passScore: attempt.passScore ?? 70,
-    deadline: attempt.status === "IN_PROGRESS" ? attempt.deadline : null,
+    refNumber: currentAttempt.refNumber,
+    testType: currentAttempt.testType,
+    passScore: currentAttempt.passScore ?? 70,
+    deadline: currentAttempt.status === "IN_PROGRESS" ? currentAttempt.deadline : null,
     questions: version.questions.map((q) => ({
       id: q.id,
       order: q.order,

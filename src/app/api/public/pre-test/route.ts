@@ -83,6 +83,8 @@ export async function POST(req: Request) {
       attemptId: existingAttempt.id,
       refNumber: existingAttempt.refNumber,
       status: existingAttempt.status,
+      passed: existingAttempt.passed ?? false,
+      scorePercent: existingAttempt.scorePercent ?? null,
       traineeName,
       traineeIdNational: traineeIdNational ?? null,
     });
@@ -108,6 +110,7 @@ export async function POST(req: Request) {
       refNumber: completedAttempt.refNumber,
       status: "GRADED",
       scorePercent: completedAttempt.scorePercent,
+      passed: completedAttempt.passed,
       traineeName,
       traineeIdNational: traineeIdNational ?? null,
     });
@@ -129,6 +132,8 @@ export async function POST(req: Request) {
       attemptId: result.attemptId,
       refNumber: result.refNumber,
       status: "ASSIGNED",
+      passed: false,
+      scorePercent: null,
       traineeName,
       traineeIdNational: traineeIdNational ?? null,
     });

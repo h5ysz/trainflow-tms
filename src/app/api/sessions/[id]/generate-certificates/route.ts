@@ -44,76 +44,101 @@ export const POST = withModuleAction("certificates", "create", async ({ req, par
   let skipped = 0;
 
   for (const trainee of presentTrainees) {
-    // Check if certificate already exists
-    const existing = await db.certificate.findFirst({
-      where: { sessionId, traineeName: trainee.traineeName, deletedAt: null },
-    });
-    if (existing) {
-      results.push({
-        traineeName: trainee.traineeName,
-        eligible: true,
-        certificateRef: existing.refNumber,
-        reasons: ["Certificate already exists"],
+    // Atomic check+create: wrap in a transaction to prevent double-generation
+    // from concurrent requests.
+    let cert: Awaited<ReturnType<typeof db.certificate.create>> | null = null;
+    let existingRef: string | null = null;
+
+    try {
+      cert = await db.$transaction(async (tx) => {
+        const existing = await tx.certificate.findFirst({
+          where: { sessionId, traineeName: trainee.traineeName, deletedAt: null },
+        });
+        if (existing) {
+          existingRef = existing.refNumber;
+          return null; // signal: already exists
+        }
+
+        // Check eligibility
+        const eligibility = await checkCertificateEligibility({
+          sessionId,
+          traineeName: trainee.traineeName,
+          traineeIdNational: trainee.traineeIdNational ?? undefined,
+        });
+
+        if (!eligibility.eligible) {
+          results.push({
+            traineeName: trainee.traineeName,
+            eligible: false,
+            reasons: eligibility.reasons,
+          });
+          skipped++;
+          return null; // signal: not eligible
+        }
+
+        // Get final test score
+        const finalTestAttempt = await tx.examAttempt.findFirst({
+          where: {
+            sessionId,
+            testType: "FINAL_TEST",
+            traineeName: trainee.traineeName,
+            status: "GRADED",
+            passed: true,
+            deletedAt: null,
+          },
+          orderBy: { submittedAt: "desc" },
+        });
+        const finalScore = finalTestAttempt?.scorePercent ?? 0;
+
+        const refNumber = await nextRefNumber("CERTIFICATE");
+        const verificationToken = genVerificationToken();
+        const validUntil = computeValidUntil(session.course!.validityMonths);
+
+        return tx.certificate.create({
+          data: {
+            refNumber,
+            sessionId,
+            courseId: session.courseId,
+            companyId: trainee.companyId ?? session.request?.companyId ?? null,
+            attendanceId: trainee.id,
+            traineeName: trainee.traineeName,
+            traineeIdNational: trainee.traineeIdNational,
+            traineeEmail: trainee.traineeEmail,
+            finalScore,
+            validUntil,
+            status: "VALID",
+            verificationToken,
+            createdBy: user.id,
+            updatedBy: user.id,
+          },
+        });
       });
-      skipped++;
-      continue;
-    }
-
-    // Check eligibility
-    const eligibility = await checkCertificateEligibility({
-      sessionId,
-      traineeName: trainee.traineeName,
-      traineeIdNational: trainee.traineeIdNational ?? undefined,
-    });
-
-    if (!eligibility.eligible) {
+    } catch (e) {
+      // If the transaction failed due to a race (unique constraint), skip
+      console.error(`[generate-certificates] Transaction failed for ${trainee.traineeName}:`, e);
       results.push({
         traineeName: trainee.traineeName,
         eligible: false,
-        reasons: eligibility.reasons,
+        reasons: ["Certificate generation failed due to a concurrent request"],
       });
       skipped++;
       continue;
     }
 
-    // Get final test score
-    const finalTestAttempt = await db.examAttempt.findFirst({
-      where: {
-        sessionId,
-        testType: "FINAL_TEST",
-        traineeName: trainee.traineeName,
-        status: "GRADED",
-        passed: true,
-        deletedAt: null,
-      },
-      orderBy: { submittedAt: "desc" },
-    });
-    const finalScore = finalTestAttempt?.scorePercent ?? 0;
+    if (!cert) {
+      if (existingRef) {
+        results.push({
+          traineeName: trainee.traineeName,
+          eligible: true,
+          certificateRef: existingRef,
+          reasons: ["Certificate already exists"],
+        });
+        skipped++;
+      }
+      continue;
+    }
 
-    const refNumber = await nextRefNumber("CERTIFICATE");
-    const verificationToken = genVerificationToken();
-    const validUntil = computeValidUntil(session.course.validityMonths);
-
-    const cert = await db.certificate.create({
-      data: {
-        refNumber,
-        sessionId,
-        courseId: session.courseId,
-        companyId: trainee.companyId ?? session.request?.companyId ?? null, // MULTI-COMPANY: trainee's company
-        attendanceId: trainee.id,
-        traineeName: trainee.traineeName,
-        traineeIdNational: trainee.traineeIdNational,
-        traineeEmail: trainee.traineeEmail,
-        finalScore,
-        validUntil,
-        status: "VALID",
-        verificationToken,
-        createdBy: user.id,
-        updatedBy: user.id,
-      },
-    });
-
-    // Link certificate to attendance
+    // Post-transaction: link attendance and passport outside the cert transaction
     await db.attendance.update({
       where: { id: trainee.id },
       data: { certificateId: cert.id, updatedBy: user.id },

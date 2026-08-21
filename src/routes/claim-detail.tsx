@@ -218,15 +218,17 @@ export function ClaimDetailRoute() {
 
   const forwardReview = async () => {
     if (!confirm(t("claims.actions.forwardReviewConfirm"))) return;
-    await fetch(`/api/claims/${claimId}/forward-review`, { method: "POST" });
-    refresh();
+    try {
+      await api.post(`/claims/${claimId}/forward-review`);
+      await fetchClaim();
+    } catch (err) {
+      toast({ title: t("misc.error"), description: (err as Error).message, variant: "destructive" });
+    }
   };
 
   const acknowledge = async () => {
-    await fetch(`/api/claims/${claimId}/acknowledge`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    try {
+      await api.post(`/claims/${claimId}/acknowledge`, {
         accepted: true,
         empId,
         empJobTitle,
@@ -237,45 +239,47 @@ export function ClaimDetailRoute() {
         reason,
         normalWorkingHours: normalHours,
         estimatedOtPerDay: estimatedOt,
-      }),
-    });
-    refresh();
+      });
+      await fetchClaim();
+    } catch (err) {
+      toast({ title: t("misc.error"), description: (err as Error).message, variant: "destructive" });
+    }
   };
 
   const submitLmReview = async () => {
     if (!lmDecision) return;
-    await fetch(`/api/claims/${claimId}/line-manager`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision: lmDecision, checklist: lmChecklist, comments: lmComments }),
-    });
-    refresh();
+    try {
+      await api.post(`/claims/${claimId}/line-manager`, { decision: lmDecision, checklist: lmChecklist, comments: lmComments });
+      await fetchClaim();
+    } catch (err) {
+      toast({ title: t("misc.error"), description: (err as Error).message, variant: "destructive" });
+    }
   };
 
   const submitQhseReview = async () => {
     if (!qhseAssessment) return;
-    await fetch(`/api/claims/${claimId}/qhse`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ assessment: qhseAssessment, controls: qhseControls }),
-    });
-    refresh();
+    try {
+      await api.post(`/claims/${claimId}/qhse`, { assessment: qhseAssessment, controls: qhseControls });
+      await fetchClaim();
+    } catch (err) {
+      toast({ title: t("misc.error"), description: (err as Error).message, variant: "destructive" });
+    }
   };
 
   const submitHrReview = async () => {
     if (!hrDecision) return;
-    await fetch(`/api/claims/${claimId}/hr-review`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    try {
+      await api.post(`/claims/${claimId}/hr-review`, {
         decision: hrDecision,
         maxApprovedOt: hrMaxOt || undefined,
         periodFrom: hrPeriodFrom || undefined,
         periodTo: hrPeriodTo || undefined,
         comments: hrComments || undefined,
-      }),
-    });
-    refresh();
+      });
+      await fetchClaim();
+    } catch (err) {
+      toast({ title: t("misc.error"), description: (err as Error).message, variant: "destructive" });
+    }
   };
 
   if (loading) {

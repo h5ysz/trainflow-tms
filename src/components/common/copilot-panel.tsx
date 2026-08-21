@@ -293,9 +293,17 @@ export function CopilotPanel() {
         }
       }
     } catch (e) {
+      const isRateLimit = e instanceof Error && /429|rate.?limit|quota/i.test(e.message);
+      const isServiceDown = e instanceof Error && /503|unavailable|AI_ERROR/i.test(e.message);
       const errorMsg: ChatMessage = {
         role: "assistant",
-        content: isAr ? "عذراً، لم أتمكن من معالجة طلبك. يرجى المحاولة مرة أخرى." : "Sorry, I couldn't process your request. Please try again.",
+        content: isAr
+          ? (isRateLimit ? "عذراً، تم تجاوز حد الاستخدام المسموح للمساعد الذكي. يرجى المحاولة لاحقاً." :
+             isServiceDown ? "عذراً، خدمة الذكاء الاصطناعي غير متاحة حالياً. يرجى المحاولة مرة أخرى." :
+             "عذراً، لم أتمكن من معالجة طلبك. يرجى المحاولة مرة أخرى.")
+          : (isRateLimit ? "Sorry, the AI assistant quota has been exceeded. Please try again later." :
+             isServiceDown ? "Sorry, the AI service is currently unavailable. Please try again." :
+             "Sorry, I couldn't process your request. Please try again."),
         timestamp: new Date().toISOString(),
       };
       const updated = [...newMessages, errorMsg];

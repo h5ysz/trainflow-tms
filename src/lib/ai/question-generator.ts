@@ -297,7 +297,7 @@ const MAX_COUNT = 100;
  * provider can re-emit facts from the tail, which the post-dedupe then drops
  * (possibly emptying the whole batch).
  */
-const MAX_EXCLUDE_INPUT = 200;
+const MAX_EXCLUDE_INPUT = 500;
 
 // ─── Prompt building ─────────────────────────────────────────────────────────
 
@@ -348,11 +348,11 @@ FIGURES — attach a real image ONLY when the question is genuinely about it:
 - NEVER attach an image just because one exists nearby, and NEVER attach the same figure to several questions.
 
 Translation quality rules (NON-NEGOTIABLE — these are enforced by automatic validation):
-- Every Arabic field (textAr, optionsAr, explanationAr) must be a NATURAL, PROFESSIONAL, technically accurate Arabic translation — written by a native technical writer in formal Modern Standard Arabic. NOT a literal word-for-word machine translation, and never transliterated English.
+- Every Arabic field (textAr, optionsAr, explanationAr) MUST be written ENTIRELY in Arabic script (Unicode range \\u0600-\\u06FF). The ONLY Latin characters allowed are widely-used acronyms (PPE, AC/DC, NFPA, PTW).
+- Every Arabic field must be a NATURAL, PROFESSIONAL, technically accurate Arabic translation — written by a native technical writer in formal Modern Standard Arabic. NOT a literal word-for-word machine translation, and never transliterated English.
 - Use the correct Arabic technical terminology for the domain (electrical safety, occupational safety, etc.).
 - NEVER paste or embed the English sentence inside an Arabic field. An Arabic field that is mostly English — or that contains the English sentence — is REJECTED and the whole batch fails.
 - NEVER carry raw PDF/Word formatting artifacts (box glyphs like □, broken symbols, control characters, page numbers, underline filler) into ANY field.
-- You MAY keep widely-used technical acronyms (e.g. PPE, AC/DC, NFPA, PTW) in Latin inside otherwise-Arabic text. Never translate them.
 - The Arabic version is a TRANSLATION of the English version — the SAME question, the SAME tested fact, the SAME correct answer, never a different question. Write the Arabic FROM the English sentence, not from memory of the topic. The English and Arabic versions must express the same question; do not let the languages drift into different questions.`;
 
 function buildExcludeBlock(excludeTexts: string[]): string {
@@ -360,7 +360,7 @@ function buildExcludeBlock(excludeTexts: string[]): string {
     .map((s) => s.trim().replace(/\s+/g, " "))
     .filter((s) => s.length > 0)
     .slice(0, MAX_EXCLUDE_INPUT)
-    .map((s) => `- "${s.slice(0, 200)}"`);
+    .map((s) => `- "${s.slice(0, 400)}"`);
   if (list.length === 0) return "";
   return [
     "",
@@ -747,6 +747,17 @@ export function validateGeneratedQuestion(raw: unknown, index: number): Generate
     const en = options.map((o) => o.trim().toLowerCase());
     const okTf = en.length === 2 && en.every((o) => o === "true" || o === "false");
     if (!okTf) fail('TRUE_FALSE must have exactly options ["True","False"].');
+    if (optionsAr.length === 2) {
+      const arLower = optionsAr.map((o) => o.trim());
+      const trueIdx = en.indexOf("true");
+      const arTrueIdx = arLower.findIndex((o) => /^(صحيح|true)$/i.test(o));
+      const arFalseIdx = arLower.findIndex((o) => /^(خطأ|false)$/i.test(o));
+      if (trueIdx !== -1 && arTrueIdx !== -1 && trueIdx !== arTrueIdx) {
+        fail(
+          `TRUE_FALSE Arabic options are swapped: English index ${trueIdx} is "True" but Arabic index ${arTrueIdx} is "${optionsAr[arTrueIdx]}". Swap optionsAr to match the English order.`,
+        );
+      }
+    }
   }
 
   return {
@@ -1083,6 +1094,12 @@ export function runPostGenerationValidation(
     valid.push(q);
   }
 
+  // 4. Difficulty differentiation (soft warning, never rejects)
+  const diffWarning = validateDifficultyDifferentiation(questions);
+  if (diffWarning) {
+    console.warn(`[ai-generate] ${diffWarning}`);
+  }
+
   return { valid, rejected };
 }
 
@@ -1164,11 +1181,16 @@ function makeRunGeneration(provider: ReturnType<typeof getAIProvider>, opts: Gen
             },
           ],
           temperature: temp,
-          maxTokens: 4000,
+          maxTokens: Math.max(4000, requestCount * 400),
           model,
         });
         raw = response.content;
         model = response.model ?? model;
+        if (response.finishReason === "length") {
+          throw new QuestionGenerationError(
+            `The AI response was truncated (maxTokens=${Math.max(4000, requestCount * 400)}). Try generating fewer questions.`,
+          );
+        }
       } catch (e) {
         const cause = e instanceof Error ? e.message : String(e);
         throw new QuestionGenerationError(`AI question generation failed: ${cause}`);
@@ -1221,7 +1243,7 @@ function makeRunGeneration(provider: ReturnType<typeof getAIProvider>, opts: Gen
           // questions, a broken provider) fail the same way on retry — move to
           // the next model immediately instead of sleeping through the whole
           // backoff chain. Only transient upstream errors get retry/backoff.
-          if (!isTransientError(e)) continue;
+          if (!isTransientError(e)) break;
           await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
         }
       }

@@ -6,7 +6,7 @@
 //
 // Configuration (env vars):
 //   GEMINI_API_KEY   — required
-//   GEMINI_MODEL     — optional (default: gemini-2.5-flash)
+//   GEMINI_MODEL     — optional (default: gemini-3.5-flash)
 //
 // The provider is selected automatically by the factory (index.ts) when
 // GEMINI_API_KEY is present in the environment.
@@ -94,19 +94,23 @@ export class GeminiProvider implements AIProvider {
     for (const msg of request.messages) {
       if (msg.role === "system") {
         systemMessages.push(msg.content);
-      } else if (msg.role === "user") {
-        contents.push({ role: "user", parts: [{ text: msg.content }] });
-      } else if (msg.role === "assistant") {
-        contents.push({ role: "model", parts: [{ text: msg.content }] });
+      } else {
+        const geminiRole = msg.role === "assistant" ? "model" : "user";
+        // Merge consecutive same-role messages (Gemini requires strict alternation)
+        const last = contents[contents.length - 1];
+        if (last && last.role === geminiRole) {
+          last.parts.push({ text: msg.content });
+        } else {
+          contents.push({ role: geminiRole, parts: [{ text: msg.content }] });
+        }
       }
-      // "tool" role messages are ignored for now (future capability)
     }
 
     const body: Record<string, unknown> = {
       contents,
       generationConfig: {
         temperature: request.temperature ?? 0.5,
-        maxOutputTokens: (request.maxTokens ?? 2000) * 5,
+        maxOutputTokens: Math.min((request.maxTokens ?? 2000) * 5, 65536),
         ...(request.topP !== undefined && { topP: request.topP }),
         ...(request.stop !== undefined && { stopSequences: Array.isArray(request.stop) ? request.stop : [request.stop] }),
       },
@@ -125,8 +129,18 @@ export class GeminiProvider implements AIProvider {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-goog-api-key": this.apiKey },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(90_000),
       });
     } catch (err) {
+      const msg = (err as Error).message?.toLowerCase() ?? "";
+      if (msg.includes("abort") || msg.includes("timeout") || msg.includes("timed out")) {
+        throw new AIProviderError(
+          "Gemini API request timed out after 90 seconds",
+          "TIMEOUT",
+          504,
+          "gemini",
+        );
+      }
       throw new AIProviderError(
         `Network error contacting Gemini API: ${(err as Error).message}`,
         "TIMEOUT",
@@ -201,7 +215,7 @@ export class GeminiProvider implements AIProvider {
       content,
       finishReason,
       usage,
-      model: this.model,
+      model: request.model ?? this.model,
     };
   }
 }
@@ -213,6 +227,11 @@ function mapFinishReason(reason: string): ChatResponse["finishReason"] {
     case "MAX_TOKENS":
       return "length";
     case "SAFETY":
+    case "RECITATION":
+    case "BLOCKLIST":
+    case "PROHIBITED_CONTENT":
+    case "SPII":
+    case "OTHER":
       return "content_filter";
     default:
       return "stop";

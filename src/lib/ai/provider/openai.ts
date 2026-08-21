@@ -139,8 +139,18 @@ export class OpenAIProvider implements AIProvider {
           Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(90_000),
       });
     } catch (err) {
+      const msg = (err as Error).message?.toLowerCase() ?? "";
+      if (msg.includes("abort") || msg.includes("timeout") || msg.includes("timed out")) {
+        throw new AIProviderError(
+          "OpenAI API request timed out after 90 seconds",
+          "TIMEOUT",
+          504,
+          "openai",
+        );
+      }
       // Network-level failure (DNS, connection refused, timeout)
       throw new AIProviderError(
         `Network error contacting OpenAI API: ${(err as Error).message}`,
