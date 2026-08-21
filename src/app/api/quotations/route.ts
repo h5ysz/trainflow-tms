@@ -1,6 +1,6 @@
 // /api/quotations — list + create quotations
 import { db } from "@/lib/db";
-import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
+import { withModuleAction, ok, created, fail, audit, companyScope } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
 import { nextRefNumber } from "@/lib/api/ref-number";
@@ -12,7 +12,8 @@ export const GET = withModuleAction("quotations", "view", async ({ req, user }) 
   const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
   if (q.filters.status) where.status = q.filters.status;
   if (q.filters.companyId) where.companyId = q.filters.companyId;
-  if (user.role === "CONTRACTOR" && user.companyId) where.companyId = user.companyId;
+  const scope = companyScope(user);
+  if (scope) Object.assign(where, scope);
   if (q.search) {
     where.OR = [
       { refNumber: { contains: q.search } },

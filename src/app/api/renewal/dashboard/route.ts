@@ -3,16 +3,14 @@
 //
 // Permissions: SUPER_ADMIN, COORDINATOR (all companies) or CONTRACTOR (own company only)
 import { db } from "@/lib/db";
-import { withErrorEnvelope, requireRole, ok } from "@/lib/auth/api";
+import { withErrorEnvelope, requireRole, ok, companyScope } from "@/lib/auth/api";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export const GET = withErrorEnvelope(async function GET(req: Request) {
   const user = await requireRole("SUPER_ADMIN", "COORDINATOR", "CONTRACTOR");
 
-  const companyFilter = user.role === "CONTRACTOR" && user.companyId
-    ? { companyId: user.companyId }
-    : {};
+  const companyFilter = companyScope(user) ?? {};
 
   const now = new Date();
   const endOfToday = new Date(now);

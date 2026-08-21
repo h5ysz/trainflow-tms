@@ -3,13 +3,14 @@
 import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withModuleAction } from "@/lib/auth/api";
+import { withModuleAction, companyScope } from "@/lib/auth/api";
 import { REQUEST_COLUMNS, rowToValues, type RegistrationExportRow } from "@/lib/requests/import-export";
 
 export const GET = withModuleAction("requests", "view", async ({ user }) => {
   const where: Record<string, unknown> = { deletedAt: null };
-  if (user.role === "CONTRACTOR" && user.companyId) {
-    where.request = { companyId: user.companyId };
+  const scope = companyScope(user);
+  if (scope) {
+    where.request = { companyId: scope.companyId };
   }
 
   const requestCourses = await db.trainingRequestCourse.findMany({

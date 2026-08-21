@@ -27,7 +27,7 @@ export const GET = withModuleAction("reports", "view", async ({ req, params, use
   // A contractor with no company assigned must see nothing, not everything: this
   // sentinel cannot match any uuid, so their scope is empty rather than absent.
   const scopedCompanyId = user.companyId ?? "__no_company__";
-  const companyScope = isContractor ? { companyId: scopedCompanyId } : {};
+  const companyFilter = isContractor ? { companyId: scopedCompanyId } : {};
   // Coordinator and Trainer have equivalent operational permissions — no trainer scoping.
   // Sessions carry no companyId, so a contractor is scoped through the originating
   // request or an enrolment belonging to their company. Without this, `trainerScope`
@@ -46,13 +46,13 @@ export const GET = withModuleAction("reports", "view", async ({ req, params, use
     case "summary": {
       const [sessions, requests, certs, trainees, courseCount, companiesCount, trainersCount, traineesTotal] = await Promise.all([
         db.trainingSession.count({ where: { ...NOT_DELETED, ...dateFilter, ...trainerScope } }),
-        db.trainingRequest.count({ where: { deletedAt: null, createdAt: { gte: from, lte: to }, ...companyScope } }),
-        db.certificate.count({ where: { deletedAt: null, issuedAt: { gte: from, lte: to }, ...companyScope } }),
+        db.trainingRequest.count({ where: { deletedAt: null, createdAt: { gte: from, lte: to }, ...companyFilter } }),
+        db.certificate.count({ where: { deletedAt: null, issuedAt: { gte: from, lte: to }, ...companyFilter } }),
         db.attendance.groupBy({ by: ["traineeEmail"], where: { deletedAt: null, session: { ...NOT_DELETED, ...dateFilter, ...trainerScope } } }),
         db.course.count({ where: NOT_DELETED }),
         db.company.count({ where: NOT_DELETED }),
         db.trainer.count({ where: { ...NOT_DELETED, status: "ACTIVE" } }),
-        db.trainee.count({ where: { ...NOT_DELETED, ...companyScope } }),
+        db.trainee.count({ where: { ...NOT_DELETED, ...companyFilter } }),
       ]);
       return ok({
         type, from, to,
@@ -71,7 +71,7 @@ export const GET = withModuleAction("reports", "view", async ({ req, params, use
 
     case "trainees": {
       // Trainees report — by company, with their request count
-      const where: Record<string, unknown> = { ...NOT_DELETED, ...companyScope };
+      const where: Record<string, unknown> = { ...NOT_DELETED, ...companyFilter };
       if (q_search(req)) {
         where.OR = [
           { fullName: { contains: q_search(req) } },
@@ -228,7 +228,7 @@ export const GET = withModuleAction("reports", "view", async ({ req, params, use
       // Count training requests per company
       const requestRows = await db.trainingRequest.groupBy({
         by: ["companyId"],
-        where: { deletedAt: null, createdAt: { gte: from, lte: to }, ...companyScope },
+        where: { deletedAt: null, createdAt: { gte: from, lte: to }, ...companyFilter },
         _count: { id: true },
       });
 
@@ -238,7 +238,7 @@ export const GET = withModuleAction("reports", "view", async ({ req, params, use
         where: {
           deletedAt: null,
           enrollmentDate: { gte: from, lte: to },
-          ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+          ...companyFilter,
         },
         _count: { id: true },
       });
@@ -249,7 +249,7 @@ export const GET = withModuleAction("reports", "view", async ({ req, params, use
         where: {
           deletedAt: null,
           issuedAt: { gte: from, lte: to },
-          ...companyScope,
+          ...companyFilter,
         },
         _count: { id: true },
       });
@@ -288,7 +288,7 @@ export const GET = withModuleAction("reports", "view", async ({ req, params, use
         where: {
           deletedAt: null,
           checkInAt: { gte: from, lte: to },
-          ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+          ...companyFilter,
         },
         _count: { id: true },
       });
@@ -305,7 +305,7 @@ export const GET = withModuleAction("reports", "view", async ({ req, params, use
           deletedAt: null,
           status: "PRESENT",
           checkInAt: { gte: from, lte: to },
-          ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+          ...companyFilter,
         },
         _count: { id: true },
       });
@@ -336,7 +336,7 @@ export const GET = withModuleAction("reports", "view", async ({ req, params, use
           deletedAt: null,
           testType: "FINAL_TEST",
           attemptedAt: { gte: from, lte: to },
-          ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+          ...companyFilter,
         },
         _count: { id: true },
         _avg: { scorePercent: true },
@@ -349,7 +349,7 @@ export const GET = withModuleAction("reports", "view", async ({ req, params, use
           testType: "FINAL_TEST",
           passed: true,
           attemptedAt: { gte: from, lte: to },
-          ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+          ...companyFilter,
         },
         _count: { id: true },
       });
@@ -386,7 +386,7 @@ export const GET = withModuleAction("reports", "view", async ({ req, params, use
         where: {
           deletedAt: null,
           issuedAt: { gte: from, lte: to },
-          ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+          ...companyFilter,
         },
         _count: { id: true },
       });
@@ -397,7 +397,7 @@ export const GET = withModuleAction("reports", "view", async ({ req, params, use
           deletedAt: null,
           status: "VALID",
           issuedAt: { gte: from, lte: to },
-          ...(user.role === "CONTRACTOR" && user.companyId ? { companyId: user.companyId } : {}),
+          ...companyFilter,
         },
         _count: { id: true },
       });
@@ -519,13 +519,13 @@ export const GET = withModuleAction("reports", "view", async ({ req, params, use
     }
     case "compliance": {
       const now = new Date();
-      const validCerts = await db.certificate.count({ where: { deletedAt: null, status: "VALID", ...companyScope } });
-      const expiredCerts = await db.certificate.count({ where: { deletedAt: null, status: "EXPIRED", ...companyScope } });
+      const validCerts = await db.certificate.count({ where: { deletedAt: null, status: "VALID", ...companyFilter } });
+      const expiredCerts = await db.certificate.count({ where: { deletedAt: null, status: "EXPIRED", ...companyFilter } });
       const expiringSoon = await db.certificate.count({
         where: {
           deletedAt: null, status: "VALID",
           validUntil: { gte: now, lte: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) },
-          ...companyScope,
+          ...companyFilter,
         },
       });
       return ok({

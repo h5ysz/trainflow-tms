@@ -1,6 +1,6 @@
 // /api/receipts — list receipts
 import { db } from "@/lib/db";
-import { withModuleAction } from "@/lib/auth/api";
+import { withModuleAction, companyScope } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
 
@@ -11,7 +11,8 @@ export const GET = withModuleAction("receipts", "view", async ({ req, user }) =>
   const where: Record<string, unknown> = whereWithSoftDelete({}, q.includeDeleted);
   if (q.filters.companyId) where.companyId = q.filters.companyId;
   if (q.filters.invoiceId) where.invoiceId = q.filters.invoiceId;
-  if (user.role === "CONTRACTOR" && user.companyId) where.companyId = user.companyId;
+  const scope = companyScope(user);
+  if (scope) Object.assign(where, scope);
   if (q.search) {
     where.OR = [
       { refNumber: { contains: q.search } },

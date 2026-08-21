@@ -1,6 +1,6 @@
 // /api/invoices — list + create invoices
 import { db } from "@/lib/db";
-import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
+import { withModuleAction, ok, created, fail, audit, companyScope } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { list } from "@/lib/api/response";
 import { nextRefNumber } from "@/lib/api/ref-number";
@@ -15,9 +15,8 @@ export const GET = withModuleAction("invoices", "view", async ({ req, user }) =>
   if (q.filters.requestId) where.requestId = q.filters.requestId;
   if (q.filters.sessionId) where.sessionId = q.filters.sessionId;
   // Contractors see only their own invoices
-  if (user.role === "CONTRACTOR" && user.companyId) {
-    where.companyId = user.companyId;
-  }
+  const scope = companyScope(user);
+  if (scope) Object.assign(where, scope);
   if (q.search) {
     where.OR = [
       { refNumber: { contains: q.search } },

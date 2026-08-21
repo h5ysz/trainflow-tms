@@ -1,7 +1,7 @@
 // /api/reports/generate — generate a report from a template and export it
 // POST: { template, format, filter } → returns file download
 import { NextResponse } from "next/server";
-import { withModuleAction, ok, fail, audit } from "@/lib/auth/api";
+import { withModuleAction, ok, fail, audit, companyScope } from "@/lib/auth/api";
 import { getTemplate } from "@/lib/reports/template-registry";
 import { exportReport } from "@/lib/reports/export-service";
 import type { ReportFilter } from "@/lib/reports/template-registry";
@@ -28,9 +28,8 @@ export const POST = withModuleAction("reports", "view", async ({ req, user }) =>
 
   // Apply user's company scope for contractors
   const effectiveFilter: ReportFilter = { ...filter };
-  if (user.role === "CONTRACTOR" && user.companyId) {
-    effectiveFilter.companyId = user.companyId;
-  }
+  const scope = companyScope(user);
+  if (scope) effectiveFilter.companyId = scope.companyId;
 
   // Query data from the production database
   const data = await template.query(effectiveFilter);
@@ -99,9 +98,8 @@ export const GET = withModuleAction("reports", "view", async ({ req, user }) => 
   };
 
   // Apply user's company scope for contractors
-  if (user.role === "CONTRACTOR" && user.companyId) {
-    filter.companyId = user.companyId;
-  }
+  const genScope = companyScope(user);
+  if (genScope) filter.companyId = genScope.companyId;
 
   const data = await template.query(filter);
 

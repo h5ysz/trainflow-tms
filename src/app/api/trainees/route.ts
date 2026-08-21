@@ -1,6 +1,6 @@
 // /api/trainees — list + create (TRA-000001 ref number, duplicate National ID prevention)
 import { db } from "@/lib/db";
-import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
+import { withModuleAction, ok, created, fail, audit, companyScope } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
@@ -29,17 +29,16 @@ export const GET = withModuleAction("trainees", "view", async ({ req, user }) =>
   if (q.filters.nationality) where.nationality = q.filters.nationality;
 
   // Contractors only see their own company's trainees
-  if (user.role === "CONTRACTOR" && user.companyId) {
-    where.companyId = user.companyId;
-  }
+  const scope = companyScope(user);
+  if (scope) Object.assign(where, scope);
 
   // Coordinators scoped to a region only see trainees of companies within
   // their scope (own region + coverage). This makes the company-first trainee
   // picker safe server-side: even a crafted ?companyId= for an out-of-scope
   // company returns nothing.
-  const scope = coordinatorRegionScope(user);
-  if (scope) {
-    where.company = { region: { in: scope } };
+  const regionScope = coordinatorRegionScope(user);
+  if (regionScope) {
+    where.company = { region: { in: regionScope } };
   }
 
   // Trainers only see trainees enrolled in their own sessions. Derived from the
@@ -115,19 +114,20 @@ export const POST = withModuleAction("trainees", "create", async ({ req, user })
   // companyId is forced to theirs). Coordinators scoped to a region may only
   // create trainees for companies inside their region scope.
   let finalCompanyId = companyId;
-  if (user.role === "CONTRACTOR" && user.companyId) {
-    finalCompanyId = user.companyId;
+  const scope = companyScope(user);
+  if (scope) {
+    finalCompanyId = scope.companyId === "__NONE__" ? null : scope.companyId;
   }
   if (!finalCompanyId) {
     return fail("companyId is required", 422, "VALIDATION_ERROR");
   }
-  const scope = coordinatorRegionScope(user);
-  if (scope) {
+  const regionScope = coordinatorRegionScope(user);
+  if (regionScope) {
     const targetCompany = await db.company.findFirst({
       where: { id: finalCompanyId, deletedAt: null },
       select: { region: true },
     });
-    if (!targetCompany || !targetCompany.region || !scope.includes(targetCompany.region)) {
+    if (!targetCompany || !targetCompany.region || !regionScope.includes(targetCompany.region)) {
       return fail("You can only add trainees to companies within your region scope", 403, "FORBIDDEN_COMPANY_SCOPE");
     }
   }

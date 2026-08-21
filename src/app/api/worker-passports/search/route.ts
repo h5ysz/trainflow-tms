@@ -1,6 +1,6 @@
 // /api/worker-passports/search — search by National ID / Iqama / QR token / Passport #
 import { db } from "@/lib/db";
-import { withErrorEnvelope, requireRole, ok, fail } from "@/lib/auth/api";
+import { withErrorEnvelope, requireRole, ok, fail, companyScope } from "@/lib/auth/api";
 import { calculateCompliance } from "@/lib/worker/compliance-engine";
 
 export const GET = withErrorEnvelope(async function GET(req: Request) {
@@ -21,9 +21,8 @@ export const GET = withErrorEnvelope(async function GET(req: Request) {
   };
 
   // Company scope for contractors
-  if (user.role === "CONTRACTOR" && user.companyId) {
-    where.companyId = user.companyId;
-  }
+  const scope = companyScope(user);
+  if (scope) Object.assign(where, scope);
 
   const passports = await db.workerPassport.findMany({
     where,

@@ -1,6 +1,6 @@
 // /api/companies — list + create (with UUID, COM-000001 ref number, soft delete, audit)
 import { db } from "@/lib/db";
-import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
+import { withModuleAction, ok, created, fail, audit, companyScope } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
@@ -29,8 +29,8 @@ export const GET = withModuleAction("companies", "view", async ({ req, user }) =
   if (q.filters.region) where.region = q.filters.region;
 
   // Contractors only see their own company
-  if (user.role === "CONTRACTOR" && user.companyId) {
-    where.id = user.companyId;
+  if (user.role === "CONTRACTOR") {
+    where.id = user.companyId || "__NONE__";
   }
 
   // Coordinators scoped to a region see only companies within their scope

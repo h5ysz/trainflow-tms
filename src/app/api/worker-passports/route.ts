@@ -8,7 +8,7 @@
 //
 // Permissions: SUPER_ADMIN / COORDINATOR see all; CONTRACTOR sees own company only.
 import { db } from "@/lib/db";
-import { withErrorEnvelope, requireRole, ok } from "@/lib/auth/api";
+import { withErrorEnvelope, requireRole, ok, companyScope } from "@/lib/auth/api";
 import { calculateCompliance } from "@/lib/worker/compliance-engine";
 
 export const GET = withErrorEnvelope(async function GET(req: Request) {
@@ -23,8 +23,9 @@ export const GET = withErrorEnvelope(async function GET(req: Request) {
   const where: Record<string, unknown> = { deletedAt: null };
 
   // Company scope for contractors
-  if (user.role === "CONTRACTOR" && user.companyId) {
-    where.companyId = user.companyId;
+  const scope = companyScope(user);
+  if (scope) {
+    Object.assign(where, scope);
   } else if (companyId) {
     where.companyId = companyId;
   }

@@ -1,7 +1,7 @@
 // /api/training-requests — list + create
 // Workflow: DRAFT → SUBMITTED → UNDER_REVIEW → APPROVED → SCHEDULED → IN_PROGRESS → COMPLETED | CANCELLED | REJECTED
 import { db } from "@/lib/db";
-import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
+import { withModuleAction, ok, created, fail, audit, companyScope } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
@@ -45,9 +45,8 @@ export const GET = withModuleAction("requests", "view", async ({ req, user }) =>
   if (q.filters.courseId) where.courseId = q.filters.courseId;
 
   // Contractors see only their own requests
-  if (user.role === "CONTRACTOR" && user.companyId) {
-    where.companyId = user.companyId;
-  }
+  const scope = companyScope(user);
+  if (scope) Object.assign(where, scope);
 
   const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS);
 
@@ -122,7 +121,8 @@ export const POST = withModuleAction("requests", "create", async ({ req, user })
   } = body;
 
   // Contractors auto-create their own company's request
-  const finalCompanyId = user.role === "CONTRACTOR" && user.companyId ? user.companyId : companyId;
+  const createScope = companyScope(user);
+  const finalCompanyId = createScope ? (createScope.companyId === "__NONE__" ? null : createScope.companyId) : companyId;
 
   if (!finalCompanyId || !courseId) return fail("companyId and courseId are required", 422, "VALIDATION_ERROR");
 

@@ -4,7 +4,7 @@
 //   2. Final Test passed
 //   3. Course Evaluation submitted
 import { db } from "@/lib/db";
-import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
+import { withModuleAction, ok, created, fail, audit, companyScope } from "@/lib/auth/api";
 import { parseListQuery, buildListMeta, buildOrderBy, whereWithSoftDelete } from "@/lib/api/query";
 import { nextRefNumber } from "@/lib/api/ref-number";
 import { list } from "@/lib/api/response";
@@ -38,9 +38,8 @@ export const GET = withModuleAction("certificates", "view", async ({ req, user }
   if (q.filters.courseId) where.courseId = q.filters.courseId;
 
   // Contractors see only their company's certificates
-  if (user.role === "CONTRACTOR" && user.companyId) {
-    where.companyId = user.companyId;
-  }
+  const scope = companyScope(user);
+  if (scope) Object.assign(where, scope);
 
   const orderBy = buildOrderBy(q.sortBy, q.sortDir, ALLOWED_SORT_FIELDS, "issuedAt");
 

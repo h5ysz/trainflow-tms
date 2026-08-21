@@ -431,3 +431,18 @@ export function withExamAction<T>(action: Action, handler: ExamHandler<T>) {
     }
   };
 }
+
+/**
+ * Returns a Prisma where-clause filter that scopes results to the user's company.
+ * For CONTRACTOR users with null companyId, returns a never-match filter
+ * to prevent cross-tenant data leaks.
+ */
+export function companyScope(user: { role: string; companyId?: string | null }) {
+  if (user.role === "CONTRACTOR") {
+    if (!user.companyId) {
+      return { companyId: "__NONE__" }; // never matches any real UUID
+    }
+    return { companyId: user.companyId };
+  }
+  return undefined; // no filter — admin roles see everything
+}

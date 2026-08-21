@@ -2,7 +2,7 @@
 // The payment is created with status PENDING. The coordinator approves it
 // via PUT /api/payments/[id]/approve.
 import { db } from "@/lib/db";
-import { withModuleAction, ok, created, fail, audit } from "@/lib/auth/api";
+import { withModuleAction, ok, created, fail, audit, companyScope } from "@/lib/auth/api";
 import { nextRefNumber } from "@/lib/api/ref-number";
 
 export const POST = withModuleAction("payments", "create", async ({ req, user }) => {
@@ -14,7 +14,8 @@ export const POST = withModuleAction("payments", "create", async ({ req, user })
   }
 
   // Contractors can only submit for their own company
-  const finalCompanyId = user.role === "CONTRACTOR" && user.companyId ? user.companyId : companyId;
+  const scope = companyScope(user);
+  const finalCompanyId = scope ? (scope.companyId === "__NONE__" ? null : scope.companyId) : companyId;
 
   // Verify invoice belongs to this company
   const invoice = await db.invoice.findFirst({ where: { id: invoiceId, companyId: finalCompanyId, deletedAt: null } });

@@ -4,7 +4,7 @@
 // Query params (one of): traineeEmail, traineeIdNational, traineeName
 // Returns all certs grouped by course, showing the renewal chain.
 import { db } from "@/lib/db";
-import { withErrorEnvelope, requireAuth, ok, fail } from "@/lib/auth/api";
+import { withErrorEnvelope, requireAuth, ok, fail, companyScope } from "@/lib/auth/api";
 
 export const GET = withErrorEnvelope(async function GET(req: Request) {
   const user = await requireAuth();
@@ -25,9 +25,8 @@ export const GET = withErrorEnvelope(async function GET(req: Request) {
   if (traineeName) or.push({ traineeName: { equals: traineeName } });
   traineeWhere.OR = or;
 
-  if (user.role === "CONTRACTOR" && user.companyId) {
-    traineeWhere.companyId = user.companyId;
-  }
+  const scope = companyScope(user);
+  if (scope) Object.assign(traineeWhere, scope);
 
   const certs = await db.certificate.findMany({
     where: traineeWhere,
