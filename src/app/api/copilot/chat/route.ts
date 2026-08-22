@@ -113,6 +113,16 @@ export const POST = withAuth(async ({ req, user }) => {
       maxTokens: 2000,
     });
 
+    // Detect NoOp / unconfigured provider — don't treat its static hint as a
+    // real LLM reply; surface it as a clear configuration error instead.
+    if (response.model === "noop") {
+      return fail(
+        response.content || "AI is not configured. Set GEMINI_API_KEY in Render Dashboard.",
+        503,
+        "AI_NOT_CONFIGURED",
+      );
+    }
+
     const raw = response.content || "I apologize, I couldn't generate a response. Please try again.";
 
     // Try to parse an ACTION_PLAN envelope. The LLM is instructed to return

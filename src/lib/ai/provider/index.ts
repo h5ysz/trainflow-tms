@@ -44,12 +44,14 @@ function detectProvider(): AIProvider {
   // 1. Mock (offline, deterministic — for tests / demo without API keys)
   const mockEnv = process.env.AI_MOCK_ENABLED || process.env.AI_MOCK;
   if (mockEnv === "1" || mockEnv === "true" || mockEnv === "TRUE") {
+    console.log("[ai-provider] Using MockProvider (AI_MOCK_ENABLED)");
     return new MockProvider();
   }
 
   // 2. Gemini (default, highest priority)
   if (process.env.GEMINI_API_KEY) {
     try {
+      console.log("[ai-provider] Using GeminiProvider (GEMINI_API_KEY is set)");
       return new GeminiProvider();
     } catch (err) {
       console.error("[ai-provider] Gemini provider init failed, falling back:", err);
@@ -59,6 +61,7 @@ function detectProvider(): AIProvider {
   // 3. OpenAI
   if (process.env.OPENAI_API_KEY) {
     try {
+      console.log("[ai-provider] Using OpenAIProvider (OPENAI_API_KEY is set)");
       return new OpenAIProvider();
     } catch (err) {
       console.error("[ai-provider] OpenAI provider init failed, falling back to NoOp:", err);
@@ -66,6 +69,7 @@ function detectProvider(): AIProvider {
   }
 
   // 4. NoOp fallback (always available)
+  console.warn("[ai-provider] No AI provider configured! Set GEMINI_API_KEY or OPENAI_API_KEY in your environment.");
   return new NoOpProvider();
 }
 

@@ -21,6 +21,7 @@
 import { db } from "@/lib/db";
 import { withModuleAction, ok, fail, notFound, audit } from "@/lib/auth/api";
 import { ensureTrainerCanAccessCourse } from "@/lib/api/course-materials";
+import { getAIProvider } from "@/lib/ai/provider";
 import { extractMaterialsText, MaterialExtractionError } from "@/lib/ai/material-extractor";
 import {
   extractMaterialImages,
@@ -165,6 +166,19 @@ export const POST = withModuleAction("course-materials", "create", async ({ user
     const err = e as Error;
     return fail(err.message, 422, "VALIDATION_ERROR");
   }
+  // Fast-fail when no AI provider is configured — avoid expensive material
+  // extraction only to fail at the provider call.
+  {
+    const provider = getAIProvider();
+    if (provider.name === "noop") {
+      return fail(
+        "AI is not configured. Set GEMINI_API_KEY in Render Dashboard → Environment.",
+        503,
+        "AI_NOT_CONFIGURED",
+      );
+    }
+  }
+
   const testType = body.testType === "FINAL_TEST" ? "FINAL_TEST" : "PRE_TEST";
   const clientExcludeTexts = Array.isArray(body.excludeTexts)
     ? body.excludeTexts.filter((x): x is string => typeof x === "string")

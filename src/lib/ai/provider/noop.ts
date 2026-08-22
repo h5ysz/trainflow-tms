@@ -31,9 +31,18 @@ export class NoOpProvider implements AIProvider {
   readonly capabilities = NOOP_CAPABILITIES;
 
   async chat(_request: ChatRequest): Promise<ChatResponse> {
+    const hasGemini = !!process.env.GEMINI_API_KEY;
+    const hasOpenAI = !!process.env.OPENAI_API_KEY;
+    let hint: string;
+    if (!hasGemini && !hasOpenAI) {
+      hint = "No AI API keys found. Set GEMINI_API_KEY (preferred) or OPENAI_API_KEY in your environment (Render Dashboard → Environment).";
+    } else if (!hasGemini && hasOpenAI) {
+      hint = "GEMINI_API_KEY is not set. The OpenAI fallback also failed. Set GEMINI_API_KEY in your environment.";
+    } else {
+      hint = "AI provider initialization failed. Check server logs for details.";
+    }
     return {
-      content:
-        "AI assistant is not configured. Set OPENAI_API_KEY to enable AI features.",
+      content: hint,
       finishReason: "stop",
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
       model: "noop",
